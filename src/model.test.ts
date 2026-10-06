@@ -123,7 +123,7 @@ describe("quote lifecycle and validation", () => {
   });
   it("rejects incomplete and invalid values", () => {
     const q = newQuote(defaults, []);
-    expect(validate(q)).toContain("customer");
+    expect(validate(q)).toBeNull();
     q.customer.name = "Test";
     q.name = "Deck";
     q.lines = [
@@ -134,7 +134,7 @@ describe("quote lifecycle and validation", () => {
     expect(validate(q)).toContain("non-negative");
   });
   it("starts business assumptions at zero and HST at 13%", () => {
-    expect(defaults).toEqual({
+    expect(defaults).toMatchObject({
       materialMarkup: 0,
       labourRate: 0,
       overhead: 0,
@@ -142,4 +142,317 @@ describe("quote lifecycle and validation", () => {
       hst: 13,
     });
   });
+});
+
+// V2 tests exercise formulas, history and migration independently of the UI.
+import {
+  applyTemplate,
+  deckTemplate,
+  detailDefaults,
+  estimateFor,
+  markSent,
+  migrate,
+  purchaseQuantity,
+  reviewWarnings,
+  takeoffToLine,
+  persist,
+  load,
+  storageKey,
+  backupKey,
+} from "./model";
+import { customerRows } from "./customerDocument";
+import { vi, afterEach } from "vitest";
+afterEach(() => vi.unstubAllGlobals());
+function v1Fixture() {
+  const s = seed();
+  const old = JSON.parse(JSON.stringify(s));
+  old.version = 1;
+  delete old.quoteDefaults;
+  for (const k of [
+    "internalLabourCost",
+    "otherMarkup",
+    "targetMargin",
+    "validityDays",
+  ])
+    delete old.settings[k];
+  for (const q of old.quotes) {
+    delete q.details;
+    delete q.snapshot;
+    delete q.documents;
+    delete q.takeoff;
+    for (const l of q.lines) {
+      delete l.waste;
+      delete l.scopeGroup;
+    }
+    for (const k of [
+      "internalLabourCost",
+      "otherMarkup",
+      "targetMargin",
+      "validityDays",
+    ])
+      delete q.pricing[k];
+  }
+  return old;
+}
+describe("V2 cost and profitability formulas", () => {
+  it("prices purchase quantities with waste separately from markup", () => {
+    const l = {
+      ...newLine("Materials", defaults),
+      quantity: 40,
+      waste: 10,
+      cost: 18,
+      markup: 15,
+    };
+    expect(purchaseQuantity(l)).toBe(44);
+    expect(calculate({ lines: [l], pricing: defaults }).cost).toBe(792);
+    expect(linePrice(l)).toBe(910.8);
+    expect(linePrice({ ...l, override: 999 })).toBe(999);
+  });
+  it("marks up other costs and permits pass-through", () => {
+    const l = {
+      ...newLine("Other Costs", defaults),
+      quantity: 2,
+      cost: 100,
+      markup: 15,
+    };
+    expect(linePrice(l)).toBe(230);
+    expect(linePrice({ ...l, markup: 0 })).toBe(200);
+  });
+  it("breaks out direct costs and selling prices without double counting", () => {
+    const p = { ...defaults, overhead: 10, contingency: 5, targetMargin: 30 };
+    const lines = [
+      { ...newLine("Labour", p), quantity: 10, cost: 30, rate: 75 },
+      {
+        ...newLine("Materials", p),
+        quantity: 40,
+        waste: 10,
+        cost: 18,
+        markup: 15,
+      },
+      { ...newLine("Other Costs", p), cost: 100, markup: 10 },
+    ];
+    const t = calculate({ lines, pricing: p });
+    expect(t.labourCost).toBe(300);
+    expect(t.materialCost).toBe(792);
+    expect(t.otherCost).toBe(100);
+    expect(t.base).toBe(1770.8);
+    expect(t.overhead).toBe(177.08);
+    expect(t.contingency).toBe(88.54);
+    expect(t.subtotal).toBe(2036.42);
+    expect(t.tax).toBe(264.73);
+    expect(t.profit).toBe(844.42);
+    expect(t.breakEven).toBe(1192);
+    expect(t.targetPrice).toBe(1702.86);
+  });
+  it("uses cost / (1 - margin), rounds upward, and warns below target", () => {
+    const t = calculate({
+      lines: [{ ...newLine("Other Costs", defaults), cost: 100 }],
+      pricing: { ...defaults, targetMargin: 30 },
+    });
+    expect(t.targetPrice).toBe(142.86);
+    expect(t.belowTarget).toBe(true);
+    expect(
+      calculate({ lines: [], pricing: { ...defaults, targetMargin: 100 } })
+        .targetPrice,
+    ).toBeNull();
+    const q = newQuote({ ...defaults, targetMargin: 100 }, []);
+    expect(validate(q)).toContain("less than 100");
+  });
+  it("inherits defaults by value, expiry and labour/other-cost defaults", () => {
+    const p = {
+      ...defaults,
+      internalLabourCost: 35,
+      labourRate: 85,
+      otherMarkup: 12,
+      validityDays: 14,
+    };
+    const q = newQuote(p, [], { ...detailDefaults, payment: "20% deposit" });
+    expect(newLine("Labour", q.pricing).cost).toBe(35);
+    expect(newLine("Other Costs", q.pricing).markup).toBe(12);
+    const days =
+      (new Date(q.expiry + "T12:00:00Z").getTime() -
+        new Date(q.date + "T12:00:00Z").getTime()) /
+      86400000;
+    expect(days).toBe(14);
+    p.labourRate = 99;
+    expect(q.pricing.labourRate).toBe(85);
+    expect(q.details.payment).toBe("20% deposit");
+  });
+});
+describe("V2 migration and historical quotes", () => {
+  it("preserves every V1 price, customers, photos, notes, numbers and actuals without mutating input", () => {
+    const old = v1Fixture();
+    old.quotes[0].notes = "Keep me";
+    old.quotes[0].photos = ["data:image/png;base64,aGVsbG8="];
+    old.quotes[0].lines.push({
+      ...newLine("Other Costs", defaults),
+      markup: 15,
+      cost: 100,
+    });
+    const before = JSON.stringify(old);
+    const migrated = migrate(old);
+    expect(JSON.stringify(old)).toBe(before);
+    expect(migrated.version).toBe(2);
+    expect(migrated.quotes[0].notes).toBe("Keep me");
+    expect(migrated.quotes[0].photos).toEqual(old.quotes[0].photos);
+    expect(migrated.quotes[0].lines.at(-1)!.markup).toBe(0);
+    expect(migrated.quotes[1].snapshot).toBeDefined();
+    expect(migrated.quotes[2].number).toBe(old.quotes[2].number);
+    for (let i = 0; i < 3; i++)
+      expect(calculate(migrated.quotes[i]).subtotal).toBe(
+        calculate({
+          ...old.quotes[i],
+          lines: old.quotes[i].lines.map((l: ReturnType<typeof newLine>) => ({
+            ...l,
+            markup: l.kind === "Other Costs" ? 0 : l.markup,
+          })),
+        }).subtotal,
+      );
+  });
+  it("preserves historical job snapshot and actual costs", () => {
+    const old = v1Fixture();
+    const q = old.quotes[2];
+    q.job = {
+      snapshot: {
+        lines: structuredClone(q.lines),
+        pricing: structuredClone(q.pricing),
+      },
+      convertedAt: "2026-01-01",
+      actuals: [
+        {
+          id: "actual",
+          description: "Labour",
+          category: "Labour",
+          quantity: 12,
+          cost: 35,
+        },
+      ],
+    };
+    const result = migrate(old).quotes[2];
+    expect(result.job!.actuals).toEqual(q.job.actuals);
+    expect(jobTotals(result).actual).toBe(420);
+    expect(calculate(estimateFor(result)).subtotal).toBe(
+      calculate(q.job.snapshot).subtotal,
+    );
+  });
+  it("backs up original V1 bytes before saving V2 and migrates idempotently", () => {
+    const data = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => data.set(k, v),
+    });
+    const old = JSON.stringify(v1Fixture());
+    data.set(storageKey, old);
+    const migrated = load();
+    expect(data.get(storageKey)).toBe(old);
+    persist(migrated);
+    expect(data.get(backupKey)).toBe(old);
+    expect(load()).toEqual(migrated);
+    expect(migrate(migrated)).toEqual(migrated);
+  });
+  it("does not overwrite V1 if backup cannot be stored", () => {
+    const old = JSON.stringify(v1Fixture());
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => (k === storageKey ? old : null),
+      setItem: () => {
+        throw new Error("Storage full");
+      },
+    });
+    expect(() => persist(migrate(JSON.parse(old)))).toThrow("Storage full");
+    expect(localStorage.getItem(storageKey)).toBe(old);
+  });
+  it("freezes a sent snapshot and converts from that snapshot", () => {
+    const q = seed().quotes[0];
+    const sent = markSent(q);
+    const price = calculate(estimateFor(sent)).subtotal;
+    sent.lines[0].cost = 999;
+    sent.pricing.hst = 0;
+    expect(calculate(estimateFor(sent)).subtotal).toBe(price);
+    expect(estimateFor(sent).pricing.hst).toBe(13);
+    const job = convert({ ...sent, status: "Accepted" });
+    expect(job.job!.snapshot).toEqual(sent.snapshot);
+    expect(() => markSent(sent)).toThrow();
+  });
+});
+describe("V2 templates, takeoff and customer privacy", () => {
+  it("appends editable Deck suggestions without preset quantities or prices", () => {
+    const q = seed().quotes[0];
+    const applied = applyTemplate(q, deckTemplate);
+    expect(
+      applied.lines
+        .slice(q.lines.length)
+        .every(
+          (l) =>
+            l.quantity === 0 && l.cost === 0 && l.rate === 0 && l.markup === 0,
+        ),
+    ).toBe(true);
+    expect(applied.lines.at(-1)!.scopeGroup).toBe("Project Costs");
+    expect(() => applyTemplate(seed().quotes[1], deckTemplate)).toThrow();
+  });
+  it("requires takeoff review and prevents double conversion", () => {
+    const q = newQuote(defaults, []);
+    const item = {
+      id: "t",
+      description: "Deck boards",
+      quantity: 40,
+      unit: "board",
+      documentId: "p",
+      page: 1,
+      notes: "Measured",
+      status: "Proposed" as const,
+      confidence: "Medium" as const,
+    };
+    q.takeoff = [item];
+    expect(() => takeoffToLine(q, item, "Materials")).toThrow();
+    q.takeoff[0] = { ...item, status: "Reviewed" };
+    const converted = takeoffToLine(q, q.takeoff[0], "Materials");
+    expect(converted.lines[0].quantity).toBe(40);
+    expect(converted.lines[0].takeoffId).toBe("t");
+    expect(() =>
+      takeoffToLine(converted, converted.takeoff[0], "Labour"),
+    ).toThrow();
+  });
+  it("customer projection never includes internal costing, waste or private notes", () => {
+    const q = seed().quotes[0];
+    q.notes = "SECRET";
+    q.lines.forEach((l) => (l.scopeGroup = "Decking"));
+    q.details.groupLines = true;
+    const rows = customerRows(q);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(calculate(q).base);
+    expect(rows[0].quantities).toEqual(["Lumber and fasteners: 40 each"]);
+    expect(JSON.stringify(rows)).not.toMatch(
+      /SECRET|markup|cost|rate|waste|profit|margin/,
+    );
+    q.details.showQuantities = false;
+    expect(customerRows(q)[0].quantities).toEqual([]);
+    q.details.showLabourHours = true;
+    expect(customerRows(q)[0].quantities).toEqual([
+      "Construction labour: 40 hours",
+    ]);
+  });
+  it("drafts can save missing business information, but sent checklist reports it", () => {
+    const q = newQuote({ ...defaults, targetMargin: 30 }, []);
+    expect(validate(q)).toBeNull();
+    expect(reviewWarnings(q)).toEqual(
+      expect.arrayContaining([
+        "Missing customer name",
+        "Missing scope of work",
+        "No labour lines",
+        "No materials lines",
+        "Expected gross margin is below target",
+        "Missing payment / deposit schedule",
+        "Missing quote expiry",
+      ]),
+    );
+  });
+});
+it("generates valid UUIDs on iPhone LAN previews without randomUUID", async () => {
+  const original = crypto.getRandomValues.bind(crypto);
+  vi.stubGlobal("crypto", { getRandomValues: original });
+  const { id } = await import("./model");
+  expect(id()).toMatch(
+    /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+  );
+  expect(id()).not.toBe(id());
 });

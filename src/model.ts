@@ -12,6 +12,9 @@ export type Line = {
   markup: number;
   override: number | null;
   category: string;
+  waste?: number;
+  scopeGroup?: string;
+  takeoffId?: string;
 };
 export type Pricing = {
   materialMarkup: number;
@@ -19,6 +22,10 @@ export type Pricing = {
   overhead: number;
   contingency: number;
   hst: number;
+  internalLabourCost?: number;
+  otherMarkup?: number;
+  targetMargin?: number;
+  validityDays?: number;
 };
 export type Customer = {
   name: string;
@@ -57,22 +64,205 @@ export type Quote = {
   mode: "Simplified" | "Detailed";
   job?: Job;
   templateCategory?: string;
+  snapshot?: Estimate;
+  details: QuoteDetails;
+  documents: PlanDocument[];
+  takeoff: TakeoffItem[];
 };
-// Reusable estimate payload for future template management; no UI or storage yet.
-export type QuoteTemplate = Estimate & {
+export type QuoteDetails = {
+  showQuantities: boolean;
+  showLabourHours: boolean;
+  groupLines: boolean;
+  terms: string;
+  payment: string;
+  assumptions: string;
+  exclusions: string;
+  changeOrders: string;
+  timeline: string;
+  permits: string;
+  engineering: string;
+};
+export type PlanDocument = {
+  id: string;
+  name: string;
+  type: string;
+  data: string;
+  addedAt: string;
+};
+export type TakeoffItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  documentId: string;
+  page: number | null;
+  notes: string;
+  status: "Proposed" | "Reviewed";
+  confidence: "Unspecified" | "Low" | "Medium" | "High";
+  convertedLineId?: string;
+};
+export type QuoteTemplate = {
   id: string;
   name: string;
   category: string;
-  description: string;
-  terms: string;
+  groups: string[];
+  lines: Pick<
+    Line,
+    "kind" | "description" | "unit" | "scopeGroup" | "category"
+  >[];
+  details?: Partial<QuoteDetails>;
 };
-export type Store = { version: 1; settings: Pricing; quotes: Quote[] };
+export type Store = {
+  version: 2;
+  settings: Pricing;
+  quoteDefaults: QuoteDetails;
+  quotes: Quote[];
+};
+export const detailDefaults: QuoteDetails = {
+  showQuantities: true,
+  showLabourHours: false,
+  groupLines: false,
+  terms:
+    "Quote subject to written acceptance. Changes to the agreed scope require a revised quote.",
+  payment: "",
+  assumptions: "",
+  exclusions: "",
+  changeOrders:
+    "Changes to the agreed scope require a written change order, including any price and timeline adjustments, approved before additional work begins.",
+  timeline: "",
+  permits: "",
+  engineering: "",
+};
+export const detailLabels: Record<
+  Exclude<
+    keyof QuoteDetails,
+    "showQuantities" | "showLabourHours" | "groupLines"
+  >,
+  string
+> = {
+  terms: "Terms & Conditions",
+  payment: "Payment / deposit schedule",
+  assumptions: "Assumptions",
+  exclusions: "Exclusions",
+  changeOrders: "Change-order language",
+  timeline: "Estimated project timeline",
+  permits: "Permit responsibility",
+  engineering: "Engineering responsibility",
+};
+export const units = [
+  "each",
+  "allowance",
+  "sq. ft.",
+  "linear ft.",
+  "board",
+  "sheet",
+  "bag",
+  "bundle",
+  "box",
+  "roll",
+  "cubic yard",
+  "hour",
+  "day",
+];
+export const scopeGroups = [
+  "Demolition & Site Preparation",
+  "Footings & Structure",
+  "Decking",
+  "Railings & Stairs",
+  "Finishing & Cleanup",
+  "Project Costs",
+];
+export const deckTemplate: QuoteTemplate = {
+  id: "deck",
+  name: "Deck",
+  category: "Deck",
+  groups: scopeGroups,
+  lines: [
+    {
+      kind: "Labour",
+      description: "Demolition and site preparation",
+      unit: "hour",
+      scopeGroup: scopeGroups[0],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Materials",
+      description: "Footings and structural lumber",
+      unit: "each",
+      scopeGroup: scopeGroups[1],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Labour",
+      description: "Footings and framing labour",
+      unit: "hour",
+      scopeGroup: scopeGroups[1],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Materials",
+      description: "Deck boards",
+      unit: "board",
+      scopeGroup: scopeGroups[2],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Materials",
+      description: "Railings and stair materials",
+      unit: "each",
+      scopeGroup: scopeGroups[3],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Labour",
+      description: "Decking, railings and stair installation",
+      unit: "hour",
+      scopeGroup: scopeGroups[3],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Labour",
+      description: "Finishing and site cleanup",
+      unit: "hour",
+      scopeGroup: scopeGroups[4],
+      category: "Miscellaneous",
+    },
+    {
+      kind: "Other Costs",
+      description: "Disposal allowance",
+      unit: "allowance",
+      scopeGroup: scopeGroups[5],
+      category: "Dump/disposal fees",
+    },
+  ],
+};
+export function applyTemplate(q: Quote, template: QuoteTemplate): Quote {
+  if (q.status !== "Draft") throw new Error("Only drafts can use templates.");
+  return {
+    ...q,
+    templateCategory: template.category,
+    terms: template.details?.terms ?? q.terms,
+    details: { ...q.details, ...template.details },
+    lines: [
+      ...q.lines,
+      ...template.lines.map((l) => ({
+        ...newLine(l.kind, q.pricing),
+        ...l,
+        quantity: 0,
+        cost: 0,
+        rate: 0,
+        markup: 0,
+      })),
+    ],
+  };
+}
 export const categories = [
   "Subcontractors",
   "Equipment rentals",
   "Dump/disposal fees",
   "Delivery",
   "Permits",
+  "Engineering",
   "Travel",
   "Miscellaneous",
 ];
@@ -84,6 +274,11 @@ export const templates = [
   "Drywall",
   "Renovation",
   "Service/maintenance",
+  "Garages",
+  "Additions",
+  "Sheds",
+  "Interior finishing",
+  "Cottage repairs",
 ];
 export const defaults: Pricing = {
   materialMarkup: 0,
@@ -91,25 +286,40 @@ export const defaults: Pricing = {
   overhead: 0,
   contingency: 0,
   hst: 13,
+  internalLabourCost: 0,
+  otherMarkup: 0,
+  targetMargin: 0,
+  validityDays: 0,
 };
-export const id = () => crypto.randomUUID();
+export const id = () => {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  // LAN HTTP previews on iPhone lack randomUUID's secure-context requirement.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const h = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
 export const money = (n: number) =>
   new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(
     n,
   );
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
+export function purchaseQuantity(l: Line) {
+  return l.kind === "Materials"
+    ? l.quantity * (1 + (l.waste ?? 0) / 100)
+    : l.quantity;
+}
 export function lineCost(l: Line) {
-  return round(l.quantity * l.cost);
+  return round(purchaseQuantity(l) * l.cost);
 }
 export function linePrice(l: Line) {
   return round(
     l.override ??
       (l.kind === "Labour"
         ? l.quantity * l.rate
-        : l.kind === "Materials"
-          ? lineCost(l) * (1 + l.markup / 100)
-          : lineCost(l)),
+        : lineCost(l) * (1 + l.markup / 100)),
   );
 }
 export function calculate(e: Estimate) {
@@ -120,7 +330,26 @@ export function calculate(e: Estimate) {
   const subtotal = round(base + overhead + contingency),
     tax = round((subtotal * e.pricing.hst) / 100),
     profit = round(subtotal - cost);
+  const byKind = (kind: Kind, fn: (l: Line) => number) =>
+    round(
+      e.lines.filter((l) => l.kind === kind).reduce((sum, l) => sum + fn(l), 0),
+    );
+  // Target margin is profit / revenue, not cost markup. Round UP to avoid missing target by a cent.
+  const target = e.pricing.targetMargin ?? 0;
   return {
+    labourCost: byKind("Labour", lineCost),
+    materialCost: byKind("Materials", lineCost),
+    otherCost: byKind("Other Costs", lineCost),
+    labourPrice: byKind("Labour", linePrice),
+    materialPrice: byKind("Materials", linePrice),
+    otherPrice: byKind("Other Costs", linePrice),
+    breakEven: cost,
+    targetMargin: target,
+    targetPrice:
+      target >= 100
+        ? null
+        : Math.ceil((cost / (1 - target / 100)) * 100 - 1e-8) / 100,
+    belowTarget: (subtotal ? (profit / subtotal) * 100 : 0) < target,
     cost,
     base,
     overhead,
@@ -133,7 +362,7 @@ export function calculate(e: Estimate) {
   };
 }
 export function jobTotals(q: Quote) {
-  const e = calculate(q.job?.snapshot ?? q);
+  const e = calculate(estimateFor(q));
   const actual = round(
     q.job?.actuals.reduce((s, a) => s + round(a.quantity * a.cost), 0) ?? 0,
   );
@@ -152,19 +381,31 @@ export function newLine(kind: Kind, p: Pricing): Line {
     description: "",
     quantity: 1,
     unit: kind === "Labour" ? "hours" : "each",
-    cost: 0,
+    cost: kind === "Labour" ? (p.internalLabourCost ?? 0) : 0,
     rate: p.labourRate,
-    markup: p.materialMarkup,
+    markup: kind === "Other Costs" ? (p.otherMarkup ?? 0) : p.materialMarkup,
+    waste: 0,
+    scopeGroup: "",
     override: null,
     category: categories[0],
   };
 }
-export function newQuote(settings: Pricing, quotes: Quote[]): Quote {
+export function newQuote(
+  settings: Pricing,
+  quotes: Quote[],
+  options: QuoteDetails = detailDefaults,
+): Quote {
+  const date = new Date().toLocaleDateString("en-CA");
+  const expires = new Date(`${date}T12:00:00`);
+  expires.setDate(expires.getDate() + (settings.validityDays ?? 0));
   return {
     id: id(),
     number: `BW-${String(Math.max(1000, ...quotes.map((q) => Number(q.number.split("-")[1]) || 1000)) + 1)}`,
-    date: new Date().toISOString().slice(0, 10),
-    expiry: "",
+    date,
+    expiry: settings.validityDays ? expires.toLocaleDateString("en-CA") : "",
+    details: structuredClone(options),
+    documents: [],
+    takeoff: [],
     status: "Draft",
     customer: { name: "", phone: "", email: "", address: "" },
     name: "",
@@ -174,31 +415,44 @@ export function newQuote(settings: Pricing, quotes: Quote[]): Quote {
     photos: [],
     lines: [],
     pricing: { ...settings },
-    terms:
-      "Quote subject to written acceptance. Changes to the agreed scope require a revised quote. Payment terms to be agreed before work begins.",
+    terms: options.terms,
     mode: "Simplified",
   };
 }
 export function validate(q: Quote): string | null {
-  if (!q.customer.name.trim() || !q.name.trim())
-    return "Add a customer name and job name before saving.";
   if (q.customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q.customer.email))
     return "Enter a valid email address.";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(q.date)) return "Enter a quote date.";
   if (q.expiry && q.expiry < q.date)
     return "Expiry must be on or after the quote date.";
   if (
-    q.lines.some(
-      (l) =>
-        !l.description.trim() ||
-        [l.quantity, l.cost, l.rate, l.markup, l.override ?? 0].some(
-          (n) => !Number.isFinite(n) || n < 0,
-        ),
+    q.lines.some((l) =>
+      [
+        l.quantity,
+        l.cost,
+        l.rate,
+        l.markup,
+        l.waste ?? 0,
+        l.override ?? 0,
+      ].some((n) => !Number.isFinite(n) || n < 0),
     )
   )
-    return "Every line needs a description and non-negative numeric values.";
+    return "Every line needs non-negative numeric values.";
   if (Object.values(q.pricing).some((n) => !Number.isFinite(n) || n < 0))
     return "Pricing percentages and rates must be non-negative.";
+  if (!Number.isInteger(q.pricing.validityDays ?? 0))
+    return "Quote validity days must be a whole number.";
+  if ((q.pricing.targetMargin ?? 0) >= 100)
+    return "Target margin must be less than 100%.";
+  if (
+    q.takeoff.some(
+      (t) =>
+        !Number.isFinite(t.quantity) ||
+        t.quantity < 0 ||
+        (t.page !== null && (!Number.isInteger(t.page) || t.page < 1)),
+    )
+  )
+    return "Takeoff quantities must be non-negative and page numbers must be positive whole numbers.";
   return null;
 }
 export function convert(q: Quote): Quote {
@@ -207,7 +461,7 @@ export function convert(q: Quote): Quote {
   return {
     ...q,
     job: {
-      snapshot: structuredClone({ lines: q.lines, pricing: q.pricing }),
+      snapshot: structuredClone(estimateFor(q)),
       convertedAt: new Date().toISOString(),
       actuals: [],
     },
@@ -216,7 +470,7 @@ export function convert(q: Quote): Quote {
 export function duplicate(q: Quote, quotes: Quote[]): Quote {
   return {
     ...structuredClone(q),
-    ...newQuote(q.pricing, quotes),
+    ...newQuote(q.pricing, quotes, q.details),
     customer: structuredClone(q.customer),
     name: `${q.name} (copy)`,
     description: q.description,
@@ -225,6 +479,7 @@ export function duplicate(q: Quote, quotes: Quote[]): Quote {
     terms: q.terms,
     templateCategory: q.templateCategory,
     job: undefined,
+    snapshot: undefined,
   };
 }
 export function seed(): Store {
@@ -250,6 +505,7 @@ export function seed(): Store {
       "Frame basement partitions and prepare openings for doors.",
     ][i];
     q.pricing = {
+      ...defaults,
       materialMarkup: 15,
       labourRate: 75,
       overhead: 5,
@@ -270,11 +526,18 @@ export function seed(): Store {
         cost: 18,
       },
     ];
+    if (q.status !== "Draft")
+      q.snapshot = structuredClone({ lines: q.lines, pricing: q.pricing });
     quotes.push(q);
   });
-  return { version: 1, settings: { ...defaults }, quotes };
+  return {
+    version: 2,
+    settings: { ...defaults },
+    quoteDefaults: { ...detailDefaults },
+    quotes,
+  };
 }
-const key = "backwoods-quotes-v1";
+
 function record(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -298,7 +561,18 @@ function pricing(v: unknown) {
       "overhead",
       "contingency",
       "hst",
-    ])
+    ]) &&
+    numbers(
+      v,
+      [
+        "internalLabourCost",
+        "otherMarkup",
+        "targetMargin",
+        "validityDays",
+      ].filter((k) => k in v),
+    ) &&
+    (typeof v.targetMargin !== "number" || v.targetMargin < 100) &&
+    (typeof v.validityDays !== "number" || Number.isInteger(v.validityDays))
   );
 }
 function line(v: unknown) {
@@ -306,7 +580,14 @@ function line(v: unknown) {
     record(v) &&
     strings(v, ["id", "description", "unit", "category"]) &&
     ["Labour", "Materials", "Other Costs"].includes(String(v.kind)) &&
-    numbers(v, ["quantity", "cost", "rate", "markup"]) &&
+    numbers(v, [
+      "quantity",
+      "cost",
+      "rate",
+      "markup",
+      ...("waste" in v ? ["waste"] : []),
+    ]) &&
+    (v.scopeGroup === undefined || typeof v.scopeGroup === "string") &&
     (v.override === null ||
       (typeof v.override === "number" &&
         Number.isFinite(v.override) &&
@@ -364,20 +645,181 @@ function quote(v: unknown) {
   }
   return true;
 }
-export function load(): Store {
-  const raw = localStorage.getItem(key);
-  if (!raw) return seed();
-  const parsed: unknown = JSON.parse(raw);
+export function estimateFor(q: Quote): Estimate {
+  return q.job?.snapshot ?? q.snapshot ?? q;
+}
+export function markSent(q: Quote): Quote {
+  if (q.status !== "Draft") throw new Error("Only draft quotes can be sent.");
+  return {
+    ...q,
+    status: "Sent",
+    snapshot: structuredClone({ lines: q.lines, pricing: q.pricing }),
+  };
+}
+export function reviewWarnings(q: Quote): string[] {
+  const warnings: string[] = [];
+  if (!q.customer.name.trim()) warnings.push("Missing customer name");
+  if (!q.name.trim()) warnings.push("Missing job name");
+  if (!q.description.trim()) warnings.push("Missing scope of work");
+  if (!q.lines.some((l) => l.kind === "Labour"))
+    warnings.push("No labour lines");
+  if (!q.lines.some((l) => l.kind === "Materials"))
+    warnings.push("No materials lines");
+  if (!q.lines.length || q.lines.some((l) => linePrice(l) === 0))
+    warnings.push("Zero selling-price lines or no estimate lines");
+  if (q.lines.some((l) => !l.description.trim()))
+    warnings.push("Estimate lines missing descriptions");
+  if (calculate(q).belowTarget)
+    warnings.push("Expected gross margin is below target");
+  if (!q.details.payment.trim())
+    warnings.push("Missing payment / deposit schedule");
+  if (!q.expiry) warnings.push("Missing quote expiry");
+  return warnings;
+}
+export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
   if (
-    !record(parsed) ||
-    parsed.version !== 1 ||
-    !Array.isArray(parsed.quotes) ||
-    !parsed.quotes.every(quote) ||
-    !pricing(parsed.settings)
+    q.status !== "Draft" ||
+    item.status !== "Reviewed" ||
+    item.convertedLineId
+  )
+    throw new Error(
+      "Review the takeoff item before converting it once into a draft estimate.",
+    );
+  if (!item.description.trim()) throw new Error("Add a takeoff description.");
+  const l = {
+    ...newLine(kind, q.pricing),
+    description: item.description,
+    quantity: item.quantity,
+    unit: item.unit,
+    takeoffId: item.id,
+  };
+  return {
+    ...q,
+    lines: [...q.lines, l],
+    takeoff: q.takeoff.map((t) =>
+      t.id === item.id ? { ...t, convertedLineId: l.id } : t,
+    ),
+  };
+}
+function upgradePricing(p: Pricing): Pricing {
+  return { ...defaults, ...p };
+}
+function upgradeLine(l: Line): Line {
+  return {
+    ...l,
+    waste: l.waste ?? 0,
+    scopeGroup: l.scopeGroup ?? "",
+    markup: l.kind === "Other Costs" ? 0 : l.markup,
+  };
+}
+function upgradeEstimate(e: Estimate): Estimate {
+  return {
+    lines: e.lines.map(upgradeLine),
+    pricing: upgradePricing(e.pricing),
+  };
+}
+function validDetails(v: unknown) {
+  return (
+    record(v) &&
+    strings(v, Object.keys(detailLabels)) &&
+    ["showQuantities", "showLabourHours", "groupLines"].every(
+      (k) => typeof v[k] === "boolean",
+    )
+  );
+}
+function validExtensions(v: unknown) {
+  if (
+    !record(v) ||
+    !validDetails(v.details) ||
+    !Array.isArray(v.documents) ||
+    !Array.isArray(v.takeoff)
+  )
+    return false;
+  if (v.snapshot !== undefined && !estimate(v.snapshot)) return false;
+  if (
+    !v.documents.every(
+      (d) =>
+        record(d) &&
+        strings(d, ["id", "name", "type", "data", "addedAt"]) &&
+        ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(
+          String(d.type),
+        ) &&
+        String(d.data).startsWith(`data:${d.type};base64,`),
+    )
+  )
+    return false;
+  if (
+    !v.takeoff.every(
+      (t) =>
+        record(t) &&
+        strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
+        numbers(t, ["quantity"]) &&
+        (t.page === null ||
+          (typeof t.page === "number" &&
+            Number.isInteger(t.page) &&
+            t.page >= 1)) &&
+        ["Proposed", "Reviewed"].includes(String(t.status)) &&
+        ["Unspecified", "Low", "Medium", "High"].includes(
+          String(t.confidence),
+        ) &&
+        (t.convertedLineId === undefined ||
+          typeof t.convertedLineId === "string"),
+    )
+  )
+    return false;
+  return true;
+}
+export function migrate(input: unknown): Store {
+  if (
+    !record(input) ||
+    ![1, 2].includes(input.version as number) ||
+    !Array.isArray(input.quotes) ||
+    !input.quotes.every(quote) ||
+    !pricing(input.settings)
   )
     throw new Error("Saved data is not a supported Backwoods file.");
-  return parsed as Store;
+  if (input.version === 2) {
+    if (
+      !validDetails(input.quoteDefaults) ||
+      !input.quotes.every(validExtensions)
+    )
+      throw new Error("Saved V2 data is invalid.");
+    return input as Store;
+  }
+  const old = structuredClone(input) as unknown as {
+    settings: Pricing;
+    quotes: Quote[];
+  };
+  return {
+    version: 2,
+    settings: upgradePricing(old.settings),
+    quoteDefaults: { ...detailDefaults },
+    quotes: old.quotes.map((q) => {
+      const e = upgradeEstimate(q);
+      const result = {
+        ...q,
+        ...e,
+        details: { ...detailDefaults, terms: q.terms, changeOrders: "" },
+        documents: [],
+        takeoff: [],
+      };
+      if (q.job)
+        result.job = { ...q.job, snapshot: upgradeEstimate(q.job.snapshot) };
+      if (q.status !== "Draft")
+        result.snapshot = structuredClone(result.job?.snapshot ?? e);
+      return result;
+    }),
+  };
+}
+export const storageKey = "backwoods-quotes-v1"; // Keep original key so deployed V1 browser records are found.
+export const backupKey = "backwoods-quotes-v1-backup";
+export function load(): Store {
+  const raw = localStorage.getItem(storageKey);
+  return raw ? migrate(JSON.parse(raw)) : seed();
 }
 export function persist(store: Store) {
-  localStorage.setItem(key, JSON.stringify(store));
+  const old = localStorage.getItem(storageKey);
+  if (old && JSON.parse(old).version === 1 && !localStorage.getItem(backupKey))
+    localStorage.setItem(backupKey, old);
+  localStorage.setItem(storageKey, JSON.stringify(store));
 }

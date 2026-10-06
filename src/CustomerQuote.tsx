@@ -1,25 +1,22 @@
 import { ArrowLeft, Printer, TreePine } from "lucide-react";
-import { calculate, linePrice, money } from "./model";
-import type { Quote } from "./model";
+import { calculate, estimateFor, money, detailLabels } from "./model";
+import { customerRows } from "./customerDocument";
+import type { Quote, QuoteDetails } from "./model";
 
 export default function CustomerQuote({
   quote: q,
   onClose,
   onMode,
+  onDetails,
 }: {
   quote: Quote;
   onClose: () => void;
   onMode: (mode: Quote["mode"]) => void;
+  onDetails: (details: QuoteDetails) => void;
 }) {
-  const e = q.job?.snapshot ?? q,
+  const e = estimateFor(q),
     t = calculate(e);
-  // Explicit allowlist: never pass internal notes, cost, markup or profit to document markup.
-  const customerLines = e.lines.map((l) => ({
-    description: l.description,
-    quantity: l.quantity,
-    unit: l.unit,
-    price: linePrice(l),
-  }));
+  const customerLines = customerRows(q);
   return (
     <div className="preview-overlay">
       <div className="preview-toolbar">
@@ -37,6 +34,26 @@ export default function CustomerQuote({
         <button className="button" onClick={() => window.print()}>
           <Printer size={17} /> Print / Save PDF
         </button>
+      </div>
+      <div className="preview-options check-options">
+        {(["showQuantities", "showLabourHours", "groupLines"] as const).map(
+          (k) => (
+            <label key={k}>
+              <input
+                type="checkbox"
+                checked={q.details[k]}
+                onChange={(e) =>
+                  onDetails({ ...q.details, [k]: e.target.checked })
+                }
+              />
+              {k === "showQuantities"
+                ? "Show quantities"
+                : k === "showLabourHours"
+                  ? "Show labour hours"
+                  : "Group by scope"}
+            </label>
+          ),
+        )}
       </div>
       <article className="customer-document">
         <header className="document-header">
@@ -92,11 +109,11 @@ export default function CustomerQuote({
                   <tr key={i}>
                     <td>
                       {l.description}
-                      <small>
-                        {l.quantity} {l.unit}
-                      </small>
+                      {l.quantities.map((text, j) => (
+                        <small key={j}>{text}</small>
+                      ))}
                     </td>
-                    <td>{money(l.price)}</td>
+                    <td>{money(l.amount)}</td>
                   </tr>
                 ))}
                 {t.overhead + t.contingency !== 0 && (
@@ -127,6 +144,14 @@ export default function CustomerQuote({
           <h3>TERMS & CONDITIONS</h3>
           <p>{q.terms}</p>
         </section>
+        {(Object.keys(detailLabels) as (keyof typeof detailLabels)[])
+          .filter((k) => k !== "terms" && q.details[k].trim())
+          .map((k) => (
+            <section className="document-terms" key={k}>
+              <h3>{detailLabels[k].toUpperCase()}</h3>
+              <p>{q.details[k]}</p>
+            </section>
+          ))}
         <section className="acceptance">
           <h3>ACCEPTANCE</h3>
           <p>I accept the scope of work and pricing outlined above.</p>

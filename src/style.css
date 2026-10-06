@@ -1537,3 +1537,210 @@ fieldset:disabled select {
     print-color-adjust: exact;
   }
 }
+.subheading {
+  margin: 24px 0 16px;
+  font-size: 12px;
+  color: #66815b;
+  letter-spacing: 0.3px;
+}
+.check-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  margin: 18px 0;
+  line-height: 1.6;
+  font-size: 12px;
+}
+.check-options label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.check-options input {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
+  accent-color: #234c3c;
+}
+.calculated-value {
+  display: block;
+  padding: 12px;
+  border-radius: 6px;
+  background: #eef3e8;
+  min-height: 43px;
+  font-weight: 600;
+}
+.margin-warning {
+  padding: 13px;
+  border-radius: 6px;
+  background: #fff4dc;
+  color: #977535;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.review-overlay {
+  position: fixed;
+  inset: 0;
+  background: #193d3266;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.review-card {
+  padding: 28px;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow: auto;
+}
+.review-card .muted {
+  margin-top: 14px;
+}
+.warning-list {
+  padding: 18px 18px 18px 35px;
+  background: #fff4dc;
+  color: #96733a;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.preview-options {
+  max-width: 850px;
+  margin: 0 auto 20px;
+  padding: 14px;
+  background: #fff;
+  border-radius: 8px;
+}
+.plan-preview {
+  width: 100%;
+  height: 400px;
+  object-fit: contain;
+  border: 1px solid #e3e7df;
+  border-radius: 8px;
+  background: #f7f9f4;
+  margin-bottom: 20px;
+}
+.document-list {
+  margin: 20px 0;
+}
+.document-list > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #e3e7df;
+}
+.document-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: left;
+  flex: 1;
+}
+.document-list fieldset {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.replace-document {
+  position: relative;
+  overflow: hidden;
+  font-size: 11px;
+  padding: 12px;
+  color: #53734e;
+  cursor: pointer;
+}
+.replace-document input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.line-footer {
+  flex-wrap: wrap;
+}
+.line-footer > span {
+  flex: 1;
+  min-width: 85px;
+}
+.data-tools {
+  margin-top: 28px;
+  border-top: 1px solid #e3e7df;
+  padding-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.data-tools p {
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .review-card {
+    padding: 22px 18px;
+  }
+  .check-options {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+  }
+  .check-options label {
+    min-height: 32px;
+  }
+  .document-list > div {
+    flex-wrap: wrap;
+  }
+  .document-name {
+    flex-basis: 100%;
+  }
+  .preview-options {
+    font-size: 11px;
+  }
+  .summary dt {
+    max-width: 65%;
+  }
+  .plan-preview {
+    height: 340px;
+  }
+}
+@media print {
+  .preview-options,
+  .review-overlay {
+    display: none !important;
+  }
+}
+.shell.printing {
+  display: none;
+}
+.pdf-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #e3e7df;
+  border-radius: 8px;
+  background: #fff;
+}
+.pdf-page-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 15px 0;
+  font-size: 12px;
+}
+.pdf-page-controls button {
+  padding: 10px;
+  min-height: 44px;
+}
+.pdf-preview {
+  height: auto;
+  padding: 12px;
+}
+.pdf-preview canvas {
+  min-height: 100px;
+}
+.pdf-preview .alert {
+  margin: 10px 0;
+}

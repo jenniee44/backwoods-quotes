@@ -24,7 +24,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.getByRole("button", { name: "Materials", exact: true }).click();
   await page.getByRole("button", { name: "Add material", exact: true }).click();
   await page.getByLabel("Description *").fill("Cedar boards");
-  await page.getByLabel("Quantity", { exact: true }).fill("40");
+  await page.getByLabel("Required quantity", { exact: true }).fill("40");
   await page.getByLabel("Unit cost ($)", { exact: true }).fill("18");
   await page.getByLabel("Markup (%)", { exact: true }).fill("15");
   await expect(page.getByText("$828.00").first()).toBeVisible();
@@ -67,6 +67,13 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.emulateMedia({ media: "screen" });
   await page.getByRole("button", { name: "Back to editor" }).click();
   await page.getByRole("button", { name: "Mark as sent" }).click();
+  await expect(
+    page.getByRole("button", { name: "Confirm & mark sent" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("dialog")).toContainText("Missing payment");
+  await page.getByLabel("I reviewed these warnings").check();
+  await page.getByRole("button", { name: "Confirm & mark sent" }).click();
+  await expect(page.getByLabel("Description *")).toBeDisabled();
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Record acceptance" }).click();
   await expect(page.getByLabel("Description *")).toBeDisabled();
@@ -130,7 +137,7 @@ test("invalid input and storage failures show actionable messages", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("customer name");
+  await expect(page.getByRole("status")).toContainText("Saved");
   await page.getByLabel("Customer name *").fill("Test");
   await page.getByLabel("Job name *").fill("Deck");
   await page.evaluate(() => {
@@ -163,4 +170,23 @@ test("malformed saved records are preserved and reported rather than crashing", 
       () => JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes,
     ),
   ).toEqual([{}]);
+});
+
+test("owner can export a valid V2 data backup", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export data backup" }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(
+    /^backwoods-quotes-v2-.*\.json$/,
+  );
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream!) chunks.push(chunk);
+  const data = JSON.parse(Buffer.concat(chunks).toString());
+  expect(data.version).toBe(2);
+  expect(data.quotes).toHaveLength(3);
+  expect(data.quoteDefaults.showLabourHours).toBe(false);
 });

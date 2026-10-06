@@ -1,5 +1,10 @@
 import { useState } from "react";
 import CustomerQuote from "./CustomerQuote";
+import NumberInput from "./NumberInput";
+import LineEditor from "./LineEditor";
+import QuoteDetailsEditor from "./QuoteDetailsEditor";
+import PlansTakeoff from "./PlansTakeoff";
+import QuoteReview from "./QuoteReview";
 import {
   TreePine,
   Plus,
@@ -19,22 +24,24 @@ import {
 } from "lucide-react";
 import {
   calculate,
+  estimateFor,
+  applyTemplate,
+  deckTemplate,
+  markSent,
   categories,
   convert,
   duplicate,
   id,
   jobTotals,
-  linePrice,
   load,
   money,
-  newLine,
   newQuote,
   persist,
   seed,
   templates,
   validate,
 } from "./model";
-import type { Quote, Role, Store, Pricing, Kind, Line, Actual } from "./model";
+import type { Quote, Role, Store, Pricing, Kind, Actual } from "./model";
 
 function Field({
   label,
@@ -50,36 +57,16 @@ function Field({
     </label>
   );
 }
-function NumberInput({
-  value,
-  onChange,
-  ...props
-}: {
-  value: number;
-  onChange: (n: number) => void;
-  step?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <input
-      type="number"
-      min="0"
-      step="0.01"
-      required
-      value={value}
-      onChange={(e) =>
-        onChange(e.target.value === "" ? 0 : Number(e.target.value))
-      }
-      {...props}
-    />
-  );
-}
 const priceLabels: Record<keyof Pricing, string> = {
   materialMarkup: "Material markup (%)",
   labourRate: "Customer labour rate ($/hour)",
   overhead: "Overhead / profit addition (%)",
   contingency: "Contingency (%)",
   hst: "HST (%)",
+  internalLabourCost: "Internal labour cost ($/hour)",
+  otherMarkup: "Other Costs markup (%)",
+  targetMargin: "Target minimum gross margin (%)",
+  validityDays: "Default quote validity (days)",
 };
 function PricingFields({
   value,
@@ -143,7 +130,9 @@ export default function App() {
   const [editing, setEditing] = useState<Quote | null>(null),
     [preview, setPreview] = useState<Quote | null>(null),
     [tab, setTab] = useState("Customer & job"),
-    [mobileMenu, setMobileMenu] = useState(false);
+    [mobileMenu, setMobileMenu] = useState(false),
+    [reviewing, setReviewing] = useState(false),
+    [quoteDefaults, setQuoteDefaults] = useState(store.quoteDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
       id: id(),
@@ -175,7 +164,39 @@ export default function App() {
       setError(problem);
       return false;
     }
-    const exists = store.quotes.some((x) => x.id === q.id);
+    const stored = store.quotes.find((x) => x.id === q.id);
+    if (
+      stored &&
+      stored.status !== "Draft" &&
+      JSON.stringify({
+        lines: q.lines,
+        pricing: q.pricing,
+        customer: q.customer,
+        name: q.name,
+        description: q.description,
+        terms: q.terms,
+        details: q.details,
+        date: q.date,
+        expiry: q.expiry,
+      }) !==
+        JSON.stringify({
+          lines: stored.lines,
+          pricing: stored.pricing,
+          customer: stored.customer,
+          name: stored.name,
+          description: stored.description,
+          terms: stored.terms,
+          details: stored.details,
+          date: stored.date,
+          expiry: stored.expiry,
+        })
+    ) {
+      setError(
+        "This historical quote is locked. Duplicate it to revise the estimate.",
+      );
+      return false;
+    }
+    const exists = !!stored;
     if (
       saveStore({
         ...store,
@@ -200,6 +221,7 @@ export default function App() {
     )
       return;
     setEditing(null);
+    setReviewing(false);
     setPreview(null);
     setPage(p);
     setFilter(f);
@@ -207,7 +229,7 @@ export default function App() {
     setError(initial.error);
   }
   function create() {
-    setEditing(newQuote(store.settings, store.quotes));
+    setEditing(newQuote(store.settings, store.quotes, store.quoteDefaults));
     setTab("Customer & job");
     setNotice("");
     setError(initial.error);
@@ -227,16 +249,13 @@ export default function App() {
   const locked =
     !!current &&
     (!!current.job ||
+      current.status === "Sent" ||
       current.status === "Accepted" ||
       current.status === "Completed");
-  const totals = current ? calculate(current.job?.snapshot ?? current) : null;
+  const totals = current ? calculate(estimateFor(current)) : null;
   function patch(p: Partial<Quote>) {
     if (current) setEditing({ ...current, ...p });
     setNotice("");
-  }
-  function patchLine(l: Line) {
-    if (current)
-      patch({ lines: current.lines.map((x) => (x.id === l.id ? l : x)) });
   }
   async function photos(files: FileList | null) {
     if (!files || !current) return;
@@ -450,6 +469,7 @@ export default function App() {
                     "Materials",
                     "Other Costs",
                     "Pricing",
+                    "Plans & Takeoff",
                     ...(current.job ? ["Job actuals"] : []),
                   ].map((t) => (
                     <button
@@ -594,6 +614,32 @@ export default function App() {
                               </select>
                             </Field>
                           </div>
+                          <button
+                            className="button secondary"
+                            onClick={() => {
+                              if (
+                                confirm(
+                                  "Append the Deck template? Quantities and prices start at zero and must be entered.",
+                                )
+                              )
+                                setEditing(
+                                  applyTemplate(current, deckTemplate),
+                                );
+                            }}
+                          >
+                            Apply Deck template
+                          </button>
+                          <div className="info">
+                            <p>
+                              The Deck template adds editable scope groups and
+                              suggested lines with zero quantities and prices.
+                              Existing lines are kept.
+                            </p>
+                          </div>
+                          <QuoteDetailsEditor
+                            value={current.details}
+                            onChange={(details) => patch({ details })}
+                          />
                           <Field label="Customer terms">
                             <textarea
                               rows={4}
@@ -639,191 +685,24 @@ export default function App() {
                         </fieldset>
                       </>
                     )}
-                    {(
-                      ["Labour", "Materials", "Other Costs"] as string[]
-                    ).includes(tab) && (
-                      <>
-                        <p className="muted">
-                          {tab === "Labour"
-                            ? "Your cost and the customer rate are separate. Only the selling price appears on the quote."
-                            : tab === "Materials"
-                              ? "Markup adds to your material cost. Override the full line selling price when needed."
-                              : "Record the direct cost. Use a selling price override to charge a different amount."}
-                        </p>
-                        {current.lines
-                          .filter((l) => l.kind === tab)
-                          .map((l) => (
-                            <fieldset
-                              disabled={locked}
-                              className="line-card"
-                              key={l.id}
-                            >
-                              <div className="line-title">
-                                <Field label="Description *">
-                                  <input
-                                    value={l.description}
-                                    placeholder={
-                                      tab === "Labour"
-                                        ? "e.g. Deck construction"
-                                        : "e.g. Cedar deck boards"
-                                    }
-                                    onChange={(e) =>
-                                      patchLine({
-                                        ...l,
-                                        description: e.target.value,
-                                      })
-                                    }
-                                  />
-                                </Field>
-                                <button
-                                  className="icon danger"
-                                  aria-label={`Remove ${l.description || "line"}`}
-                                  onClick={() =>
-                                    patch({
-                                      lines: current.lines.filter(
-                                        (x) => x.id !== l.id,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              </div>
-                              <div className="fields compact">
-                                <Field
-                                  label={
-                                    tab === "Labour"
-                                      ? "Estimated hours"
-                                      : "Quantity"
-                                  }
-                                >
-                                  <NumberInput
-                                    value={l.quantity}
-                                    onChange={(n) =>
-                                      patchLine({ ...l, quantity: n })
-                                    }
-                                  />
-                                </Field>
-                                {tab !== "Labour" && (
-                                  <Field label="Unit">
-                                    <input
-                                      value={l.unit}
-                                      onChange={(e) =>
-                                        patchLine({
-                                          ...l,
-                                          unit: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </Field>
-                                )}
-                                <Field
-                                  label={
-                                    tab === "Labour"
-                                      ? "Internal cost / hour ($)"
-                                      : "Unit cost ($)"
-                                  }
-                                >
-                                  <NumberInput
-                                    value={l.cost}
-                                    onChange={(n) =>
-                                      patchLine({ ...l, cost: n })
-                                    }
-                                  />
-                                </Field>
-                                {tab === "Labour" && (
-                                  <Field label="Customer rate / hour ($)">
-                                    <NumberInput
-                                      value={l.rate}
-                                      onChange={(n) =>
-                                        patchLine({ ...l, rate: n })
-                                      }
-                                    />
-                                  </Field>
-                                )}
-                                {tab === "Materials" && (
-                                  <Field label="Markup (%)">
-                                    <NumberInput
-                                      value={l.markup}
-                                      onChange={(n) =>
-                                        patchLine({ ...l, markup: n })
-                                      }
-                                    />
-                                  </Field>
-                                )}
-                                {tab === "Other Costs" && (
-                                  <Field label="Category">
-                                    <select
-                                      value={l.category}
-                                      onChange={(e) =>
-                                        patchLine({
-                                          ...l,
-                                          category: e.target.value,
-                                        })
-                                      }
-                                    >
-                                      {categories.map((c) => (
-                                        <option key={c}>{c}</option>
-                                      ))}
-                                    </select>
-                                  </Field>
-                                )}
-                                <Field label="Selling price override ($)">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="Automatic"
-                                    value={l.override ?? ""}
-                                    onChange={(e) =>
-                                      patchLine({
-                                        ...l,
-                                        override:
-                                          e.target.value === ""
-                                            ? null
-                                            : Number(e.target.value),
-                                      })
-                                    }
-                                  />
-                                </Field>
-                              </div>
-                              <div className="line-footer">
-                                <span>
-                                  Internal cost{" "}
-                                  <b>{money(l.quantity * l.cost)}</b>
-                                </span>
-                                <span>
-                                  Customer price <b>{money(linePrice(l))}</b>
-                                </span>
-                              </div>
-                            </fieldset>
-                          ))}
-                        {!current.lines.some((l) => l.kind === tab) && (
-                          <div className="empty-inline">
-                            No {tab.toLowerCase()} yet. Add the first line
-                            below.
-                          </div>
-                        )}
-                        <button
-                          disabled={locked}
-                          className="button secondary"
-                          onClick={() =>
-                            patch({
-                              lines: [
-                                ...current.lines,
-                                newLine(tab as Kind, current.pricing),
-                              ],
-                            })
-                          }
-                        >
-                          <Plus size={18} /> Add{" "}
-                          {tab === "Other Costs"
-                            ? "cost"
-                            : tab === "Labour"
-                              ? "labour"
-                              : "material"}
-                        </button>
-                      </>
+                    {["Labour", "Materials", "Other Costs"].includes(tab) && (
+                      <LineEditor
+                        quote={current}
+                        kind={tab as Kind}
+                        locked={locked}
+                        onChange={(lines) => patch({ lines })}
+                      />
+                    )}
+                    {tab === "Plans & Takeoff" && (
+                      <PlansTakeoff
+                        quote={current}
+                        locked={locked}
+                        onChange={(q) => {
+                          setEditing(q);
+                          setNotice("");
+                        }}
+                        onError={setError}
+                      />
                     )}
                     {tab === "Pricing" && (
                       <>
@@ -835,7 +714,19 @@ export default function App() {
                         <PricingFields
                           value={current.pricing}
                           disabled={locked}
-                          onChange={(p) => patch({ pricing: p })}
+                          onChange={(p) => {
+                            const updates: Partial<Quote> = { pricing: p };
+                            if (
+                              p.validityDays !== current.pricing.validityDays
+                            ) {
+                              const d = new Date(`${current.date}T12:00:00`);
+                              d.setDate(d.getDate() + (p.validityDays ?? 0));
+                              updates.expiry = p.validityDays
+                                ? d.toLocaleDateString("en-CA")
+                                : "";
+                            }
+                            patch(updates);
+                          }}
                         />
                         <div className="info">
                           <b>Markup ≠ margin</b>
@@ -1012,13 +903,38 @@ export default function App() {
                   <aside className="panel summary">
                     <div className="eyebrow">PRIVATE · INTERNAL ONLY</div>
                     <h2>Quote summary</h2>
+                    <h3 className="subheading">Direct job costs</h3>
                     <dl>
                       <div>
-                        <dt>Estimated actual cost</dt>
+                        <dt>Labour cost</dt>
+                        <dd>{money(totals!.labourCost)}</dd>
+                      </div>
+                      <div>
+                        <dt>Material cost (with waste)</dt>
+                        <dd>{money(totals!.materialCost)}</dd>
+                      </div>
+                      <div>
+                        <dt>Other costs</dt>
+                        <dd>{money(totals!.otherCost)}</dd>
+                      </div>
+                      <div>
+                        <dt>Total direct / estimated actual cost</dt>
                         <dd>{money(totals!.cost)}</dd>
                       </div>
                       <div>
-                        <dt>Line selling prices</dt>
+                        <dt>Labour selling price</dt>
+                        <dd>{money(totals!.labourPrice)}</dd>
+                      </div>
+                      <div>
+                        <dt>Materials selling price</dt>
+                        <dd>{money(totals!.materialPrice)}</dd>
+                      </div>
+                      <div>
+                        <dt>Other-cost selling price</dt>
+                        <dd>{money(totals!.otherPrice)}</dd>
+                      </div>
+                      <div>
+                        <dt>Line selling prices (base)</dt>
                         <dd>{money(totals!.base)}</dd>
                       </div>
                       <div>
@@ -1043,10 +959,34 @@ export default function App() {
                       </div>
                     </dl>
                     <div className="profit-box">
-                      <span>Expected profit</span>
+                      <span>Expected gross profit</span>
                       <strong>{money(totals!.profit)}</strong>
-                      <small>{totals!.margin.toFixed(1)}% profit margin</small>
+                      <small>{totals!.margin.toFixed(1)}% gross margin</small>
                     </div>
+                    <dl>
+                      <div>
+                        <dt>Break-even selling price</dt>
+                        <dd>{money(totals!.breakEven)}</dd>
+                      </div>
+                      <div>
+                        <dt>Target gross margin</dt>
+                        <dd>{totals!.targetMargin}%</dd>
+                      </div>
+                      <div>
+                        <dt>Required price for target</dt>
+                        <dd>
+                          {totals!.targetPrice === null
+                            ? "Not achievable"
+                            : money(totals!.targetPrice)}
+                        </dd>
+                      </div>
+                    </dl>
+                    {totals!.belowTarget && (
+                      <div className="margin-warning" role="status">
+                        Expected gross margin is below the{" "}
+                        {totals!.targetMargin}% target.
+                      </div>
+                    )}
                     <p className="tiny">
                       Profit excludes tax. Pricing defaults are editable in
                       Settings; existing quotes keep their own settings.
@@ -1056,13 +996,7 @@ export default function App() {
                         <button
                           className="button secondary"
                           onClick={() => {
-                            if (!current.lines.length) {
-                              setError(
-                                "Add at least one line before marking sent.",
-                              );
-                              return;
-                            }
-                            saveQuote({ ...current, status: "Sent" });
+                            setReviewing(true);
                           }}
                         >
                           Mark as sent <ArrowUpRight size={17} />
@@ -1125,6 +1059,11 @@ export default function App() {
                     new quotes and newly added lines only.
                   </p>
                   <PricingFields value={settings} onChange={setSettings} />
+                  <QuoteDetailsEditor
+                    value={quoteDefaults}
+                    onChange={setQuoteDefaults}
+                    company
+                  />
                   <button
                     className="button"
                     onClick={() => {
@@ -1136,12 +1075,46 @@ export default function App() {
                         setError("Use non-negative pricing values.");
                         return;
                       }
-                      if (saveStore({ ...store, settings }))
+                      if (
+                        (settings.targetMargin ?? 0) >= 100 ||
+                        !Number.isInteger(settings.validityDays ?? 0)
+                      ) {
+                        setError(
+                          "Target margin must be below 100%; validity days must be a whole number.",
+                        );
+                        return;
+                      }
+                      if (saveStore({ ...store, settings, quoteDefaults }))
                         setNotice("Pricing defaults saved");
                     }}
                   >
                     <Check size={17} /> Save defaults
                   </button>
+                  <div className="data-tools">
+                    <button
+                      disabled={!!initial.error}
+                      className="button secondary"
+                      onClick={() => {
+                        const blob = new Blob(
+                          [JSON.stringify(store, null, 2)],
+                          { type: "application/json" },
+                        );
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = `backwoods-quotes-v2-${new Date().toISOString().slice(0, 10)}.json`;
+                        link.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      }}
+                    >
+                      Export data backup
+                    </button>
+                    <p className="muted">
+                      Includes private estimates and attached files. Keep this
+                      backup securely. V1 records are automatically backed up in
+                      browser storage before their first V2 save.
+                    </p>
+                  </div>
                   <div className="info">
                     <b>Development access</b>
                     <p>
@@ -1188,7 +1161,10 @@ export default function App() {
                       <Stat
                         label="Active quoted value"
                         value={money(
-                          active.reduce((s, q) => s + calculate(q).subtotal, 0),
+                          active.reduce(
+                            (s, q) => s + calculate(estimateFor(q)).subtotal,
+                            0,
+                          ),
                         )}
                         note={`${active.length} draft & sent quotes · before HST`}
                       />
@@ -1196,8 +1172,7 @@ export default function App() {
                         label="Expected job profit"
                         value={money(
                           accepted.reduce(
-                            (s, q) =>
-                              s + calculate(q.job?.snapshot ?? q).profit,
+                            (s, q) => s + calculate(estimateFor(q)).profit,
                             0,
                           ),
                         )}
@@ -1279,7 +1254,7 @@ export default function App() {
                   </div>
                   {listed.length ? (
                     listed.map((q, i) => {
-                      const t = calculate(q.job?.snapshot ?? q);
+                      const t = calculate(estimateFor(q));
                       return (
                         <button
                           className="project-row"
@@ -1295,9 +1270,10 @@ export default function App() {
                               <BriefcaseBusiness size={22} />
                             </div>
                             <div>
-                              <b>{q.name}</b>
+                              <b>{q.name || "Untitled quote"}</b>
                               <small>
-                                {q.customer.name} <span>· {q.number}</span>
+                                {q.customer.name || "Customer not added"}{" "}
+                                <span>· {q.number}</span>
                               </small>
                             </div>
                           </div>
@@ -1336,13 +1312,30 @@ export default function App() {
           </main>
         </div>
       </div>
+      {reviewing && current && (
+        <QuoteReview
+          quote={current}
+          onClose={() => setReviewing(false)}
+          onSend={() => {
+            if (saveQuote(markSent(current))) setReviewing(false);
+          }}
+        />
+      )}
       {preview && (
         <CustomerQuote
           quote={preview}
           onClose={() => setPreview(null)}
+          onDetails={(details) => {
+            const q = { ...preview, details };
+            if (preview.status === "Draft") {
+              if (saveQuote(q)) setPreview(q);
+            } else setPreview(q);
+          }}
           onMode={(mode) => {
             const q = { ...preview, mode };
-            if (saveQuote(q)) setPreview(q);
+            if (preview.status === "Draft") {
+              if (saveQuote(q)) setPreview(q);
+            } else setPreview(q);
           }}
         />
       )}
