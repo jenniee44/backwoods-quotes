@@ -1368,8 +1368,11 @@ export default function App() {
                       </button>
                     </div>
                     {store.quotes.some((q) => q.id === current.id) && (
-                      <details className="quote-delete-actions">
-                        <summary>Quote actions</summary>
+                      <section
+                        className="quote-delete-actions"
+                        aria-label="Quote actions"
+                      >
+                        <h3 className="subheading">Quote actions</h3>
                         <p className="tiny">
                           Permanently remove this quote from this device.
                           Existing jobs are preserved.
@@ -1380,7 +1383,7 @@ export default function App() {
                         >
                           <Trash2 size={16} /> Delete quote
                         </button>
-                      </details>
+                      </section>
                     )}
                   </aside>
                 </div>

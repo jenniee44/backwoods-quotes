@@ -726,10 +726,10 @@ fieldset:disabled select {
 .empty-inline .button {
   margin-top: 16px;
 }
+/* A tall summary must scroll with the page so its bottom actions stay reachable. */
 .summary {
   padding: 24px;
-  position: sticky;
-  top: 20px;
+  position: static;
 }
 .summary .eyebrow {
   font-size: 8px;
@@ -2026,10 +2026,6 @@ details[open] > summary {
   border-top: 1px solid #dce3dd;
   margin-top: 1.25rem;
   padding-top: 0.75rem;
-}
-.quote-delete-actions summary {
-  cursor: pointer;
-  padding: 0.5rem 0;
 }
 .quote-delete-actions .button {
   width: 100%;

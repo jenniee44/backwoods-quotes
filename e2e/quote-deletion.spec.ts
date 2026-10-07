@@ -27,10 +27,6 @@ async function openDelete(page: Page, name: string) {
   await page.getByRole("button", { name: new RegExp(name) }).click();
   await expect(
     page.getByRole("button", { name: "Delete quote", exact: true }),
-  ).toBeHidden();
-  await page.getByText("Quote actions", { exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Delete quote", exact: true }),
   ).toBeVisible();
 }
 async function stored(page: Page): Promise<Store> {
@@ -226,3 +222,58 @@ test("storage failure leaves the quote and editor intact and does not show delet
   expect(await page.evaluate(() => ({ ...localStorage }))).toEqual(before);
   await expect(page.getByText(/deleted permanently/)).toHaveCount(0);
 });
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1440, height: 1000 },
+]) {
+  test(`saved quote BW-1013 visibly exposes Delete quote without expanding a heading at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const store = seed();
+    const target = store.quotes[0];
+    target.number = "BW-1013";
+    await setup(page, store);
+    for (const status of ["Draft", "Sent", "Accepted", "Completed"] as const) {
+      const currentStore = {
+        ...store,
+        quotes: store.quotes.map((q) =>
+          q.id === target.id ? { ...q, status } : q,
+        ),
+      };
+      await setup(page, currentStore);
+      await page.getByRole("button", { name: new RegExp(target.name) }).click();
+      const actions = page.getByRole("region", {
+        name: "Quote actions",
+        exact: true,
+      });
+      await expect(
+        actions.getByRole("heading", { name: "Quote actions", exact: true }),
+      ).toBeVisible();
+      const button = actions.getByRole("button", {
+        name: "Delete quote",
+        exact: true,
+      });
+      await button.scrollIntoViewIfNeeded();
+      await expect(button).toBeVisible();
+      await expect(button).toBeInViewport();
+      await expect(button).toBeEnabled();
+      const before = await page.evaluate(() => ({ ...localStorage }));
+      page.once("dialog", async (dialog) => {
+        expect(dialog.message()).toContain("BW-1013");
+        expect(dialog.message()).toContain(target.name);
+        expect(dialog.message()).toContain(target.customer.name);
+        expect(dialog.message()).toContain("cannot be undone");
+        await dialog.dismiss();
+      });
+      await button.click();
+      expect(await page.evaluate(() => ({ ...localStorage }))).toEqual(before);
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
