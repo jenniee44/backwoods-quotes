@@ -1,15 +1,10 @@
 import type { PlanDocument } from "./model";
 import { validateDocuments } from "../shared/analysis";
-import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { loadPdfSource } from "./pdfSource";
 export async function validatePlanFile(document: PlanDocument): Promise<void> {
   validateDocuments([document]);
   if (document.type === "application/pdf") {
-    const pdf = await import("pdfjs-dist");
-    pdf.GlobalWorkerOptions.workerSrc = workerURL;
-    const data = Uint8Array.from(atob(document.data.split(",")[1]), (c) =>
-      c.charCodeAt(0),
-    );
-    const task = pdf.getDocument({ data });
+    const task = await loadPdfSource(document.data);
     try {
       const parsed = await task.promise;
       if (parsed.numPages > 50)

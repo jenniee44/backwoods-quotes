@@ -127,7 +127,15 @@ export async function handleAnalysis(
           .join("");
       const userHash = await hash(user);
       const fingerprint = await hash(
-        documents.map((d) => d.id + ":" + d.data).join("|"),
+        documents
+          .map(
+            (d) =>
+              d.id +
+              ":" +
+              d.data +
+              (d.detailRegions?.length ? JSON.stringify(d.detailRegions) : ""),
+          )
+          .join("|"),
       );
       const key = `request:${userHash}:${fingerprint}`;
       if (await env.ANALYSIS_LIMITS.get(key))

@@ -1899,15 +1899,125 @@ details[open] > summary {
 }
 
 /* Keep construction takeoff scannable without hiding review/approval actions. */
-.plan-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.plan-summary-grid h3 { margin: .5rem 0; font-size: .95rem; }
-.plan-summary-grid ul, .source-observations ul, .takeoff-evidence ul { padding-left: 1.2rem; margin: .4rem 0; }
-.takeoff-group { min-width: 0; }
-.takeoff-group > h3 { margin: 1.2rem 0 .6rem; border-bottom: 1px solid var(--border, #dce3dd); padding-bottom: .5rem; }
-.takeoff-group .line-card { margin-bottom: .8rem; }
-.takeoff-verification { border-left: 3px solid #ba862b; padding-left: .6rem; font-size: .85rem; }
-.takeoff-evidence { margin: .7rem 0; padding: .6rem; background: #f6f8f5; border-radius: .5rem; }
-.takeoff-evidence > summary, .source-observations > summary { cursor: pointer; font-weight: 600; font-size: .85rem; }
-.takeoff-evidence p, .takeoff-evidence li, .analysis-report li { overflow-wrap: anywhere; }
-.takeoff-evidence .fields { margin-top: .8rem; }
-@media (max-width: 600px) { .plan-summary-grid { grid-template-columns: minmax(0, 1fr); gap: .3rem; } }
+.plan-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.plan-summary-grid h3 {
+  margin: 0.5rem 0;
+  font-size: 0.95rem;
+}
+.plan-summary-grid ul,
+.source-observations ul,
+.takeoff-evidence ul {
+  padding-left: 1.2rem;
+  margin: 0.4rem 0;
+}
+.takeoff-group {
+  min-width: 0;
+}
+.takeoff-group > h3 {
+  margin: 1.2rem 0 0.6rem;
+  border-bottom: 1px solid var(--border, #dce3dd);
+  padding-bottom: 0.5rem;
+}
+.takeoff-group .line-card {
+  margin-bottom: 0.8rem;
+}
+.takeoff-verification {
+  border-left: 3px solid #ba862b;
+  padding-left: 0.6rem;
+  font-size: 0.85rem;
+}
+.takeoff-evidence {
+  margin: 0.7rem 0;
+  padding: 0.6rem;
+  background: #f6f8f5;
+  border-radius: 0.5rem;
+}
+.takeoff-evidence > summary,
+.source-observations > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.takeoff-evidence p,
+.takeoff-evidence li,
+.analysis-report li {
+  overflow-wrap: anywhere;
+}
+.takeoff-evidence .fields {
+  margin-top: 0.8rem;
+}
+@media (max-width: 600px) {
+  .plan-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.3rem;
+  }
+}
+
+/* Original PDF viewport: the scroll surface is virtual; only visible pixels are
+   rendered. Explicit sizes prevent old width:100% CSS from stretching a tile. */
+.pdf-zoom-controls {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.pdf-zoom-controls .field {
+  flex: 1 1 130px;
+}
+.pdf-zoom-controls button {
+  padding: 10px;
+}
+.pdf-scroll-viewport {
+  width: 100%;
+  height: min(60vh, 560px);
+  overflow: auto;
+  position: relative;
+  background: #e7eae5;
+  border: 1px solid #dce3dd;
+  border-radius: 6px;
+  overscroll-behavior: contain;
+}
+.pdf-page-surface {
+  position: relative;
+  background: white;
+}
+.pdf-preview .pdf-canvas {
+  max-width: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+}
+.pdf-detail-list {
+  border: 1px solid #dce3dd;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.pdf-detail-list > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+}
+.pdf-detail-list span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* Keep a large virtual sheet from contributing its width to the editor grid. */
+.pdf-scroll-viewport {
+  contain: size layout;
+  min-width: 0;
+  max-width: 100%;
+}
+.pdf-preview {
+  min-width: 0;
+  max-width: 100%;
+}

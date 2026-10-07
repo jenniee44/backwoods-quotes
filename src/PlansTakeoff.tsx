@@ -1,3 +1,6 @@
+import { preparePlanAnalysis } from "./preparePlanAnalysis";
+import { maxDetailRegions } from "../shared/pdf";
+import type { PdfDetailRegion } from "../shared/pdf";
 import {
   planAnalysisService,
   documentFingerprint,
@@ -21,7 +24,17 @@ import { Plus, Trash2 } from "lucide-react";
 import NumberInput from "./NumberInput";
 import { id, units, categories, takeoffToLine } from "./model";
 import type { Quote, PlanDocument, TakeoffItem, Kind } from "./model";
-function DocumentPreview({ document: d }: { document: PlanDocument }) {
+function DocumentPreview({
+  document: d,
+  onDetail,
+  detailsDisabled,
+  onDetailBusy,
+}: {
+  document: PlanDocument;
+  onDetail: (region: PdfDetailRegion) => void;
+  detailsDisabled: boolean;
+  onDetailBusy: (busy: boolean) => void;
+}) {
   const [url, setUrl] = useState("");
   useEffect(() => {
     const base64 = d.data.split(",")[1];
@@ -36,7 +49,12 @@ function DocumentPreview({ document: d }: { document: PlanDocument }) {
         Download {d.name}
       </a>
       {d.type === "application/pdf" ? (
-        <PdfPreview url={url} />
+        <PdfPreview
+          url={url}
+          onDetail={onDetail}
+          detailsDisabled={detailsDisabled}
+          onDetailBusy={onDetailBusy}
+        />
       ) : (
         <img className="plan-preview" src={url} alt={d.name} />
       )}
@@ -69,11 +87,29 @@ export default function PlansTakeoff({
   onViewEstimate?: () => void;
 }) {
   const [excludedDocuments, setExcludedDocuments] = useState<string[]>([]);
+  // Temporary lossless detail views. Bound to exact source bytes; not saved in
+  // customer records, persisted attachments, or reused after PDF replacement.
+  const [detailViews, setDetailViews] = useState<
+    {
+      id: string;
+      documentId: string;
+      originalData: string;
+      region: PdfDetailRegion;
+    }[]
+  >([]);
+  const validDetails = detailViews.filter((view) =>
+    q.documents.some(
+      (d) => d.id === view.documentId && d.data === view.originalData,
+    ),
+  );
   const latest = useRef(q);
   latest.current = q;
   const request = useRef<AbortController | null>(null);
   const [analysisState, setAnalysisState] = useState("Ready to analyze");
   const [analysisError, setAnalysisError] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  const [inputNotes, setInputNotes] = useState<string[]>([]);
+  const [detailRendering, setDetailRendering] = useState(false);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const takeoffGroups = [
@@ -96,16 +132,27 @@ export default function PlansTakeoff({
     [],
   );
   async function analyze() {
-    if (request.current || locked) return;
+    if (request.current || locked || detailRendering) return;
     const controller = new AbortController();
     request.current = controller;
     setAnalysisError("");
+    setReviewError("");
+    setInputNotes([]);
     setAnalysisState("Uploading/preparing");
     try {
       const documents = structuredClone(
-        latest.current.documents.filter(
-          (d) => !excludedDocuments.includes(d.id),
-        ),
+        latest.current.documents
+          .filter((d) => !excludedDocuments.includes(d.id))
+          .map((d) => ({
+            ...d,
+            ...(validDetails.some((v) => v.documentId === d.id)
+              ? {
+                  detailRegions: validDetails
+                    .filter((v) => v.documentId === d.id)
+                    .map((v) => v.region),
+                }
+              : {}),
+          })),
       );
       validateDocuments(documents);
       const fingerprint = await documentFingerprint(documents);
@@ -117,17 +164,51 @@ export default function PlansTakeoff({
         throw new Error(
           "These plans have already been analyzed. Review the existing proposed items.",
         );
+      const prepared = await preparePlanAnalysis(documents, controller.signal);
+      controller.signal.throwIfAborted();
+      setInputNotes(
+        prepared
+          .filter((d) => d.type === "application/pdf")
+          .flatMap((d) => {
+            const layer = d.pdfText;
+            const notes = [
+              `${d.name}: unchanged original PDF + selectable text from ${layer?.pages.filter((p) => p.text).length ?? 0} page(s) + ${d.detailRegions?.length ?? 0} lossless detail view(s).`,
+            ];
+            if (layer?.truncated)
+              notes.push(
+                `${d.name}: supplemental text was truncated at the request limit. Full original PDF is still sent; select fewer files or targeted detail views for missing notes.`,
+              );
+            for (const p of layer?.pages ?? [])
+              if (
+                p.status === "No selectable text" ||
+                p.status === "Unavailable"
+              )
+                notes.push(
+                  `${d.name}, page ${p.page}: ${p.status === "Unavailable" ? "selectable text extraction unavailable" : "no selectable text layer"}. Original PDF visuals remain available; no OCR guesses added.`,
+                );
+            return notes;
+          }),
+      );
       setAnalysisState("Analyzing plans");
       const result = await planAnalysisService.analyze(
-        documents,
+        prepared,
         controller.signal,
       );
       if (controller.signal.aborted) return;
       if (
         (await documentFingerprint(
-          latest.current.documents.filter((d) =>
-            documents.some((source) => source.id === d.id),
-          ),
+          latest.current.documents
+            .filter((d) => documents.some((source) => source.id === d.id))
+            .map((d) => ({
+              ...d,
+              ...(documents.find((source) => source.id === d.id)?.detailRegions
+                ? {
+                    detailRegions: documents.find(
+                      (source) => source.id === d.id,
+                    )!.detailRegions,
+                  }
+                : {}),
+            })),
         )) !== fingerprint
       )
         throw new Error(
@@ -160,12 +241,13 @@ export default function PlansTakeoff({
   ) {
     try {
       const next = action(item);
+      setReviewError("");
       onChange({
         ...q,
         takeoff: q.takeoff.map((t) => (t.id === item.id ? next : t)),
       });
     } catch (error) {
-      onError((error as Error).message);
+      setReviewError((error as Error).message);
     }
   }
   function bulkApprove(reviewedOnly = false) {
@@ -176,13 +258,14 @@ export default function PlansTakeoff({
     );
     try {
       const approved = chosen.map(approveTakeoff);
+      setReviewError("");
       onChange({
         ...q,
         takeoff: q.takeoff.map((t) => approved.find((a) => a.id === t.id) ?? t),
       });
       setSelectedItems([]);
     } catch (error) {
-      onError((error as Error).message);
+      setReviewError((error as Error).message);
     }
   }
   const [selected, setSelected] = useState<string | null>(null);
@@ -257,6 +340,7 @@ export default function PlansTakeoff({
     }
   }
   function patch(item: TakeoffItem, delta: Partial<TakeoffItem>) {
+    setReviewError("");
     onChange({
       ...q,
       takeoff: q.takeoff.map((t) =>
@@ -287,6 +371,7 @@ export default function PlansTakeoff({
           disabled={
             locked ||
             busy ||
+            detailRendering ||
             uploading ||
             !q.documents.some((d) => !excludedDocuments.includes(d.id))
           }
@@ -312,6 +397,16 @@ export default function PlansTakeoff({
         {uploading ? "Uploading/preparing" : analysisState}
       </p>
       {busy && <progress aria-label="Plan analysis progress" />}
+      {!!inputNotes.length && (
+        <details className="analysis-report">
+          <summary>Analysis source quality</summary>
+          <ul>
+            {inputNotes.map((note, i) => (
+              <li key={i}>{note}</li>
+            ))}
+          </ul>
+        </details>
+      )}
       {analysisError && (
         <p className="error" role="alert">
           {analysisError}
@@ -520,8 +615,88 @@ export default function PlansTakeoff({
           </div>
         ))}
       </div>
-      {current && <DocumentPreview document={current} />}
+      {current && (
+        <DocumentPreview
+          document={current}
+          onDetailBusy={setDetailRendering}
+          detailsDisabled={
+            locked ||
+            busy ||
+            uploading ||
+            validDetails.length >= maxDetailRegions
+          }
+          onDetail={(region) => {
+            if (validDetails.length >= maxDetailRegions) {
+              onError("Include up to four detail views per analysis.");
+              return;
+            }
+            if (
+              validDetails.some(
+                (v) =>
+                  v.documentId === current.id &&
+                  v.region.page === region.page &&
+                  v.region.x === region.x &&
+                  v.region.y === region.y &&
+                  v.region.width === region.width &&
+                  v.region.height === region.height,
+              )
+            ) {
+              onError("This PDF detail view is already included.");
+              return;
+            }
+            setDetailViews([
+              ...validDetails,
+              {
+                id: id(),
+                documentId: current.id,
+                originalData: current.data,
+                region,
+              },
+            ]);
+          }}
+        />
+      )}
+      {!!validDetails.length && (
+        <div className="pdf-detail-list">
+          <h3>Detail views included in analysis</h3>
+          <p className="tiny">
+            Temporary 250 DPI PNG views, rendered directly from the original
+            PDF. Up to four; original files + details must fit within 4 MB.
+            Re-add views after leaving this tab. Only views from selected source
+            files are sent.
+          </p>
+          {validDetails.map((view) => (
+            <div key={view.id}>
+              <span>
+                {q.documents.find((d) => d.id === view.documentId)?.name} · Page{" "}
+                {view.region.page} · {view.region.pixelWidth} ×{" "}
+                {view.region.pixelHeight} px · 250 DPI
+              </span>
+              <button
+                className="icon danger"
+                disabled={locked || busy}
+                aria-label={`Remove detail view ${view.region.page}`}
+                onClick={() =>
+                  setDetailViews(detailViews.filter((v) => v.id !== view.id))
+                }
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="tiny">
+        PDF analysis sends the unchanged original file plus its selectable text
+        when available. The preview canvas is never an analysis source. Add
+        detail views for fine notes on large sheets; no OCR guesses are used.
+      </p>
       <h3 className="subheading">Takeoff items</h3>
+      {reviewError && (
+        <p className="error" role="alert">
+          {reviewError}
+        </p>
+      )}
       <p className="muted">
         Changing a measurement resets it to Proposed. Replacing or removing a
         source document also requires re-review. Existing converted estimate
@@ -952,7 +1127,7 @@ export default function PlansTakeoff({
                         try {
                           onChange(takeoffToLine(q, t, e.target.value as Kind));
                         } catch (err) {
-                          onError((err as Error).message);
+                          setReviewError((err as Error).message);
                         }
                       }}
                     >

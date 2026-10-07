@@ -68,6 +68,12 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
     .getByRole("button", { name: "Approve selected reviewed items" })
     .click();
   await expect(page.getByText(/Review this proposed item first/)).toBeVisible();
+  // Saving must not erase the contractor review safeguard message.
+  await page.getByRole("button", { name: "Save quote", exact: true }).click();
+  await expect(page.getByText(/Review this proposed item first/)).toBeVisible();
+  await expect(
+    labour.getByRole("button", { name: "Approve item", exact: true }),
+  ).toBeDisabled();
   await labour.getByLabel("Takeoff quantity").fill("3");
   await labour
     .getByRole("button", { name: "Mark reviewed — I verified this item" })

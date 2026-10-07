@@ -1,3 +1,10 @@
+import {
+  validPdfText,
+  validatePdfRegion,
+  maxDetailRegions,
+  maxAnalysisTextChars,
+} from "./pdf";
+import type { PdfTextLayer, PdfDetailRegion } from "./pdf";
 import { prepareConstructionAnalysis } from "./takeoff";
 export const destinations = [
   "Labour",
@@ -330,6 +337,8 @@ export function validateAnalysis(
   );
 }
 export type AnalysisDocument = {
+  pdfText?: PdfTextLayer;
+  detailRegions?: PdfDetailRegion[];
   id: string;
   name: string;
   type: string;
@@ -340,6 +349,8 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
     throw new Error("Attach between one and eight plans.");
   const ids = new Set<string>();
   let total = 0;
+  let totalText = 0;
+  let regionCount = 0;
   for (const d of value) {
     if (
       !record(d) ||
@@ -382,11 +393,57 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
       throw new Error(
         "A plan is corrupted or its contents do not match its file type.",
       );
+    if (d.pdfText !== undefined) {
+      if (d.type !== "application/pdf" || !validPdfText(d.pdfText))
+        throw new Error(
+          "The PDF text layer is invalid. Reattach the original drawing.",
+        );
+      totalText += d.pdfText.pages.reduce((sum, p) => sum + p.text.length, 0);
+      if (totalText > maxAnalysisTextChars)
+        throw new Error(
+          "Too much extracted plan text for one request. Select fewer drawings.",
+        );
+    }
+    if (d.detailRegions !== undefined) {
+      if (d.type !== "application/pdf" || !Array.isArray(d.detailRegions))
+        throw new Error("Detail views must belong to an original PDF.");
+      for (const raw of d.detailRegions) {
+        const region = validatePdfRegion(raw);
+        if (d.pdfText && region.page > (d.pdfText as PdfTextLayer).pageCount)
+          throw new Error("This PDF detail page is invalid.");
+        regionCount++;
+        total += atob(region.data.split(",")[1]).length;
+        if (regionCount > maxDetailRegions)
+          throw new Error("Include up to four PDF detail views per analysis.");
+        if (total > 4_000_000)
+          throw new Error(
+            "Original files and lossless detail views must fit within 4 MB. Remove a detail or select fewer files; originals are never reduced.",
+          );
+      }
+    }
   }
   return value.map((d) => ({
     id: d.id,
     name: d.name,
     type: d.type,
     data: d.data,
+    ...(d.pdfText
+      ? {
+          pdfText: {
+            pageCount: d.pdfText.pageCount,
+            truncated: d.pdfText.truncated,
+            pages: d.pdfText.pages.map((page: import("./pdf").PdfTextPage) => ({
+              page: page.page,
+              width: page.width,
+              height: page.height,
+              text: page.text,
+              status: page.status,
+            })),
+          },
+        }
+      : {}),
+    ...(d.detailRegions
+      ? { detailRegions: d.detailRegions.map(validatePdfRegion) }
+      : {}),
   }));
 }

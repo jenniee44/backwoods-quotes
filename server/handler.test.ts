@@ -287,3 +287,95 @@ it("provider prioritizes contractor takeoff with supported calculations and pres
     ],
   });
 });
+
+it("sends the unchanged native PDF plus untrusted selectable text and separate 250 DPI detail, never a preview thumbnail", async () => {
+  const pixels = new Uint8Array(24);
+  pixels.set([137, 80, 78, 71, 13, 10, 26, 10]);
+  pixels.set([73, 72, 68, 82], 12);
+  new DataView(pixels.buffer).setUint32(16, 500);
+  new DataView(pixels.buffer).setUint32(20, 500);
+  const image = "data:image/png;base64," + btoa(String.fromCharCode(...pixels));
+  const source = {
+    ...document,
+    pdfText: {
+      pageCount: 1,
+      truncated: false,
+      pages: [
+        {
+          page: 1,
+          width: 2592,
+          height: 1728,
+          text: 'JOISTS 2x8 PT @ 16" O/C',
+          status: "Available" as const,
+        },
+      ],
+    },
+    detailRegions: [
+      {
+        page: 1,
+        x: 30,
+        y: 30,
+        width: 144,
+        height: 144,
+        pageWidth: 2592,
+        pageHeight: 1728,
+        dpi: 250,
+        pixelWidth: 500,
+        pixelHeight: 500,
+        data: image,
+      },
+    ],
+  };
+  let payload: Record<string, unknown> = {};
+  const provider = openAIProvider(
+    "test-only-placeholder",
+    undefined,
+    async (_url, init) => {
+      payload = JSON.parse(String(init?.body));
+      return Response.json({
+        status: "completed",
+        output: [
+          {
+            content: [
+              { type: "output_text", text: JSON.stringify(analysisFixture()) },
+            ],
+          },
+        ],
+      });
+    },
+  );
+  const response = await handleAnalysis(
+    req({ documents: [source] }),
+    { DEV_ALLOW_LOCAL: "true" },
+    provider,
+  );
+  expect(response.status).toBe(200);
+  const inputs = (payload.input as { content: Record<string, unknown>[] }[])[0]
+    .content;
+  expect(inputs.find((input) => input.type === "input_file")).toMatchObject({
+    file_data: document.data,
+    filename: "plan-1.pdf",
+  });
+  expect(inputs.find((input) => input.type === "input_image")).toMatchObject({
+    image_url: image,
+    detail: "high",
+  });
+  const strings = JSON.stringify(inputs);
+  expect(strings).toContain("untrustedEmbeddedPdfText");
+  expect(strings).toContain("JOISTS 2x8 PT");
+  expect(strings).toContain(
+    "250 DPI detail rendered directly from original PDF",
+  );
+  expect(strings).not.toContain("private-homeowner");
+  expect(payload.model).toBe("gpt-5.4-mini");
+});
+it("rejects low-resolution detail input before calling the secured provider", async () => {
+  const analyze = vi.fn();
+  const response = await handleAnalysis(
+    req({ documents: [{ ...document, detailRegions: [{ dpi: 72 }] }] }),
+    { DEV_ALLOW_LOCAL: "true" },
+    { analyze },
+  );
+  expect(response.status).toBe(400);
+  expect(analyze).not.toHaveBeenCalled();
+});

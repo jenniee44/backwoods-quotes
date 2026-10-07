@@ -3,7 +3,7 @@ import {
   semanticItemKey,
 } from "../shared/takeoff";
 import { id, categories, normalizeCategory } from "./model";
-import type { PlanDocument, Quote, TakeoffItem } from "./model";
+import type { Quote, TakeoffItem } from "./model";
 import { validateAnalysis, validateDocuments } from "../shared/analysis";
 import type {
   PlanAnalysisResult,
@@ -12,20 +12,25 @@ import type {
 export type { PlanAnalysisResult, AnalysisSuggestion };
 export interface PlanAnalysisService {
   analyze(
-    documents: PlanDocument[],
+    documents: import("../shared/analysis").AnalysisDocument[],
     signal?: AbortSignal,
   ): Promise<PlanAnalysisResult>;
 }
 export const planAnalysisService: PlanAnalysisService = {
   async analyze(documents, signal) {
     const payload = validateDocuments(documents);
+    const requestBody = JSON.stringify({ documents: payload });
+    if (new TextEncoder().encode(requestBody).length > 6_000_000)
+      throw new Error(
+        "The original plans, text and detail views exceed the request limit. Select fewer files/details; originals will not be reduced.",
+      );
     let response: Response;
     try {
       response = await fetch("/api/plan-analysis", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documents: payload }),
+        body: requestBody,
         signal,
       });
     } catch (error) {
@@ -59,7 +64,7 @@ export const planAnalysisService: PlanAnalysisService = {
   },
 };
 export async function documentFingerprint(
-  documents: PlanDocument[],
+  documents: import("../shared/analysis").AnalysisDocument[],
 ): Promise<string> {
   // SubtleCrypto is unavailable on unsecured LAN HTTP previews; don't weaken hashes.
   if (!crypto.subtle)
@@ -68,7 +73,12 @@ export async function documentFingerprint(
     );
   const bytes = new TextEncoder().encode(
     JSON.stringify(
-      documents.map((d) => ({ id: d.id, type: d.type, data: d.data })),
+      documents.map((d) => ({
+        id: d.id,
+        type: d.type,
+        data: d.data,
+        ...(d.detailRegions?.length ? { detailRegions: d.detailRegions } : {}),
+      })),
     ),
   );
   return Array.from(

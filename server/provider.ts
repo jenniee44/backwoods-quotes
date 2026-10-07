@@ -22,7 +22,7 @@ export function openAIProvider(
           ),
         },
       ];
-      documents.forEach((d, i) =>
+      documents.forEach((d, i) => {
         content.push(
           d.type === "application/pdf"
             ? {
@@ -31,8 +31,34 @@ export function openAIProvider(
                 file_data: d.data,
               }
             : { type: "input_image", image_url: d.data, detail: "high" },
-        ),
-      );
+        );
+        if (d.pdfText)
+          content.push({
+            type: "input_text",
+            text: JSON.stringify({
+              sourceId: d.id,
+              untrustedEmbeddedPdfText: d.pdfText,
+            }),
+          });
+        for (const [index, region] of (d.detailRegions ?? []).entries()) {
+          const { data, ...location } = region;
+          content.push({
+            type: "input_text",
+            text: JSON.stringify({
+              sourceId: d.id,
+              detailView: index + 1,
+              physicalPdfPage: region.page,
+              rotatedPageTopLeftPoints: location,
+              note: "250 DPI detail rendered directly from original PDF, not a preview thumbnail. Coordinates locate the region only; never infer site dimensions from pixels. Cite the original source ID and page.",
+            }),
+          });
+          content.push({
+            type: "input_image",
+            image_url: data,
+            detail: "high",
+          });
+        }
+      });
       const response = await request("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: {
