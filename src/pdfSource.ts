@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { detailDpi, detailRenderSize, maxPdfTextChars } from "../shared/pdf";
-import type { PdfDetailRegion, PdfTextLayer } from "../shared/pdf";
+import type { PdfDetailRegion, PdfTextLayer, PdfRotation } from "../shared/pdf";
 export async function loadPdfSource(data: string) {
   const pdf = await import("pdfjs-dist");
   pdf.GlobalWorkerOptions.workerSrc = workerURL;
@@ -73,8 +73,9 @@ export async function extractPdfText(
 export async function renderPdfDetail(
   page: PDFPageProxy,
   region: Pick<PdfDetailRegion, "x" | "y" | "width" | "height">,
+  rotation: PdfRotation = (((page.rotate % 360) + 360) % 360) as PdfRotation,
 ): Promise<PdfDetailRegion> {
-  const original = page.getViewport({ scale: 1 });
+  const original = page.getViewport({ scale: 1, rotation });
   if (
     region.x < 0 ||
     region.y < 0 ||
@@ -96,7 +97,7 @@ export async function renderPdfDetail(
     await page.render({
       canvas,
       canvasContext: context,
-      viewport: page.getViewport({ scale }),
+      viewport: page.getViewport({ scale, rotation }),
       transform: [1, 0, 0, 1, -region.x * scale, -region.y * scale],
     }).promise;
     const data = canvas.toDataURL("image/png"); // Lossless; never JPEG/recompress original.
@@ -106,6 +107,7 @@ export async function renderPdfDetail(
       );
     return {
       ...region,
+      rotation,
       page: page.pageNumber,
       pageWidth: original.width,
       pageHeight: original.height,

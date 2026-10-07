@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { previewRenderSize } from "../shared/pdf";
-import type { PdfDetailRegion } from "../shared/pdf";
+import { normalizeRotation, previewRenderSize } from "../shared/pdf";
+import type { PdfDetailRegion, PdfRotation } from "../shared/pdf";
 import { renderPdfDetail } from "./pdfSource";
 export default function PdfPreview({
   url,
   onDetail,
   detailsDisabled = false,
   onDetailBusy,
+  rotations,
+  onRotation,
 }: {
+  rotations: Record<number, PdfRotation>;
+  onRotation: (page: number, rotation: PdfRotation) => void;
   url: string;
   onDetail?: (detail: PdfDetailRegion) => void;
   detailsDisabled?: boolean;
@@ -17,8 +21,11 @@ export default function PdfPreview({
 }) {
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
+  const rotation = rotations[page] ?? 0;
   const [pageSize, setPageSize] = useState<{
     page: number;
+    rotation: PdfRotation;
+    viewerRotation: PdfRotation;
     width: number;
     height: number;
   } | null>(null);
@@ -78,8 +85,15 @@ export default function PdfPreview({
       .getPage(page)
       .then((p) => {
         if (canceled) return;
-        const viewport = p.getViewport({ scale: 1 });
-        setPageSize({ page, width: viewport.width, height: viewport.height });
+        const orientation = normalizeRotation(p.rotate + rotation);
+        const viewport = p.getViewport({ scale: 1, rotation: orientation });
+        setPageSize({
+          page,
+          rotation: orientation,
+          viewerRotation: rotation,
+          width: viewport.width,
+          height: viewport.height,
+        });
         scroller.current?.scrollTo(0, 0);
         setBox((b) => ({ ...b, left: 0, top: 0 }));
       })
@@ -92,7 +106,7 @@ export default function PdfPreview({
     return () => {
       canceled = true;
     };
-  }, [document, page]);
+  }, [document, page, rotation]);
   useEffect(() => {
     const node = scroller.current;
     if (!node) return;
@@ -109,6 +123,10 @@ export default function PdfPreview({
     measure();
     return () => observer.disconnect();
   }, [document]);
+  const pageReady =
+    !!pageSize &&
+    pageSize.page === page &&
+    pageSize.viewerRotation === rotation;
   const scale =
     zoom ?? (pageSize ? Math.min(1, box.width / pageSize.width) : 1);
   const cssWidth = pageSize ? pageSize.width * scale : box.width;
@@ -123,7 +141,7 @@ export default function PdfPreview({
     window.devicePixelRatio || 1,
   );
   useEffect(() => {
-    if (!document || !pageSize || pageSize.page !== page) return;
+    if (!document || !pageSize || !pageReady) return;
     let canceled = false;
     let task: RenderTask | undefined;
     const previous = pending.current;
@@ -138,7 +156,10 @@ export default function PdfPreview({
       if (!context) throw new Error("Canvas unavailable");
       canvas.current.width = pixels.pixelWidth;
       canvas.current.height = pixels.pixelHeight;
-      const viewport = p.getViewport({ scale: scale * pixels.density });
+      const viewport = p.getViewport({
+        scale: scale * pixels.density,
+        rotation: pageSize.rotation,
+      });
       task = p.render({
         canvas: canvas.current,
         canvasContext: context,
@@ -164,6 +185,7 @@ export default function PdfPreview({
   }, [
     document,
     pageSize,
+    pageReady,
     page,
     scale,
     left,
@@ -187,7 +209,7 @@ export default function PdfPreview({
     });
   }
   async function includeDetail() {
-    if (!document || !pageSize || !onDetail || capturing) return;
+    if (!document || !pageSize || !pageReady || !onDetail || capturing) return;
     onDetailBusy?.(true);
     setCapturing(true);
     setDetailError("");
@@ -196,12 +218,16 @@ export default function PdfPreview({
         const p = await document.getPage(page);
         // Separate high-resolution rendering from original operators, NEVER copy
         // or upscale the preview canvas. Cap size by refusing oversized regions.
-        const detail = await renderPdfDetail(p, {
-          x: left / scale,
-          y: top / scale,
-          width: visibleWidth / scale,
-          height: visibleHeight / scale,
-        });
+        const detail = await renderPdfDetail(
+          p,
+          {
+            x: left / scale,
+            y: top / scale,
+            width: visibleWidth / scale,
+            height: visibleHeight / scale,
+          },
+          pageSize.rotation,
+        );
         if (active.current) onDetail(detail);
       } catch (e) {
         if (active.current) setDetailError((e as Error).message);
@@ -240,6 +266,23 @@ export default function PdfPreview({
             </button>
           </div>
           <div className="pdf-zoom-controls">
+            <button
+              className="button secondary"
+              disabled={capturing || rendering || !pageReady}
+              onClick={() => onRotation(page, normalizeRotation(rotation - 90))}
+            >
+              Rotate left
+            </button>
+            <button
+              className="button secondary"
+              disabled={capturing || rendering || !pageReady}
+              onClick={() => onRotation(page, normalizeRotation(rotation + 90))}
+            >
+              Rotate right
+            </button>
+            <span className="tiny" aria-label="Viewer rotation">
+              {rotation}°
+            </span>
             <label className="field">
               <span>Zoom drawing</span>
               <select
@@ -324,7 +367,7 @@ export default function PdfPreview({
         <>
           <button
             className="button secondary"
-            disabled={detailsDisabled || capturing || rendering || !pageSize}
+            disabled={detailsDisabled || capturing || rendering || !pageReady}
             onClick={() => void includeDetail()}
           >
             {capturing

@@ -1,6 +1,6 @@
 import { preparePlanAnalysis } from "./preparePlanAnalysis";
 import { maxDetailRegions } from "../shared/pdf";
-import type { PdfDetailRegion } from "../shared/pdf";
+import type { PdfDetailRegion, PdfRotation } from "../shared/pdf";
 import {
   planAnalysisService,
   documentFingerprint,
@@ -29,7 +29,11 @@ function DocumentPreview({
   onDetail,
   detailsDisabled,
   onDetailBusy,
+  rotations,
+  onRotation,
 }: {
+  rotations: Record<number, PdfRotation>;
+  onRotation: (page: number, rotation: PdfRotation) => void;
   document: PlanDocument;
   onDetail: (region: PdfDetailRegion) => void;
   detailsDisabled: boolean;
@@ -51,6 +55,8 @@ function DocumentPreview({
       {d.type === "application/pdf" ? (
         <PdfPreview
           url={url}
+          rotations={rotations}
+          onRotation={onRotation}
           onDetail={onDetail}
           detailsDisabled={detailsDisabled}
           onDetailBusy={onDetailBusy}
@@ -73,13 +79,21 @@ const Field = ({
     {children}
   </label>
 );
+export type PdfOrientations = Record<
+  string,
+  { source: string; pages: Record<number, PdfRotation> }
+>;
 export default function PlansTakeoff({
+  orientations,
+  setOrientations,
   quote: q,
   locked,
   onChange,
   onError,
   onViewEstimate,
 }: {
+  orientations: PdfOrientations;
+  setOrientations: React.Dispatch<React.SetStateAction<PdfOrientations>>;
   quote: Quote;
   locked: boolean;
   onChange: (q: Quote) => void;
@@ -618,6 +632,25 @@ export default function PlansTakeoff({
       {current && (
         <DocumentPreview
           document={current}
+          rotations={
+            orientations[current.id]?.source === current.data
+              ? orientations[current.id].pages
+              : {}
+          }
+          onRotation={(page, rotation) =>
+            setOrientations((previous) => ({
+              ...previous,
+              [current.id]: {
+                source: current.data,
+                pages: {
+                  ...(previous[current.id]?.source === current.data
+                    ? previous[current.id].pages
+                    : {}),
+                  [page]: rotation,
+                },
+              },
+            }))
+          }
           onDetailBusy={setDetailRendering}
           detailsDisabled={
             locked ||
@@ -635,6 +668,7 @@ export default function PlansTakeoff({
                 (v) =>
                   v.documentId === current.id &&
                   v.region.page === region.page &&
+                  v.region.rotation === region.rotation &&
                   v.region.x === region.x &&
                   v.region.y === region.y &&
                   v.region.width === region.width &&
@@ -670,7 +704,8 @@ export default function PlansTakeoff({
               <span>
                 {q.documents.find((d) => d.id === view.documentId)?.name} · Page{" "}
                 {view.region.page} · {view.region.pixelWidth} ×{" "}
-                {view.region.pixelHeight} px · 250 DPI
+                {view.region.pixelHeight} px · 250 DPI ·{" "}
+                {view.region.rotation ?? 0}°
               </span>
               <button
                 className="icon danger"

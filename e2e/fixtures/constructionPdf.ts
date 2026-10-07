@@ -13,8 +13,15 @@ export function constructionPdf({
   width = 2592,
   height = 1728,
   pages = 1,
+  rotation = 0,
   notes = constructionNotes,
-}: { width?: number; height?: number; pages?: number; notes?: string[] } = {}) {
+}: {
+  width?: number;
+  height?: number;
+  pages?: number;
+  rotation?: 0 | 90 | 180 | 270;
+  notes?: string[];
+} = {}) {
   const escape = (s: string) =>
     s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
   const objects: string[] = [
@@ -25,7 +32,7 @@ export function constructionPdf({
   for (let page = 0; page < pages; page++) {
     const stream = `0.35 w 30 30 ${width - 60} ${height - 60} re S\n30 ${height - 200} 420 150 re S\nBT /F1 6 Tf 40 ${height - 45} Td 12 TL\n${notes.map((note) => `(${escape(note)}) Tj T*`).join("\n")}\nET`;
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /Rotate ${rotation} /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
     );
     objects.push(
       `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,

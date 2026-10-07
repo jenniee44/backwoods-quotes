@@ -319,6 +319,7 @@ it("sends the unchanged native PDF plus untrusted selectable text and separate 2
         height: 144,
         pageWidth: 2592,
         pageHeight: 1728,
+        rotation: 270 as const,
         dpi: 250,
         pixelWidth: 500,
         pixelHeight: 500,
@@ -366,6 +367,15 @@ it("sends the unchanged native PDF plus untrusted selectable text and separate 2
   expect(strings).toContain(
     "250 DPI detail rendered directly from original PDF",
   );
+  expect(
+    inputs
+      .filter((input) => input.type === "input_text")
+      .map((input) => JSON.parse(String(input.text)))
+      .find((input) => input.detailView === 1),
+  ).toMatchObject({
+    clockwiseOrientationDegrees: 270,
+    rotatedPageTopLeftPoints: { rotation: 270 },
+  });
   expect(strings).not.toContain("private-homeowner");
   expect(payload.model).toBe("gpt-5.4-mini");
 });

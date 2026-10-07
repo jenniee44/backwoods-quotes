@@ -4,7 +4,7 @@ import CustomerQuote from "./CustomerQuote";
 import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
 import QuoteDetailsEditor from "./QuoteDetailsEditor";
-import PlansTakeoff from "./PlansTakeoff";
+import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import {
   TreePine,
@@ -147,6 +147,8 @@ function Stat({
 }
 
 export default function App() {
+  // View-only state; never written to quote storage or customer documents.
+  const [pdfOrientations, setPdfOrientations] = useState<PdfOrientations>({});
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [initial] = useState(() => {
     try {
@@ -886,6 +888,8 @@ export default function App() {
                     )}
                     {tab === "Plans & Takeoff" && (
                       <PlansTakeoff
+                        orientations={pdfOrientations}
+                        setOrientations={setPdfOrientations}
                         onViewEstimate={() => setTab("Materials")}
                         quote={current}
                         locked={locked}

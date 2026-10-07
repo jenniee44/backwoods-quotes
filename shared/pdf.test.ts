@@ -4,6 +4,7 @@ import {
   validatePdfRegion,
   validPdfText,
   previewRenderSize,
+  normalizeRotation,
 } from "./pdf";
 import { validateDocuments } from "./analysis";
 function png(width: number, height: number) {
@@ -81,6 +82,9 @@ it("large sheets cannot be silently reduced to thumbnails", () => {
   });
 });
 it.each([
+  { rotation: 45 },
+  { rotation: "90" },
+  { rotation: -90 },
   { dpi: 72 },
   { pixelWidth: 900 },
   { width: 3000 },
@@ -143,4 +147,20 @@ it("allocates only a Safari-safe Retina viewport, not an entire huge drawing", (
   const view = previewRenderSize(900, 1000, 3);
   expect(view.pixelWidth).toBeLessThanOrEqual(2048);
   expect(view.pixelHeight).toBeLessThanOrEqual(2048);
+});
+
+it.each([0, 90, 180, 270] as const)(
+  "preserves %i-degree detail orientation in validated analysis",
+  (rotation) => {
+    expect(
+      validateDocuments([
+        { ...pdf, detailRegions: [{ ...region, rotation }] },
+      ])[0].detailRegions?.[0],
+    ).toEqual({ ...region, rotation });
+  },
+);
+it("wraps left/right quarter turns", () => {
+  expect(normalizeRotation(-90)).toBe(270);
+  expect(normalizeRotation(360)).toBe(0);
+  expect(normalizeRotation(450)).toBe(90);
 });

@@ -1,5 +1,9 @@
 // Physical PDF coordinates in the rotated page viewport, top-left origin, at
 // scale=1 (72 points/inch). These identify a detail region, NOT site measurements.
+export type PdfRotation = 0 | 90 | 180 | 270;
+export function normalizeRotation(degrees: number): PdfRotation {
+  return (((degrees % 360) + 360) % 360) as PdfRotation;
+}
 export const detailDpi = 250;
 export const maxDetailPixels = 8_000_000;
 export const maxDetailSide = 4096;
@@ -19,6 +23,8 @@ export type PdfTextLayer = {
   truncated: boolean;
 };
 export type PdfDetailRegion = {
+  // Absolute clockwise PDF.js viewport orientation, including intrinsic /Rotate.
+  rotation?: PdfRotation;
   page: number;
   x: number;
   y: number;
@@ -94,6 +100,9 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
   if (
     !record(value) ||
     !pageNumber(value.page) ||
+    (value.rotation !== undefined &&
+      ![0, 90, 180, 270].includes(Number(value.rotation))) ||
+    (value.rotation !== undefined && typeof value.rotation !== "number") ||
     !positive(value.width) ||
     !positive(value.height) ||
     !positive(value.pageWidth) ||
@@ -138,6 +147,9 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     return fail();
   // Explicit projection; ignore client-only properties and arbitrary metadata.
   return {
+    ...(value.rotation !== undefined
+      ? { rotation: value.rotation as PdfRotation }
+      : {}),
     page: Number(value.page),
     x: Number(value.x),
     y: Number(value.y),

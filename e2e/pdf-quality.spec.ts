@@ -221,3 +221,217 @@ test("replaced originals invalidate temporary details rather than analyzing a st
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
 });
+test("quarter-turn rotation preserves page state, fit/zoom/panning and exact original-source detail orientation", async ({
+  page,
+}) => {
+  const original = Buffer.from(constructionPdf({ pages: 2 }), "ascii");
+  const captures: {
+    documents: {
+      data: string;
+      detailRegions: {
+        rotation: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        pageWidth: number;
+        pageHeight: number;
+        dpi: number;
+        data: string;
+        pixelWidth: number;
+        pixelHeight: number;
+      }[];
+    }[];
+  }[] = [];
+  await page.route("**/api/plan-analysis", async (route) => {
+    captures.push(route.request().postDataJSON());
+    await route.fulfill({
+      json: analysisFixture(route.request().postDataJSON().documents[0].id),
+    });
+  });
+  await openPdf(page, original);
+  const ready = async () => {
+    await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Rotate right", exact: true }),
+    ).toBeEnabled();
+  };
+  for (const angle of [90, 180, 270, 0]) {
+    await page
+      .getByRole("button", { name: "Rotate right", exact: true })
+      .click();
+    await expect(page.getByLabel("Viewer rotation")).toHaveText(`${angle}°`);
+    await ready();
+    await page.getByLabel("Zoom drawing").selectOption("3");
+    await ready();
+    const dimensions = await page
+      .locator(".pdf-page-surface")
+      .evaluate((node) => ({
+        width: node.getBoundingClientRect().width,
+        height: node.getBoundingClientRect().height,
+      }));
+    expect(dimensions).toEqual({
+      width: (angle % 180 ? 1728 : 2592) * 3,
+      height: (angle % 180 ? 2592 : 1728) * 3,
+    });
+    await page
+      .locator(".pdf-scroll-viewport")
+      .evaluate((node) => node.scrollTo(300, 150));
+    await expect(page.locator(".pdf-canvas")).toHaveCSS("left", "300px");
+    await expect(page.locator(".pdf-canvas")).toHaveCSS("top", "150px");
+    await ready();
+    const visible = await page.locator(".pdf-canvas").evaluate((node) => ({
+      width: node.getBoundingClientRect().width / 3,
+      height: node.getBoundingClientRect().height / 3,
+      bitmapWidth: (node as HTMLCanvasElement).width,
+    }));
+    await page
+      .getByRole("button", {
+        name: "Include this view in analysis (250 DPI)",
+        exact: true,
+      })
+      .click();
+    await expect(page.locator(".pdf-detail-list")).toContainText(`${angle}°`);
+    // Capture coordinates are the exact visible rotated viewport, at 72 pt/inch.
+    await page.getByRole("button", { name: "Fit sheet", exact: true }).click();
+    await ready();
+    await expect(page.getByLabel("Zoom drawing")).toHaveValue("fit");
+    const fit = await page.locator(".pdf-scroll-viewport").evaluate((node) => ({
+      available: node.clientWidth,
+      surface: node.firstElementChild!.getBoundingClientRect().width,
+    }));
+    expect(Math.abs(fit.available - fit.surface)).toBeLessThan(1);
+    // Visible detail sizes differ from preview pixels and stay at 250 DPI.
+    expect(visible.width).toBeGreaterThan(0);
+  }
+  await page
+    .getByRole("button", { name: "Analyze Plans", exact: true })
+    .click();
+  await expect(
+    page.getByText("Analysis complete — needs review", { exact: true }),
+  ).toBeVisible();
+  const source = captures[0].documents[0];
+  expect(Buffer.from(source.data.split(",")[1], "base64")).toEqual(original);
+  expect(source.detailRegions.map((r) => r.rotation)).toEqual([
+    90, 180, 270, 0,
+  ]);
+  for (const r of source.detailRegions) {
+    expect(r.x).toBe(100);
+    expect(r.y).toBe(50);
+    expect(r.pageWidth).toBe(r.rotation % 180 ? 1728 : 2592);
+    expect(r.pageHeight).toBe(r.rotation % 180 ? 2592 : 1728);
+    expect(r.dpi).toBe(250);
+    expect(r.pixelWidth).toBe(Math.ceil((r.width * 250) / 72));
+    expect(r.pixelHeight).toBe(Math.ceil((r.height * 250) / 72));
+    // Independent PDF.js render from the uploaded original checks crop transform
+    // and orientation against the actual submitted lossless PNG bytes.
+    const reference = await page.evaluate(
+      async ({ data, region }) => {
+        const pdf = await import(
+          /* @vite-ignore */ "/node_modules/pdfjs-dist/build/pdf.mjs"
+        );
+        pdf.GlobalWorkerOptions.workerSrc =
+          "/node_modules/pdfjs-dist/build/pdf.worker.mjs";
+        const task = pdf.getDocument({
+          data: Uint8Array.from(atob(data.split(",")[1]), (c) =>
+            c.charCodeAt(0),
+          ),
+        });
+        const doc = await task.promise;
+        const p = await doc.getPage(1);
+        const canvas = document.createElement("canvas");
+        canvas.width = region.pixelWidth;
+        canvas.height = region.pixelHeight;
+        const scale = 250 / 72;
+        await p.render({
+          canvas,
+          canvasContext: canvas.getContext("2d")!,
+          viewport: p.getViewport({ scale, rotation: region.rotation }),
+          transform: [1, 0, 0, 1, -region.x * scale, -region.y * scale],
+        }).promise;
+        const png = canvas.toDataURL("image/png");
+        await task.destroy();
+        return png;
+      },
+      { data: source.data, region: r },
+    );
+    expect(r.data).toBe(reference);
+  }
+  await page.getByRole("button", { name: "Rotate left", exact: true }).click();
+  await ready();
+  await expect(page.getByLabel("Viewer rotation")).toHaveText("270°");
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await ready();
+  await expect(page.getByLabel("Viewer rotation")).toHaveText("0°");
+  await page.getByRole("button", { name: "Rotate right", exact: true }).click();
+  await ready();
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await ready();
+  await expect(page.getByLabel("Viewer rotation")).toHaveText("270°");
+  await page.getByRole("button", { name: "Materials", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Plans & Takeoff", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "crisp-36x24-sheet.pdf", exact: true })
+    .click();
+  await ready();
+  await expect(page.getByLabel("Viewer rotation")).toHaveText("270°");
+  const downloadPromise = page.waitForEvent("download");
+  await page
+    .getByRole("link", { name: "Download crisp-36x24-sheet.pdf", exact: true })
+    .click();
+  expect(readFileSync((await (await downloadPromise).path())!)).toEqual(
+    original,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("intrinsically rotated PDF combines viewer turns and resets orientation/details when replaced", async ({
+  page,
+}) => {
+  const original = Buffer.from(constructionPdf({ rotation: 90 }), "ascii");
+  await openPdf(page, original);
+  await page.getByLabel("Zoom drawing").selectOption("3");
+  await expect(
+    page.getByRole("button", { name: "Rotate right", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Rotate right", exact: true }).click();
+  await expect(page.getByLabel("Viewer rotation")).toHaveText("90°");
+  await expect(
+    page.getByRole("button", { name: "Rotate right", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator(".pdf-page-surface")).toHaveCSS("width", "7776px");
+  await page
+    .getByRole("button", {
+      name: "Include this view in analysis (250 DPI)",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".pdf-detail-list")).toContainText("180°");
+  await page.route("**/api/plan-analysis", async (route) => {
+    const source = route.request().postDataJSON().documents[0];
+    expect(source.detailRegions[0].rotation).toBe(180);
+    expect(Buffer.from(source.data.split(",")[1], "base64")).toEqual(original);
+    await route.fulfill({ json: analysisFixture(source.id) });
+  });
+  await page
+    .getByRole("button", { name: "Analyze Plans", exact: true })
+    .click();
+  await expect(
+    page.getByText("Analysis complete — needs review", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Replace crisp-36x24-sheet.pdf")
+    .setInputFiles({
+      name: "replacement.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from(constructionPdf(), "ascii"),
+    });
+  await expect(page.getByLabel("Viewer rotation")).toHaveText("0°");
+  await expect(page.locator(".pdf-detail-list")).toHaveCount(0);
+});
