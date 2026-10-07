@@ -32,6 +32,17 @@ export default function QuoteDetailsEditor({
           ),
         )}
       </div>
+      <label className="check-options">
+        <input
+          type="checkbox"
+          checked={!!value.exposeContingency}
+          onChange={(e) =>
+            onChange({ ...value, exposeContingency: e.target.checked })
+          }
+        />
+        Show contingency as a customer allowance (otherwise included in scope
+        prices)
+      </label>
       <p className="muted">
         Labour hours are hidden by default. Grouped quotes show each scope
         group's total; internal details remain private.

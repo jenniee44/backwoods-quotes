@@ -35,12 +35,14 @@ export default function NumberInput({
         else e.target.select();
       }}
       onChange={(e) => {
-        const raw = e.target.value;
+        const raw = e.target.value.replace(/^0+(?=\d)/, "");
         setText(raw);
-        onChange(raw === "" ? (nullable ? NaN : 0) : Number(raw));
+        if (raw !== "") onChange(Number(raw));
       }}
       onBlur={() => {
         focused.current = false;
+        if (text === "" && (nullable ? value != null : value !== 0))
+          onChange(nullable ? NaN : 0);
         setText(text === "" ? (nullable ? "" : "0") : String(Number(text)));
       }}
     />

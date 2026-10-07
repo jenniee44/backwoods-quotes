@@ -1,5 +1,11 @@
 import { ArrowLeft, Printer, TreePine } from "lucide-react";
-import { calculate, estimateFor, money, detailLabels } from "./model";
+import {
+  calculate,
+  estimateFor,
+  money,
+  detailLabels,
+  responsibilityText,
+} from "./model";
 import { customerRows } from "./customerDocument";
 import type { Quote, QuoteDetails } from "./model";
 
@@ -116,12 +122,6 @@ export default function CustomerQuote({
                     <td>{money(l.amount)}</td>
                   </tr>
                 ))}
-                {t.overhead + t.contingency !== 0 && (
-                  <tr>
-                    <td>Project coordination & allowances</td>
-                    <td>{money(t.overhead + t.contingency)}</td>
-                  </tr>
-                )}
               </>
             )}
           </tbody>
@@ -149,7 +149,11 @@ export default function CustomerQuote({
           .map((k) => (
             <section className="document-terms" key={k}>
               <h3>{detailLabels[k].toUpperCase()}</h3>
-              <p>{q.details[k]}</p>
+              <p>
+                {k === "permits" || k === "engineering"
+                  ? responsibilityText(k, q.details[k])
+                  : q.details[k]}
+              </p>
             </section>
           ))}
         <section className="acceptance">

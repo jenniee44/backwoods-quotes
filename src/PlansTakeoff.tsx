@@ -126,7 +126,10 @@ export default function PlansTakeoff({
   return (
     <>
       <div className="info">
-        <b>Contractor-reviewed takeoff</b>
+        <b>
+          Upload plans → Proposed takeoff → Contractor review → Approve →
+          Convert to estimate
+        </b>
         <p>
           Record your measurements from plans. This version does not interpret
           drawings or check engineering. Future AI results must enter as
@@ -134,6 +137,13 @@ export default function PlansTakeoff({
           assessment.
         </p>
       </div>
+      <button
+        className="button secondary"
+        disabled
+        title="Manual takeoff only; future analysis requires contractor approval"
+      >
+        Analyze plans · coming later
+      </button>
       <h3 className="subheading">Plans & documents</h3>
       <p className="muted">
         PDF plans, engineer drawings or photos · up to 8 files, 2 MB each.

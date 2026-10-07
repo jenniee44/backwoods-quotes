@@ -12,7 +12,12 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
   await page.getByLabel("Customer name *").fill("Numeric customer");
   await page.getByLabel("Job name *").fill("Numeric entry");
   for (const kind of ["Labour", "Materials", "Other Costs"]) {
-    await page.getByRole("button", { name: kind, exact: true }).click();
+    await page
+      .getByRole("button", {
+        name: kind === "Other Costs" ? "Subcontractors & Other Costs" : kind,
+        exact: true,
+      })
+      .click();
     await page
       .getByRole("button", {
         name:
@@ -34,6 +39,7 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
     await expect(cost).toHaveValue("12.5");
     await cost.fill("");
     await expect(cost).toHaveValue("");
+    await cost.blur();
     await expect(page.locator(".line-footer")).toContainText("$0.00");
     await cost.fill("18");
     const override = page.getByLabel("Selling price override ($)");
@@ -89,7 +95,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await page.getByLabel("Customer name *").fill("Deck customer");
   await page.getByLabel("Job name *").fill("Muskoka deck");
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Apply Deck template" }).click();
+  await page.getByLabel("Apply construction template").selectOption("deck");
   await page
     .getByLabel("Payment / deposit schedule")
     .fill("20% deposit, balance at completion.");
@@ -245,7 +251,7 @@ test("V1 browser records migrate safely and sent quotes stay locked after defaul
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("Internal labour cost ($/hour)").fill("50");
   await page.getByLabel("Customer labour rate ($/hour)").fill("120");
-  await page.getByLabel("Other Costs markup (%)").fill("20");
+  await page.getByLabel("Other Costs / subcontractor markup (%)").fill("20");
   await page.getByLabel("Default quote validity (days)").fill("30");
   await page.getByLabel("Payment / deposit schedule").fill("Deposit required");
   await page.getByRole("button", { name: "Save defaults" }).click();

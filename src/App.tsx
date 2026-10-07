@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import CustomerQuote from "./CustomerQuote";
 import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
@@ -26,7 +26,8 @@ import {
   calculate,
   estimateFor,
   applyTemplate,
-  deckTemplate,
+  constructionTemplates,
+  expiryFor,
   markSent,
   categories,
   convert,
@@ -64,7 +65,7 @@ const priceLabels: Record<keyof Pricing, string> = {
   contingency: "Contingency (%)",
   hst: "HST (%)",
   internalLabourCost: "Internal labour cost ($/hour)",
-  otherMarkup: "Other Costs markup (%)",
+  otherMarkup: "Other Costs / subcontractor markup (%)",
   targetMargin: "Target minimum gross margin (%)",
   validityDays: "Default quote validity (days)",
 };
@@ -72,16 +73,19 @@ function PricingFields({
   value,
   onChange,
   disabled = false,
+  company = false,
 }: {
   value: Pricing;
   onChange: (p: Pricing) => void;
+  company?: boolean;
   disabled?: boolean;
 }) {
-  return (
+  const fields = (keys: (keyof Pricing)[]) => (
     <div className="fields">
-      {(Object.keys(priceLabels) as (keyof Pricing)[]).map((k) => (
+      {keys.map((k) => (
         <Field key={k} label={priceLabels[k]}>
           <NumberInput
+            step="1"
             value={value[k]}
             disabled={disabled}
             onChange={(n) => onChange({ ...value, [k]: n })}
@@ -90,7 +94,30 @@ function PricingFields({
       ))}
     </div>
   );
+  const normal = [
+    "labourRate",
+    "materialMarkup",
+    "otherMarkup",
+    "overhead",
+    "contingency",
+    "hst",
+    "targetMargin",
+  ] as (keyof Pricing)[];
+  return (
+    <>
+      {fields(
+        company ? (Object.keys(priceLabels) as (keyof Pricing)[]) : normal,
+      )}
+      {!company && (
+        <details className="advanced-pricing">
+          <summary>Advanced pricing</summary>
+          {fields(["internalLabourCost", "validityDays"])}
+        </details>
+      )}
+    </>
+  );
 }
+
 function Stat({
   label,
   value,
@@ -122,7 +149,8 @@ export default function App() {
   });
   const [store, setStore] = useState<Store>(initial.store),
     [error, setError] = useState(initial.error),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [saveState, setSaveState] = useState("Saved");
   const [role, setRole] = useState<Role>("Admin/Owner"),
     [page, setPage] = useState("Overview"),
     [filter, setFilter] = useState("All"),
@@ -158,10 +186,12 @@ export default function App() {
       return false;
     }
   }
-  function saveQuote(q: Quote, close = false) {
+  function saveQuote(q: Quote, close = false, silent = false) {
+    setSaveState("Saving…");
     const problem = validate(q);
     if (problem) {
       setError(problem);
+      setSaveState("Save failed");
       return false;
     }
     const stored = store.quotes.find((x) => x.id === q.id);
@@ -194,6 +224,7 @@ export default function App() {
       setError(
         "This historical quote is locked. Duplicate it to revise the estimate.",
       );
+      setSaveState("Save failed");
       return false;
     }
     const exists = !!stored;
@@ -205,13 +236,29 @@ export default function App() {
           : [q, ...store.quotes],
       })
     ) {
-      setNotice("Saved on this device");
+      setSaveState("Saved");
+      if (!silent) setNotice("Saved on this device");
       if (close) setEditing(null);
       else setEditing(q);
       return true;
     }
+    setSaveState("Save failed");
     return false;
   }
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  useEffect(() => {
+    if (
+      !editing ||
+      initial.error ||
+      JSON.stringify(editing) ===
+        JSON.stringify(storeRef.current.quotes.find((q) => q.id === editing.id))
+    )
+      return;
+    setSaveState("Saving…");
+    const timer = setTimeout(() => saveQuote(editing, false, true), 600);
+    return () => clearTimeout(timer);
+  }, [editing, initial.error]);
   function navigate(p: string, f = "All") {
     if (
       editing &&
@@ -439,6 +486,12 @@ export default function App() {
                       </span>
                     </div>
                     <h1>{current.name || "New quote"}</h1>
+                    <div
+                      className={`save-indicator ${saveState === "Save failed" ? "failed" : ""}`}
+                      role="status"
+                    >
+                      {saveState} · stored on this device
+                    </div>
                     <p>
                       {locked
                         ? "Original estimate is locked. Record job actuals separately."
@@ -467,7 +520,7 @@ export default function App() {
                     "Customer & job",
                     "Labour",
                     "Materials",
-                    "Other Costs",
+                    "Subcontractors & Other Costs",
                     "Pricing",
                     "Plans & Takeoff",
                     ...(current.job ? ["Job actuals"] : []),
@@ -586,7 +639,13 @@ export default function App() {
                                 required
                                 value={current.date}
                                 onChange={(e) =>
-                                  patch({ date: e.target.value })
+                                  patch({
+                                    date: e.target.value,
+                                    expiry: expiryFor(
+                                      e.target.value,
+                                      current.pricing.validityDays ?? 0,
+                                    ),
+                                  })
                                 }
                               />
                             </Field>
@@ -600,7 +659,7 @@ export default function App() {
                                 }
                               />
                             </Field>
-                            <Field label="Project category · future templates">
+                            <Field label="Project category">
                               <select
                                 value={current.templateCategory ?? ""}
                                 onChange={(e) =>
@@ -608,32 +667,47 @@ export default function App() {
                                 }
                               >
                                 <option value="">Choose a category</option>
-                                {templates.map((t) => (
+                                {[
+                                  ...new Set([
+                                    ...templates,
+                                    ...constructionTemplates.map((t) => t.name),
+                                  ]),
+                                ].map((t) => (
                                   <option key={t}>{t}</option>
                                 ))}
                               </select>
                             </Field>
                           </div>
-                          <button
-                            className="button secondary"
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  "Append the Deck template? Quantities and prices start at zero and must be entered.",
-                                )
-                              )
-                                setEditing(
-                                  applyTemplate(current, deckTemplate),
+                          <Field label="Apply construction template">
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                const template = constructionTemplates.find(
+                                  (t) => t.id === e.target.value,
                                 );
-                            }}
-                          >
-                            Apply Deck template
-                          </button>
+                                if (
+                                  template &&
+                                  confirm(
+                                    "Append template suggestions? Existing lines are kept; quantities remain editable.",
+                                  )
+                                )
+                                  setEditing(applyTemplate(current, template));
+                              }}
+                            >
+                              <option value="">Choose a template…</option>
+                              {constructionTemplates.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
                           <div className="info">
                             <p>
-                              The Deck template adds editable scope groups and
-                              suggested lines with zero quantities and prices.
-                              Existing lines are kept.
+                              Templates append suggested lines and
+                              quote-specific groups. Enter your own quantities
+                              and prices; quote defaults apply unless a line
+                              overrides them.
                             </p>
                           </div>
                           <QuoteDetailsEditor
@@ -685,12 +759,30 @@ export default function App() {
                         </fieldset>
                       </>
                     )}
-                    {["Labour", "Materials", "Other Costs"].includes(tab) && (
+                    {[
+                      "Labour",
+                      "Materials",
+                      "Subcontractors & Other Costs",
+                    ].includes(tab) && (
                       <LineEditor
                         quote={current}
-                        kind={tab as Kind}
+                        kind={
+                          tab === "Subcontractors & Other Costs"
+                            ? "Other Costs"
+                            : (tab as Kind)
+                        }
                         locked={locked}
                         onChange={(lines) => patch({ lines })}
+                        onGroup={(group) =>
+                          patch({
+                            scopeGroups: [
+                              ...new Set([
+                                ...(current.scopeGroups ?? []),
+                                group,
+                              ]),
+                            ],
+                          })
+                        }
                       />
                     )}
                     {tab === "Plans & Takeoff" && (
@@ -707,9 +799,10 @@ export default function App() {
                     {tab === "Pricing" && (
                       <>
                         <p className="muted">
-                          Quote-specific settings. Overhead/profit and
-                          contingency are each added to the line selling-price
-                          base, before tax.
+                          Company Settings → quote defaults → optional line
+                          override. These values are this quote’s defaults.
+                          Editing a line replaces its default; markups never
+                          stack.
                         </p>
                         <PricingFields
                           value={current.pricing}
@@ -737,6 +830,20 @@ export default function App() {
                           </p>
                         </div>
                       </>
+                    )}
+                    {tab === "Job actuals" && current.job && (
+                      <div className="info">
+                        <b>Change orders · foundation</b>
+                        <p>
+                          Original contract:{" "}
+                          {money(calculate(current.job.snapshot).subtotal)}{" "}
+                          before HST. Future approved changes will be recorded
+                          separately, with their own scope, price, HST and
+                          customer approval; they never rewrite this estimate.
+                          Approval and contract adjustment entry are not enabled
+                          in this pass.
+                        </p>
+                      </div>
                     )}
                     {tab === "Job actuals" && current.job && (
                       <>
@@ -832,6 +939,9 @@ export default function App() {
                                 }
                               >
                                 <NumberInput
+                                  step={
+                                    actual.category === "Labour" ? "1" : "0.01"
+                                  }
                                   value={actual.cost}
                                   onChange={(n) =>
                                     setActual({ ...actual, cost: n })
@@ -958,6 +1068,13 @@ export default function App() {
                         <dd>{money(totals!.total)}</dd>
                       </div>
                     </dl>
+                    <p className="calculation-explanation">
+                      {money(totals!.base)} line selling prices +{" "}
+                      {money(totals!.overhead)} overhead/profit +{" "}
+                      {money(totals!.contingency)} contingency ={" "}
+                      {money(totals!.subtotal)} before HST. Line markups replace
+                      quote defaults.
+                    </p>
                     <div className="profit-box">
                       <span>Expected gross profit</span>
                       <strong>{money(totals!.profit)}</strong>
@@ -1055,10 +1172,15 @@ export default function App() {
                   <h2>Default pricing</h2>
                   <p className="muted">
                     Business rates start at zero until you choose them. Sample
-                    quotes use fictional illustrative rates. Changes apply to
-                    new quotes and newly added lines only.
+                    quotes use fictional illustrative rates. Company settings
+                    apply only to new quotes. Existing quotes keep their copied
+                    profiles; new lines inherit their quote profile.
                   </p>
-                  <PricingFields value={settings} onChange={setSettings} />
+                  <PricingFields
+                    company
+                    value={settings}
+                    onChange={setSettings}
+                  />
                   <QuoteDetailsEditor
                     value={quoteDefaults}
                     onChange={setQuoteDefaults}
@@ -1317,7 +1439,11 @@ export default function App() {
           quote={current}
           onClose={() => setReviewing(false)}
           onSend={() => {
-            if (saveQuote(markSent(current))) setReviewing(false);
+            if (
+              confirm("Mark this quote Sent and lock the estimate?") &&
+              saveQuote(markSent(current))
+            )
+              setReviewing(false);
           }}
         />
       )}

@@ -1,10 +1,12 @@
+import UnitInput from "./UnitInput";
 import { Plus, Trash2 } from "lucide-react";
 import NumberInput from "./NumberInput";
 import {
   categories,
   newLine,
   units,
-  scopeGroups,
+  groupsFor,
+  effectiveLine,
   linePrice,
   lineCost,
   purchaseQuantity,
@@ -28,11 +30,13 @@ export default function LineEditor({
   kind,
   locked,
   onChange,
+  onGroup,
 }: {
   quote: Quote;
   kind: Kind;
   locked: boolean;
   onChange: (lines: Line[]) => void;
+  onGroup: (group: string) => void;
 }) {
   const patch = (line: Line) =>
     onChange(q.lines.map((l) => (l.id === line.id ? line : l)));
@@ -51,149 +55,227 @@ export default function LineEditor({
         ))}
       </datalist>
       <datalist id="scope-groups">
-        {scopeGroups.map((g) => (
+        {groupsFor(q).map((g) => (
           <option key={g} value={g} />
         ))}
       </datalist>
       {q.lines
         .filter((l) => l.kind === kind)
-        .map((l) => (
-          <fieldset className="line-card" key={l.id} disabled={locked}>
-            <div className="line-title">
-              <F label="Description *">
-                <input
-                  value={l.description}
-                  onChange={(e) => patch({ ...l, description: e.target.value })}
-                />
-              </F>
-              <button
-                className="icon danger"
-                aria-label={`Remove ${l.description || "line"}`}
-                onClick={() => onChange(q.lines.filter((x) => x.id !== l.id))}
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-            <F label="Customer scope group (optional)">
-              <input
-                list="scope-groups"
-                value={l.scopeGroup ?? ""}
-                placeholder="Choose a group or enter your own"
-                onChange={(e) => patch({ ...l, scopeGroup: e.target.value })}
-              />
-            </F>
-            <div className="fields compact">
-              <F
-                label={
-                  kind === "Labour"
-                    ? "Estimated hours"
-                    : kind === "Materials"
-                      ? "Required quantity"
-                      : "Quantity"
-                }
-              >
-                <NumberInput
-                  value={l.quantity}
-                  onChange={(n) => patch({ ...l, quantity: n })}
-                />
-              </F>
-              {kind !== "Labour" && (
-                <F label="Unit">
+        .map((stored) => {
+          const l = effectiveLine(stored, q.pricing);
+          return (
+            <fieldset className="line-card" key={l.id} disabled={locked}>
+              <div className="line-title">
+                <F label="Description *">
                   <input
-                    list="construction-units"
-                    value={l.unit}
-                    onChange={(e) => patch({ ...l, unit: e.target.value })}
+                    value={l.description}
+                    onChange={(e) =>
+                      patch({ ...l, description: e.target.value })
+                    }
                   />
                 </F>
-              )}
-              {kind === "Materials" && (
-                <>
-                  <F label="Waste (%)">
-                    <NumberInput
-                      value={l.waste ?? 0}
-                      onChange={(n) => patch({ ...l, waste: n })}
+                <button
+                  className="icon danger"
+                  aria-label={`Remove ${l.description || "line"}`}
+                  onClick={() => onChange(q.lines.filter((x) => x.id !== l.id))}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+              <F label="Customer scope group (optional)">
+                <UnitInput
+                  value={l.scopeGroup ?? ""}
+                  label="Customer scope group (optional)"
+                  options={groupsFor(q)}
+                  hint="Type a custom customer scope group."
+                  onChange={(scopeGroup) => patch({ ...l, scopeGroup })}
+                  onBlur={() => {
+                    if (l.scopeGroup?.trim()) onGroup(l.scopeGroup.trim());
+                  }}
+                />
+              </F>
+              <div className="check-options">
+                {(kind === "Labour"
+                  ? ["inheritCost", "inheritRate"]
+                  : ["inheritMarkup"]
+                ).map((key) => (
+                  <label key={key}>
+                    <input
+                      type="checkbox"
+                      checked={!!stored[key as keyof Line]}
+                      onChange={(e) => patch({ ...l, [key]: e.target.checked })}
+                    />
+                    {key === "inheritCost"
+                      ? "Use quote internal labour cost"
+                      : key === "inheritRate"
+                        ? "Use quote customer labour rate"
+                        : "Use quote markup"}
+                    {stored[key as keyof Line]
+                      ? " (default)"
+                      : " (line override)"}
+                  </label>
+                ))}
+              </div>
+              <div className="fields compact">
+                <F
+                  label={
+                    kind === "Labour"
+                      ? "Estimated hours"
+                      : kind === "Materials"
+                        ? "Required quantity"
+                        : "Quantity"
+                  }
+                >
+                  <NumberInput
+                    value={l.quantity}
+                    onChange={(n) => patch({ ...l, quantity: n })}
+                  />
+                </F>
+                {kind !== "Labour" && (
+                  <F label="Unit">
+                    <UnitInput
+                      value={l.unit}
+                      onChange={(unit) => patch({ ...l, unit })}
                     />
                   </F>
-                  <F label="Purchase quantity (calculated)">
-                    <output className="calculated-value">
-                      {purchaseQuantity(l).toLocaleString("en-CA", {
-                        maximumFractionDigits: 4,
-                      })}{" "}
-                      {l.unit}
-                    </output>
-                  </F>
-                </>
-              )}
-              <F
-                label={
-                  kind === "Labour"
-                    ? "Internal cost / hour ($)"
-                    : "Unit cost ($)"
-                }
-              >
-                <NumberInput
-                  value={l.cost}
-                  onChange={(n) => patch({ ...l, cost: n })}
-                />
-              </F>
-              {kind === "Labour" ? (
-                <F label="Customer rate / hour ($)">
-                  <NumberInput
-                    value={l.rate}
-                    onChange={(n) => patch({ ...l, rate: n })}
-                  />
-                </F>
-              ) : (
-                <F label="Markup (%)">
-                  <NumberInput
-                    value={l.markup}
-                    onChange={(n) => patch({ ...l, markup: n })}
-                  />
-                </F>
-              )}
-              {kind === "Other Costs" && (
-                <F label="Category">
-                  <select
-                    value={l.category}
-                    onChange={(e) => patch({ ...l, category: e.target.value })}
-                  >
-                    {[...new Set([...categories, l.category])].map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
-                </F>
-              )}
-              <F label="Selling price override ($)">
-                <NumberInput
-                  nullable
-                  placeholder="Automatic"
-                  value={l.override}
-                  onChange={(n) =>
-                    patch({ ...l, override: Number.isNaN(n) ? null : n })
+                )}
+                {kind === "Materials" && (
+                  <>
+                    <F label="Waste (%)">
+                      <NumberInput
+                        step="1"
+                        value={l.waste ?? 0}
+                        onChange={(n) => patch({ ...l, waste: n })}
+                      />
+                    </F>
+                    <F label="Purchase quantity (calculated)">
+                      <output className="calculated-value">
+                        {purchaseQuantity(l).toLocaleString("en-CA", {
+                          maximumFractionDigits: 4,
+                        })}{" "}
+                        {l.unit}
+                      </output>
+                    </F>
+                  </>
+                )}
+                <F
+                  label={
+                    kind === "Labour"
+                      ? "Internal cost / hour ($)"
+                      : "Unit cost ($)"
                   }
-                />
-              </F>
-            </div>
-            <div className="line-footer">
-              <span>
-                Internal cost <b>{money(lineCost(l))}</b>
-              </span>
-              <span>
-                Calculated selling price{" "}
-                <b>{money(linePrice({ ...l, override: null }))}</b>
-              </span>
-              <span>
-                Customer price <b>{money(linePrice(l))}</b>
-              </span>
-            </div>
-            {l.takeoffId && (
-              <p className="tiny">
-                Created from a contractor-reviewed takeoff item. Changes here do
-                not change the takeoff source.
-              </p>
-            )}
-          </fieldset>
-        ))}
+                >
+                  <NumberInput
+                    step={kind === "Labour" ? "1" : "0.01"}
+                    value={l.cost}
+                    onChange={(n) =>
+                      patch({ ...l, cost: n, inheritCost: false })
+                    }
+                  />
+                </F>
+                {kind === "Labour" ? (
+                  <F label="Customer rate / hour ($)">
+                    <NumberInput
+                      step="1"
+                      value={l.rate}
+                      onChange={(n) =>
+                        patch({ ...l, rate: n, inheritRate: false })
+                      }
+                    />
+                  </F>
+                ) : (
+                  <F label="Markup (%)">
+                    <NumberInput
+                      step="1"
+                      value={l.markup}
+                      onChange={(n) =>
+                        patch({ ...l, markup: n, inheritMarkup: false })
+                      }
+                    />
+                  </F>
+                )}
+                {kind === "Other Costs" && (
+                  <F label="Category">
+                    <select
+                      aria-label="Category"
+                      value={l.category}
+                      onChange={(e) =>
+                        patch({
+                          ...l,
+                          category: e.target.value,
+                          ...(e.target.value === "Subcontractor"
+                            ? { unit: "allowance" }
+                            : {}),
+                        })
+                      }
+                    >
+                      {[...new Set([...categories, l.category])].map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </select>
+                  </F>
+                )}
+                <F label="Selling price override ($)">
+                  <NumberInput
+                    nullable
+                    placeholder="Automatic"
+                    value={l.override}
+                    onChange={(n) =>
+                      patch({ ...l, override: Number.isNaN(n) ? null : n })
+                    }
+                  />
+                </F>
+              </div>
+              <div className="line-footer">
+                <span>
+                  Internal cost <b>{money(lineCost(l))}</b>
+                </span>
+                <span>
+                  Calculated selling price{" "}
+                  <b>{money(linePrice({ ...l, override: null }))}</b>
+                </span>
+                <span>
+                  Customer price <b>{money(linePrice(l))}</b>
+                </span>
+              </div>
+              {kind === "Materials" && (
+                <details>
+                  <summary>Internal material details</summary>
+                  <div className="fields">
+                    <F label="Supplier (private)">
+                      <input
+                        value={l.supplier ?? ""}
+                        onChange={(e) =>
+                          patch({ ...l, supplier: e.target.value })
+                        }
+                      />
+                    </F>
+                    <F label="SKU / product number (private)">
+                      <input
+                        value={l.sku ?? ""}
+                        onChange={(e) => patch({ ...l, sku: e.target.value })}
+                      />
+                    </F>
+                  </div>
+                  <F label="Material notes (private)">
+                    <textarea
+                      value={l.materialNotes ?? ""}
+                      onChange={(e) =>
+                        patch({ ...l, materialNotes: e.target.value })
+                      }
+                    />
+                  </F>
+                </details>
+              )}
+              {l.takeoffId && (
+                <p className="tiny">
+                  Created from a contractor-reviewed takeoff item. Changes here
+                  do not change the takeoff source.
+                </p>
+              )}
+            </fieldset>
+          );
+        })}
       {!q.lines.some((l) => l.kind === kind) && (
         <div className="empty-inline">No {kind.toLowerCase()} yet.</div>
       )}

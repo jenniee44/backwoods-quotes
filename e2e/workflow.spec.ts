@@ -17,6 +17,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Taylor Test");
   await page.getByLabel("Job name *").fill("Test cedar deck");
+  await page.getByLabel("Group detailed quote by scope").uncheck();
   await page
     .getByLabel("Project description / scope of work")
     .fill("Build a new cedar deck.");
@@ -35,7 +36,9 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.getByLabel("Internal cost / hour ($)").fill("30");
   await page.getByLabel("Customer rate / hour ($)").fill("75");
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Saved");
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Customer quote", exact: true })
     .click();
@@ -72,6 +75,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   ).toBeDisabled();
   await expect(page.getByRole("dialog")).toContainText("Missing payment");
   await page.getByLabel("I reviewed these warnings").check();
+  page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Confirm & mark sent" }).click();
   await expect(page.getByLabel("Description *")).toBeDisabled();
   page.once("dialog", (d) => d.accept());
@@ -137,7 +141,9 @@ test("invalid input and storage failures show actionable messages", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Saved");
+  await expect(
+    page.getByText("Saved on this device", { exact: true }),
+  ).toBeVisible();
   await page.getByLabel("Customer name *").fill("Test");
   await page.getByLabel("Job name *").fill("Deck");
   await page.evaluate(() => {

@@ -28,10 +28,10 @@ Browser tests: `npx playwright test`. The cloud config uses `/usr/bin/chromium`.
 - Separate labour hours/internal cost/customer rate; material quantity, unit, cost, markup and optional selling-price override; categorized other costs with optional selling-price override.
 - Editable owner defaults and quote-specific overhead/profit, contingency and HST settings.
 - Draft → Sent → Accepted → Converted job → Completed workflow. “Mark as sent” records status; it does not send email. Acceptance is recorded by the team following customer approval.
-- Simplified or detailed customer quote, print styles and browser Print / Save PDF. Internal notes, measurements, photos, costs and profit calculations never appear in the customer document. Detailed quotes show selling lines and a combined coordination/allowance amount.
+- Simplified or detailed customer quote, print styles and browser Print / Save PDF. Internal notes, measurements, photos, costs and profit calculations never appear in the customer document. Detailed quotes group common scopes and incorporate internal pricing additions into scope selling prices.
 - Acceptance signature area, scope, terms, quote number/date and optional expiry.
 - Sent and accepted estimates are locked. Conversion deep-copies the original lines and settings; actual labour/expenses live separately. Completed jobs show estimated versus actual costs and margins.
-- Duplicate quotes into new drafts without actuals. Apply the editable Deck template; category metadata prepares for more construction templates.
+- Duplicate quotes into new drafts without actuals. Apply the editable Deck template; Basement / Renovation, Framing, Fence, Addition, Garage / Shed and Custom / Blank templates also provide editable groups and suggested lines.
 - Fictional initial quotes for three customers, clearly identified in the interface.
 - Admin/Owner and Estimator development role switch. Only owners see/edit defaults. Both roles can manage quotes and jobs.
 
@@ -106,9 +106,9 @@ V2 extends V1 in place. Existing branding, customer quoting, job actuals, quote 
 
 Settings now includes internal labour cost, customer labour rate, material and Other Costs markup, contingency, HST, optional overhead/profit adjustment, target minimum gross margin and default validity days. Values start at zero except 13% HST; validity zero means no automatic expiry. Settings also stores customer-document defaults, including payment schedule, assumptions, exclusions, change orders, timeline, permit and engineering responsibilities, and display preferences.
 
-New quotes copy defaults; existing quotes never read live defaults. Quote-specific rate/markup defaults apply to newly added lines, while existing lines retain their own editable values. Changing quote validity days updates its expiry; expiry remains directly editable. Estimated labour hours are hidden from customer documents by default.
+New quotes copy defaults; existing quotes never read live defaults. New lines inherit their quote’s rate/markup profile until explicitly overridden. Changes to that quote profile affect inherited lines, while overridden and legacy lines retain their own values. Company Settings changes affect only newly created quotes. Changing quote validity days updates its expiry; expiry remains directly editable. Estimated labour hours are hidden from customer documents by default.
 
-All numeric controls keep an edit string separately from the numeric data model. Focusing a zero clears it for natural replacement. Blank numeric edits calculate as zero; leaving the field normalizes to zero. Blank selling overrides remain `null` (automatic). A zero override explicitly charges zero. Page-number blanks mean no page reference. Negative/non-finite numbers are rejected when saving.
+All numeric controls keep an edit string separately from the numeric data model. Focusing a zero clears it for natural replacement. Blank numeric edits are held locally; they commit their default on blur (including when Save is clicked). Zero-valued fields do not acquire unwanted leading zeros. Percentages, rates and validity days step by 1; quantities and unit costs support decimals. Blank selling overrides remain `null` (automatic). A zero override explicitly charges zero. Page-number blanks mean no page reference. Negative/non-finite numbers are rejected when saving.
 
 ### V2 formulas
 
@@ -124,7 +124,7 @@ The internal summary breaks down costs and selling prices by Labour / Materials 
 
 ### Customer documents and lifecycle
 
-Customer documents can independently hide quantities or labour hours and group detailed lines by customer-friendly scope group. Scope groups are editable with common Deck suggestions. Grouped output sums selling prices and does not show internal rates, costs, waste, markup, notes, profit or margin. Simplified output remains a single project amount. Coordination/allowances are shown as a combined customer selling amount; no calculation is disclosed.
+Customer documents can independently hide quantities or labour hours and group detailed lines by customer-friendly scope group. Scope groups are editable with common Deck suggestions. Grouped output sums selling prices and does not show internal rates, costs, waste, markup, notes, profit or margin. Simplified output remains a single project amount. Overhead/profit and contingency are normally distributed into scope selling prices, with cent reconciliation; no artificial coordination line is added. Contingency can be explicitly exposed as an allowance.
 
 Quotes include editable payment/deposit schedule, assumptions, exclusions, change orders, timeline, permit and engineering responsibilities, expiry, existing terms and acceptance area. Owner defaults can populate future quotes; `QuoteTemplate.details` supports template-specific text. Actual customer wording should be reviewed for each project.
 
@@ -132,11 +132,11 @@ Drafts can save without customer/scope information or completed lines. Mark as S
 
 ### Deck template and Plans & Takeoff
 
-Apply Deck template from Customer & job. It **appends** suggested scope groups and lines while preserving existing lines. All template quantities, costs, rates and markups start at zero for contractor entry; no Muskoka price or engineering assumptions are invented. Lines remain editable. The registry/types allow additional Renovation, Framing, Garage, Addition, Shed, Interior finishing and Cottage repair templates later.
+Choose a construction template from Customer & job. It **appends** suggested scope groups and lines while preserving existing lines. Template quantities start at zero. Quote defaults provide rates/markups unless the contractor overrides them; no Muskoka prices or engineering assumptions are invented. Lines remain editable. The template registry includes Deck, Basement / Renovation, Framing, Fence, Addition, Garage / Shed and Custom / Blank. Further templates can be added later.
 
 Plans & Takeoff supports PDF, JPEG, PNG and WebP attachments (eight documents per quote, up to 2 MB each). PDFs render inside the app with PDF.js and page controls; originals can be downloaded. Documents can be replaced or removed. The browser's overall storage quota can be reached before these limits—use compressed drawings and keep original plans elsewhere. Attachments are saved with the quote; the file reader does not auto-save. This is a local-storage foundation, not large-plan archival storage.
 
-Takeoff items store description, quantity, custom/common unit, attached-document ID, optional page number, notes/source references, confidence and Proposed/Reviewed status. Only contractor-reviewed items can be converted to estimate lines, once per item. Changes reset status to Proposed. Replacing/removing a source resets related items for review but leaves previously converted estimate lines untouched; check those separately. Takeoff confidence is user-assessed, not an engineering assurance.
+Takeoff items store description, quantity, custom/common unit, attached-document ID, optional page number, notes/source references, confidence and Proposed/Reviewed status (Reviewed is the contractor approval gate). Only contractor-reviewed items can be converted to estimate lines, once per item. Changes reset status to Proposed. Replacing/removing a source resets related items for review but leaves previously converted estimate lines untouched; check those separately. Takeoff confidence is user-assessed, not an engineering assurance.
 
 There is **no AI drawing interpretation** in V2. Future analysis should populate `TakeoffItem` records as Proposed, with document/page provenance, requiring contractor review before `takeoffToLine` conversion. Rendering a PDF does not validate its engineering or measurements.
 
@@ -181,3 +181,21 @@ npm run test:e2e
 ```
 
 Recommended later work: proper authentication/shared database, object storage for large plans, customer sharing/acceptance, additional template management, and reviewed AI takeoff proposals. Those remain separate from this complete manual V2 workflow; no accounting, payroll, inventory or scheduling has been added.
+
+## Refinements following V2 field testing
+
+The `v2-preview` branch includes these refinements; main remains V1. Company Settings → quote defaults → optional line overrides is explicit in `effectiveLine`. New lines have inheritance flags for labour cost, customer rate and markup. Editing a line switches that value to an override; selecting “Use quote …” re-enables inheritance. Material and subcontractor markup are applied exactly once. Old V1/V2 lines without flags retain explicit stored values, so their historical selling prices do not change. `pricingRevision: 3` updates new-quote presentation defaults to quantities OFF, hours OFF and grouped scopes ON while keeping existing quote preferences and document text.
+
+The normal Pricing tab shows the seven common quote controls. Advanced pricing contains internal labour cost and quote validity. A calculation explanation reconciles line selling prices, overhead/profit, contingency and subtotal. Existing document defaults remain editable in Settings and copied into new quotes.
+
+Scope groups belong to a quote/template, never a global Deck list. New custom quotes start with no groups. Typing a group makes it available to other line types on the same quote; committed custom groups are retained in its catalog. Templates preload their own catalogs. Unit and group pickers are searchable, touch-friendly and permit custom text. Materials have expandable supplier, SKU and material notes fields, all excluded from customer projections.
+
+Detailed customer scopes combine Labour, Materials and Subcontractors & Other Costs in the same group. Unassigned lines use “Project Work” rather than exposing raw descriptions in grouped mode. Internal overhead/profit and contingency are allocated proportionally by selling value using largest-remainder cent allocation, so every customer section sums exactly to the subtotal. Showing contingency separately is explicit opt-in. Quantities and labour hours are independently opt-in; enabling quantities can disclose line descriptions beneath a group, so inspect the customer preview before sending.
+
+Short permit/engineering entries such as “homeowner” render as complete customer-facing responsibility sentences. Fully written custom sentences remain unchanged. This is wording assistance, not legal or engineering advice.
+
+Quotes autosave locally after a 600 ms pause in model changes. The header shows Saving…, Saved or Save failed. Invalid data or storage quota errors leave the last saved record intact and show an error; correct it and retry. Blank numeric text is temporary until blur/save, so a still-focused blank field has not yet changed the saved numeric model. Manual Save remains available. Tabs stay at the top of the viewport while scrolling. Sending requires checklist review and a native confirmation; `sentAt` records the timestamp and the financial snapshot locks.
+
+Plans & Takeoff explicitly shows Upload → Proposed → Contractor review → Approve → Convert. Analyze plans is disabled/future-state; there is no automatic drawing interpretation. The `WorkflowStage` type prepares Lead through Paid without adding status buttons. Accepted jobs have a Change Orders foundation panel, and `ChangeOrder` / `changeOrderTotals` prepare separately approved contract adjustments. Entry, approval and job-contract adjustment application are intentionally deferred; original accepted estimates remain untouched. These are architecture hooks, not claims of a working change-order approval service.
+
+Regression coverage includes inheritance vs overrides, double-markup prevention, exact customer group reconciliation, metadata privacy, expiry boundaries, template/group reuse, sent snapshots, numeric steps/blank commits and autosave failure. Physical Safari testing on your Mac/iPhone is recommended after this branch is built by your preview project.

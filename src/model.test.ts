@@ -6,12 +6,22 @@ import {
   duplicate,
   jobTotals,
   linePrice,
-  newLine,
+  newLine as inheritedLine,
   newQuote,
   round,
   seed,
   validate,
 } from "./model";
+// Legacy formula tests use explicit overrides; inheritance has dedicated tests below.
+const newLine = (
+  kind: Parameters<typeof inheritedLine>[0],
+  p: Parameters<typeof inheritedLine>[1],
+) => ({
+  ...inheritedLine(kind, p),
+  inheritCost: false,
+  inheritRate: false,
+  inheritMarkup: false,
+});
 describe("quote pricing", () => {
   it("calculates 40 boards at $18 with 15% markup", () => {
     const l = {
@@ -419,8 +429,10 @@ describe("V2 templates, takeoff and customer privacy", () => {
     q.details.groupLines = true;
     const rows = customerRows(q);
     expect(rows).toHaveLength(1);
-    expect(rows[0].amount).toBe(calculate(q).base);
-    expect(rows[0].quantities).toEqual(["Lumber and fasteners: 40 each"]);
+    expect(rows[0].amount).toBe(calculate(q).subtotal);
+    q.details.showQuantities = true;
+    const quantities = customerRows(q);
+    expect(quantities[0].quantities).toEqual(["Lumber and fasteners: 40 each"]);
     expect(JSON.stringify(rows)).not.toMatch(
       /SECRET|markup|cost|rate|waste|profit|margin/,
     );
@@ -455,4 +467,157 @@ it("generates valid UUIDs on iPhone LAN previews without randomUUID", async () =
     /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
   );
   expect(id()).not.toBe(id());
+});
+
+import {
+  groupsFor,
+  constructionTemplates,
+  effectiveLine,
+  expiryFor,
+  responsibilityText,
+  changeOrderTotals,
+} from "./model";
+describe("V2 testing refinements", () => {
+  it("inherits quote defaults and replaces them with line overrides without double markup", () => {
+    const p = {
+      ...defaults,
+      materialMarkup: 20,
+      otherMarkup: 15,
+      internalLabourCost: 35,
+      labourRate: 90,
+    };
+    const material = { ...inheritedLine("Materials", p), cost: 100 };
+    expect(calculate({ lines: [material], pricing: p }).subtotal).toBe(120);
+    expect(
+      calculate({
+        lines: [{ ...material, markup: 10, inheritMarkup: false }],
+        pricing: p,
+      }).subtotal,
+    ).toBe(110);
+    expect(
+      calculate({
+        lines: [{ ...material, markup: 0, inheritMarkup: false }],
+        pricing: p,
+      }).subtotal,
+    ).toBe(100);
+    const other = { ...inheritedLine("Other Costs", p), cost: 100 };
+    expect(calculate({ lines: [other], pricing: p }).subtotal).toBe(115);
+    const labour = { ...inheritedLine("Labour", p), quantity: 10 };
+    expect(calculate({ lines: [labour], pricing: p }).cost).toBe(350);
+    expect(calculate({ lines: [labour], pricing: p }).subtotal).toBe(900);
+    expect(
+      effectiveLine({ ...labour, rate: 75, inheritRate: false }, p).rate,
+    ).toBe(75);
+  });
+  it("quote changes update inherited lines while legacy lines and overrides retain their values", () => {
+    const q = newQuote({ ...defaults, materialMarkup: 20 }, []);
+    q.lines = [
+      { ...inheritedLine("Materials", q.pricing), cost: 100 },
+      { ...newLine("Materials", defaults), cost: 100, markup: 10 },
+    ];
+    q.pricing.materialMarkup = 30;
+    expect(calculate(q).subtotal).toBe(240);
+    const sent = markSent(q);
+    q.pricing.materialMarkup = 90;
+    expect(calculate(estimateFor(sent)).subtotal).toBe(240);
+  });
+  it("combines kinds into one customer scope and distributes all internal additions exactly", () => {
+    const q = newQuote({ ...defaults, overhead: 5, contingency: 3 }, []);
+    q.lines = ["Labour", "Materials", "Other Costs"].map((kind, i) => ({
+      ...newLine(kind as "Labour" | "Materials" | "Other Costs", defaults),
+      scopeGroup: "Framing",
+      description: `Secret internal row ${i}`,
+      quantity: 1,
+      cost: 100,
+      rate: 100,
+    }));
+    const rows = customerRows(q);
+    expect(rows).toEqual([
+      { description: "Framing", amount: 324, quantities: [] },
+    ]);
+    expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(calculate(q).subtotal);
+    q.details.exposeContingency = true;
+    expect(customerRows(q)).toEqual([
+      { description: "Framing", amount: 315, quantities: [] },
+      { description: "Contingency allowance", amount: 9, quantities: [] },
+    ]);
+  });
+  it("allocates fractional-cent additions so many groups reconcile to subtotal", () => {
+    const q = newQuote({ ...defaults, overhead: 7.3, contingency: 2.1 }, []);
+    q.lines = Array.from({ length: 17 }, (_, i) => ({
+      ...newLine("Materials", defaults),
+      scopeGroup: `Group ${i}`,
+      cost: 0.23,
+    }));
+    expect(round(customerRows(q).reduce((s, r) => s + r.amount, 0))).toBe(
+      calculate(q).subtotal,
+    );
+  });
+  it("stores quote-specific template/custom groups without deck contamination", () => {
+    const q = newQuote(defaults, []);
+    expect(groupsFor(q)).toEqual([]);
+    const reno = applyTemplate(
+      q,
+      constructionTemplates.find((t) => t.id === "renovation")!,
+    );
+    expect(groupsFor(reno)).toContain("Framing");
+    expect(groupsFor(reno)).not.toContain("Decking");
+    reno.lines.push({
+      ...newLine("Labour", defaults),
+      scopeGroup: "Custom masonry",
+    });
+    expect(groupsFor(reno)).toContain("Custom masonry");
+    expect(constructionTemplates).toHaveLength(7);
+  });
+  it("calculates expiry across month and year boundaries and handles optional validity", () => {
+    expect(expiryFor("2026-12-20", 30)).toBe("2027-01-19");
+    expect(expiryFor("2026-02-20", 14)).toBe("2026-03-06");
+    expect(expiryFor("2026-10-06", 0)).toBe("");
+  });
+  it("timestamps sent quotes and keeps templates from changing snapshots", () => {
+    const q = applyTemplate(seed().quotes[0], constructionTemplates[1]);
+    const sent = markSent(q);
+    expect(sent.sentAt).toMatch(/^\d{4}-/);
+    const snapshot = structuredClone(sent.snapshot);
+    q.lines[0].quantity = 999;
+    expect(sent.snapshot).toEqual(snapshot);
+  });
+  it("keeps supplier, SKU, notes and cost metadata private", () => {
+    const q = seed().quotes[0];
+    q.details.groupLines = true;
+    q.lines[1] = {
+      ...q.lines[1],
+      supplier: "SECRET SUPPLIER",
+      sku: "SECRET SKU",
+      materialNotes: "SECRET NOTES",
+    };
+    expect(JSON.stringify(customerRows(q))).not.toMatch(
+      /SECRET|supplier|sku|materialNotes|markup|profit/,
+    );
+  });
+  it("polishes short responsibility values while preserving complete custom wording", () => {
+    expect(responsibilityText("permits", "homeowner")).toBe(
+      "Unless specifically included in the scope above, required permits and associated fees are the responsibility of the homeowner.",
+    );
+    expect(responsibilityText("engineering", "contractor")).toContain(
+      "engineering services",
+    );
+    expect(
+      responsibilityText("permits", "We will obtain the required permits."),
+    ).toBe("We will obtain the required permits.");
+  });
+  it("calculates separate change order values without mutating a quote", () => {
+    const q = seed().quotes[2];
+    const before = JSON.stringify(q);
+    expect(
+      changeOrderTotals({
+        id: "co",
+        description: "Added scope",
+        subtotal: 1000,
+        hst: 13,
+        status: "Draft",
+      }),
+    ).toEqual({ subtotal: 1000, tax: 130, total: 1130 });
+    expect(JSON.stringify(q)).toBe(before);
+  });
 });

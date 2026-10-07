@@ -15,6 +15,12 @@ export type Line = {
   waste?: number;
   scopeGroup?: string;
   takeoffId?: string;
+  inheritCost?: boolean;
+  inheritRate?: boolean;
+  inheritMarkup?: boolean;
+  supplier?: string;
+  sku?: string;
+  materialNotes?: string;
 };
 export type Pricing = {
   materialMarkup: number;
@@ -44,8 +50,32 @@ export type Actual = {
 export type Job = {
   snapshot: Estimate;
   convertedAt: string;
+  changeOrders?: ChangeOrder[];
+  workflowStage?: WorkflowStage;
   actuals: Actual[];
 };
+export type WorkflowStage =
+  | "Lead"
+  | "Draft Quote"
+  | "Sent"
+  | "Accepted"
+  | "Scheduled"
+  | "In Progress"
+  | "Completed"
+  | "Paid";
+// Future approval workflow: separate contract adjustments never rewrite the accepted snapshot.
+export type ChangeOrder = {
+  id: string;
+  description: string;
+  subtotal: number;
+  hst: number;
+  status: "Draft" | "Approved" | "Rejected";
+  approvedAt?: string;
+};
+export function changeOrderTotals(order: ChangeOrder) {
+  const tax = round((order.subtotal * order.hst) / 100);
+  return { subtotal: order.subtotal, tax, total: round(order.subtotal + tax) };
+}
 export type Quote = {
   id: string;
   number: string;
@@ -65,6 +95,8 @@ export type Quote = {
   job?: Job;
   templateCategory?: string;
   snapshot?: Estimate;
+  scopeGroups?: string[];
+  sentAt?: string;
   details: QuoteDetails;
   documents: PlanDocument[];
   takeoff: TakeoffItem[];
@@ -81,6 +113,7 @@ export type QuoteDetails = {
   timeline: string;
   permits: string;
   engineering: string;
+  exposeContingency?: boolean;
 };
 export type PlanDocument = {
   id: string;
@@ -114,14 +147,15 @@ export type QuoteTemplate = {
 };
 export type Store = {
   version: 2;
+  pricingRevision?: 3;
   settings: Pricing;
   quoteDefaults: QuoteDetails;
   quotes: Quote[];
 };
 export const detailDefaults: QuoteDetails = {
-  showQuantities: true,
+  showQuantities: false,
   showLabourHours: false,
-  groupLines: false,
+  groupLines: true,
   terms:
     "Quote subject to written acceptance. Changes to the agreed scope require a revised quote.",
   payment: "",
@@ -136,7 +170,7 @@ export const detailDefaults: QuoteDetails = {
 export const detailLabels: Record<
   Exclude<
     keyof QuoteDetails,
-    "showQuantities" | "showLabourHours" | "groupLines"
+    "showQuantities" | "showLabourHours" | "groupLines" | "exposeContingency"
   >,
   string
 > = {
@@ -241,6 +275,7 @@ export function applyTemplate(q: Quote, template: QuoteTemplate): Quote {
   return {
     ...q,
     templateCategory: template.category,
+    scopeGroups: [...new Set([...(q.scopeGroups ?? []), ...template.groups])],
     terms: template.details?.terms ?? q.terms,
     details: { ...q.details, ...template.details },
     lines: [
@@ -257,6 +292,10 @@ export function applyTemplate(q: Quote, template: QuoteTemplate): Quote {
   };
 }
 export const categories = [
+  "Subcontractor",
+  "Disposal",
+  "Equipment",
+  "Permit",
   "Subcontractors",
   "Equipment rentals",
   "Dump/disposal fees",
@@ -311,10 +350,27 @@ export function purchaseQuantity(l: Line) {
     ? l.quantity * (1 + (l.waste ?? 0) / 100)
     : l.quantity;
 }
-export function lineCost(l: Line) {
-  return round(purchaseQuantity(l) * l.cost);
+export function effectiveLine(l: Line, p?: Pricing): Line {
+  if (!p) return l;
+  return {
+    ...l,
+    cost:
+      l.kind === "Labour" && l.inheritCost
+        ? (p.internalLabourCost ?? 0)
+        : l.cost,
+    rate: l.inheritRate ? p.labourRate : l.rate,
+    markup: l.inheritMarkup
+      ? l.kind === "Other Costs"
+        ? (p.otherMarkup ?? 0)
+        : p.materialMarkup
+      : l.markup,
+  };
 }
-export function linePrice(l: Line) {
+export function lineCost(l: Line, p?: Pricing) {
+  return round(purchaseQuantity(l) * effectiveLine(l, p).cost);
+}
+export function linePrice(l: Line, p?: Pricing) {
+  l = effectiveLine(l, p);
   return round(
     l.override ??
       (l.kind === "Labour"
@@ -323,8 +379,8 @@ export function linePrice(l: Line) {
   );
 }
 export function calculate(e: Estimate) {
-  const cost = round(e.lines.reduce((s, l) => s + lineCost(l), 0));
-  const base = round(e.lines.reduce((s, l) => s + linePrice(l), 0));
+  const cost = round(e.lines.reduce((s, l) => s + lineCost(l, e.pricing), 0));
+  const base = round(e.lines.reduce((s, l) => s + linePrice(l, e.pricing), 0));
   const overhead = round((base * e.pricing.overhead) / 100),
     contingency = round((base * e.pricing.contingency) / 100);
   const subtotal = round(base + overhead + contingency),
@@ -337,12 +393,12 @@ export function calculate(e: Estimate) {
   // Target margin is profit / revenue, not cost markup. Round UP to avoid missing target by a cent.
   const target = e.pricing.targetMargin ?? 0;
   return {
-    labourCost: byKind("Labour", lineCost),
-    materialCost: byKind("Materials", lineCost),
-    otherCost: byKind("Other Costs", lineCost),
-    labourPrice: byKind("Labour", linePrice),
-    materialPrice: byKind("Materials", linePrice),
-    otherPrice: byKind("Other Costs", linePrice),
+    labourCost: byKind("Labour", (l) => lineCost(l, e.pricing)),
+    materialCost: byKind("Materials", (l) => lineCost(l, e.pricing)),
+    otherCost: byKind("Other Costs", (l) => lineCost(l, e.pricing)),
+    labourPrice: byKind("Labour", (l) => linePrice(l, e.pricing)),
+    materialPrice: byKind("Materials", (l) => linePrice(l, e.pricing)),
+    otherPrice: byKind("Other Costs", (l) => linePrice(l, e.pricing)),
     breakEven: cost,
     targetMargin: target,
     targetPrice:
@@ -380,14 +436,22 @@ export function newLine(kind: Kind, p: Pricing): Line {
     kind,
     description: "",
     quantity: 1,
-    unit: kind === "Labour" ? "hours" : "each",
+    unit:
+      kind === "Labour"
+        ? "hours"
+        : kind === "Other Costs"
+          ? "allowance"
+          : "each",
     cost: kind === "Labour" ? (p.internalLabourCost ?? 0) : 0,
     rate: p.labourRate,
     markup: kind === "Other Costs" ? (p.otherMarkup ?? 0) : p.materialMarkup,
     waste: 0,
     scopeGroup: "",
     override: null,
-    category: categories[0],
+    category: kind === "Other Costs" ? "Subcontractor" : "Miscellaneous",
+    inheritCost: kind === "Labour",
+    inheritRate: kind === "Labour",
+    inheritMarkup: kind !== "Labour",
   };
 }
 export function newQuote(
@@ -396,13 +460,13 @@ export function newQuote(
   options: QuoteDetails = detailDefaults,
 ): Quote {
   const date = new Date().toLocaleDateString("en-CA");
-  const expires = new Date(`${date}T12:00:00`);
-  expires.setDate(expires.getDate() + (settings.validityDays ?? 0));
+
   return {
     id: id(),
     number: `BW-${String(Math.max(1000, ...quotes.map((q) => Number(q.number.split("-")[1]) || 1000)) + 1)}`,
     date,
-    expiry: settings.validityDays ? expires.toLocaleDateString("en-CA") : "",
+    expiry: expiryFor(date, settings.validityDays ?? 0),
+    scopeGroups: [],
     details: structuredClone(options),
     documents: [],
     takeoff: [],
@@ -479,6 +543,8 @@ export function duplicate(q: Quote, quotes: Quote[]): Quote {
     terms: q.terms,
     templateCategory: q.templateCategory,
     job: undefined,
+    sentAt: undefined,
+    scopeGroups: [...(q.scopeGroups ?? [])],
     snapshot: undefined,
   };
 }
@@ -526,12 +592,19 @@ export function seed(): Store {
         cost: 18,
       },
     ];
+    q.lines = q.lines.map((l) => ({
+      ...l,
+      inheritCost: false,
+      inheritRate: false,
+      inheritMarkup: false,
+    }));
     if (q.status !== "Draft")
       q.snapshot = structuredClone({ lines: q.lines, pricing: q.pricing });
     quotes.push(q);
   });
   return {
     version: 2,
+    pricingRevision: 3,
     settings: { ...defaults },
     quoteDefaults: { ...detailDefaults },
     quotes,
@@ -587,7 +660,12 @@ function line(v: unknown) {
       "markup",
       ...("waste" in v ? ["waste"] : []),
     ]) &&
-    (v.scopeGroup === undefined || typeof v.scopeGroup === "string") &&
+    ["inheritCost", "inheritRate", "inheritMarkup"].every(
+      (k) => v[k] === undefined || typeof v[k] === "boolean",
+    ) &&
+    ["scopeGroup", "supplier", "sku", "materialNotes"].every(
+      (k) => v[k] === undefined || typeof v[k] === "string",
+    ) &&
     (v.override === null ||
       (typeof v.override === "number" &&
         Number.isFinite(v.override) &&
@@ -625,7 +703,11 @@ function quote(v: unknown) {
       (p) =>
         typeof p === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(p),
     ) ||
-    !estimate(v)
+    !estimate(v) ||
+    (v.scopeGroups !== undefined &&
+      (!Array.isArray(v.scopeGroups) ||
+        !v.scopeGroups.every((g) => typeof g === "string"))) ||
+    (v.sentAt !== undefined && typeof v.sentAt !== "string")
   )
     return false;
   if (v.job !== undefined) {
@@ -653,6 +735,7 @@ export function markSent(q: Quote): Quote {
   return {
     ...q,
     status: "Sent",
+    sentAt: new Date().toISOString(),
     snapshot: structuredClone({ lines: q.lines, pricing: q.pricing }),
   };
 }
@@ -665,7 +748,7 @@ export function reviewWarnings(q: Quote): string[] {
     warnings.push("No labour lines");
   if (!q.lines.some((l) => l.kind === "Materials"))
     warnings.push("No materials lines");
-  if (!q.lines.length || q.lines.some((l) => linePrice(l) === 0))
+  if (!q.lines.length || q.lines.some((l) => linePrice(l, q.pricing) === 0))
     warnings.push("Zero selling-price lines or no estimate lines");
   if (q.lines.some((l) => !l.description.trim()))
     warnings.push("Estimate lines missing descriptions");
@@ -707,6 +790,9 @@ function upgradePricing(p: Pricing): Pricing {
 function upgradeLine(l: Line): Line {
   return {
     ...l,
+    inheritCost: false,
+    inheritRate: false,
+    inheritMarkup: false,
     waste: l.waste ?? 0,
     scopeGroup: l.scopeGroup ?? "",
     markup: l.kind === "Other Costs" ? 0 : l.markup,
@@ -721,6 +807,8 @@ function upgradeEstimate(e: Estimate): Estimate {
 function validDetails(v: unknown) {
   return (
     record(v) &&
+    (v.exposeContingency === undefined ||
+      typeof v.exposeContingency === "boolean") &&
     strings(v, Object.keys(detailLabels)) &&
     ["showQuantities", "showLabourHours", "groupLines"].every(
       (k) => typeof v[k] === "boolean",
@@ -784,7 +872,17 @@ export function migrate(input: unknown): Store {
       !input.quotes.every(validExtensions)
     )
       throw new Error("Saved V2 data is invalid.");
-    return input as Store;
+    const result = structuredClone(input) as Store;
+    if (!result.pricingRevision) {
+      result.pricingRevision = 3;
+      result.quoteDefaults = {
+        ...result.quoteDefaults,
+        showQuantities: false,
+        showLabourHours: false,
+        groupLines: true,
+      };
+    }
+    return result;
   }
   const old = structuredClone(input) as unknown as {
     settings: Pricing;
@@ -792,6 +890,7 @@ export function migrate(input: unknown): Store {
   };
   return {
     version: 2,
+    pricingRevision: 3,
     settings: upgradePricing(old.settings),
     quoteDefaults: { ...detailDefaults },
     quotes: old.quotes.map((q) => {
@@ -799,7 +898,13 @@ export function migrate(input: unknown): Store {
       const result = {
         ...q,
         ...e,
-        details: { ...detailDefaults, terms: q.terms, changeOrders: "" },
+        details: {
+          ...detailDefaults,
+          showQuantities: true,
+          groupLines: false,
+          terms: q.terms,
+          changeOrders: "",
+        },
         documents: [],
         takeoff: [],
       };
@@ -822,4 +927,116 @@ export function persist(store: Store) {
   if (old && JSON.parse(old).version === 1 && !localStorage.getItem(backupKey))
     localStorage.setItem(backupKey, old);
   localStorage.setItem(storageKey, JSON.stringify(store));
+}
+
+export function expiryFor(date: string, days: number): string {
+  if (!days) return "";
+  const d = new Date(`${date}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-CA") : "";
+}
+export function groupsFor(q: Quote): string[] {
+  return [
+    ...new Set(
+      [
+        ...(q.scopeGroups ?? []),
+        ...q.lines.map((l) => l.scopeGroup?.trim() ?? ""),
+      ].filter(Boolean),
+    ),
+  ];
+}
+const renovationGroups = [
+  "Site Preparation",
+  "Framing",
+  "Insulation",
+  "Drywall",
+  "Flooring",
+  "Finish Carpentry",
+  "Painting",
+  "Electrical",
+  "Plumbing",
+  "Cleanup",
+];
+function constructionTemplate(
+  id: string,
+  name: string,
+  groups: string[],
+): QuoteTemplate {
+  return {
+    id,
+    name,
+    category: name,
+    groups,
+    lines: groups.flatMap((g) => [
+      {
+        kind: "Labour" as const,
+        description: `${g} labour`,
+        unit: "hour",
+        scopeGroup: g,
+        category: "Miscellaneous",
+      },
+      {
+        kind: "Materials" as const,
+        description: `${g} materials`,
+        unit: "each",
+        scopeGroup: g,
+        category: "Miscellaneous",
+      },
+    ]),
+  };
+}
+export const constructionTemplates: QuoteTemplate[] = [
+  deckTemplate,
+  constructionTemplate("renovation", "Basement / Renovation", renovationGroups),
+  constructionTemplate("framing", "Framing", [
+    "Site Preparation",
+    "Framing",
+    "Cleanup",
+  ]),
+  constructionTemplate("fence", "Fence", [
+    "Site Preparation",
+    "Posts & Footings",
+    "Fence Panels",
+    "Gates",
+    "Cleanup",
+  ]),
+  constructionTemplate("addition", "Addition", [
+    "Site Preparation",
+    "Foundation",
+    "Framing",
+    "Roofing",
+    "Exterior",
+    "Interior",
+    "Project Costs",
+  ]),
+  constructionTemplate("garage", "Garage / Shed", [
+    "Site Preparation",
+    "Foundation",
+    "Framing",
+    "Roofing",
+    "Doors & Exterior",
+    "Cleanup",
+  ]),
+  {
+    id: "blank",
+    name: "Custom / Blank",
+    category: "Custom",
+    groups: [],
+    lines: [],
+  },
+];
+export function responsibilityText(
+  kind: "permits" | "engineering",
+  value: string,
+): string {
+  const v = value.trim();
+  if (!v) return "";
+  if (v.length < 60 && !/[.!?]/.test(v)) {
+    const subject =
+      kind === "permits"
+        ? "required permits and associated fees"
+        : "required engineering services and associated fees";
+    return `Unless specifically included in the scope above, ${subject} are the responsibility of ${/^(the |a |an )/i.test(v) ? v : `the ${v}`}.`;
+  }
+  return v;
 }

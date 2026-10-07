@@ -1744,3 +1744,77 @@ fieldset:disabled select {
 .pdf-preview .alert {
   margin: 10px 0;
 }
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #f6f7f4;
+  padding: 8px 0 0;
+}
+.save-indicator {
+  font-size: 11px;
+  color: #66815b;
+  margin: 12px 0;
+}
+.save-indicator.failed {
+  color: #a05e4c;
+}
+.advanced-pricing,
+details {
+  margin: 18px 0;
+}
+summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: #4f7144;
+  font-size: 12px;
+  font-weight: 600;
+}
+details[open] > summary {
+  margin-bottom: 16px;
+}
+.calculation-explanation {
+  font-size: 10px;
+  line-height: 1.8;
+  color: #75856a;
+  background: #f4f7ef;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 16px;
+}
+.unit-picker {
+  position: relative;
+}
+.unit-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 230px;
+  overflow: auto;
+  background: white;
+  border: 1px solid #dfe4da;
+  box-shadow: 0 8px 20px #193d3220;
+  z-index: 35;
+  border-radius: 6px;
+}
+.unit-options button {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #eff2eb;
+  background: white;
+  padding: 12px;
+  text-align: left;
+  min-height: 44px;
+  color: #33422d;
+}
+.unit-options button:hover {
+  background: #eef3e8;
+}
+.unit-options small {
+  padding: 12px;
+  font-size: 10px;
+  color: #87947e;
+}
