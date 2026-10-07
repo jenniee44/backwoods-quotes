@@ -1,4 +1,4 @@
-import { detailLabels } from "./model";
+import { detailLabels, paymentError } from "./model";
 import type { QuoteDetails } from "./model";
 export default function QuoteDetailsEditor({
   value,
@@ -20,7 +20,8 @@ export default function QuoteDetailsEditor({
             <label key={k}>
               <input
                 type="checkbox"
-                checked={value[k]}
+                checked={k === "groupLines" ? true : value[k]}
+                disabled={k === "groupLines"}
                 onChange={(e) => onChange({ ...value, [k]: e.target.checked })}
               />
               {k === "showQuantities"
@@ -44,7 +45,8 @@ export default function QuoteDetailsEditor({
         prices)
       </label>
       <p className="muted">
-        Labour hours are hidden by default. Grouped quotes show each scope
+        Labour hours are hidden by default. Detailed quotes always group
+        customer scopes to protect internal rows. Grouped quotes show each scope
         group's total; internal details remain private.
       </p>
       <h3 className="subheading">
@@ -52,6 +54,16 @@ export default function QuoteDetailsEditor({
           ? "Reusable customer-document defaults"
           : "Customer-document details"}
       </h3>
+      <p className="muted">
+        {company
+          ? "These defaults are copied into new quotes only."
+          : "Copied from company defaults when this quote was created. Edits here override this quote only."}
+      </p>
+      {paymentError(value.payment) && (
+        <p role="alert" className="error">
+          {paymentError(value.payment)}
+        </p>
+      )}
       <div className="fields">
         {(Object.keys(detailLabels) as (keyof typeof detailLabels)[])
           .filter((k) => company || k !== "terms")
@@ -59,6 +71,11 @@ export default function QuoteDetailsEditor({
             <label className="field" key={k}>
               <span>{detailLabels[k]}</span>
               <textarea
+                placeholder={
+                  k === "payment"
+                    ? "20% acceptance, 30% start, 30% midpoint, 20% substantial completion (example only)"
+                    : "Optional — hidden on customer quote when empty"
+                }
                 rows={3}
                 value={value[k]}
                 onChange={(e) => onChange({ ...value, [k]: e.target.value })}

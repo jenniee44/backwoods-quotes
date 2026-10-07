@@ -31,7 +31,11 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
       .click();
     await page.getByLabel("Description *").fill(kind + " item");
     const cost = page.getByLabel(
-      kind === "Labour" ? "Internal cost / hour ($)" : "Unit cost ($)",
+      kind === "Labour"
+        ? "Internal cost / hour ($)"
+        : kind === "Other Costs"
+          ? "Estimated cost ($)"
+          : "Unit cost ($)",
       { exact: true },
     );
     await cost.click();
@@ -63,7 +67,7 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
     }
   }
   await page.getByRole("button", { name: "Pricing", exact: true }).click();
-  const overhead = page.getByLabel("Overhead / profit addition (%)");
+  const overhead = page.getByLabel("General overhead & profit adjustment (%)");
   await overhead.click();
   await overhead.pressSequentially("12");
   await expect(overhead).toHaveValue("12");
@@ -101,7 +105,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
     .click();
   await page
     .getByLabel("Payment / deposit schedule")
-    .fill("20% deposit, balance at completion.");
+    .fill("20% deposit, 80% at completion.");
   await page
     .getByLabel("Assumptions", { exact: true })
     .fill("Access is available.");

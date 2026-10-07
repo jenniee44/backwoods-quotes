@@ -432,16 +432,14 @@ describe("V2 templates, takeoff and customer privacy", () => {
     expect(rows[0].amount).toBe(calculate(q).subtotal);
     q.details.showQuantities = true;
     const quantities = customerRows(q);
-    expect(quantities[0].quantities).toEqual(["Lumber and fasteners: 40 each"]);
+    expect(quantities[0].quantities).toEqual(["40 each"]);
     expect(JSON.stringify(rows)).not.toMatch(
       /SECRET|markup|cost|rate|waste|profit|margin/,
     );
     q.details.showQuantities = false;
     expect(customerRows(q)[0].quantities).toEqual([]);
     q.details.showLabourHours = true;
-    expect(customerRows(q)[0].quantities).toEqual([
-      "Construction labour: 40 hours",
-    ]);
+    expect(customerRows(q)[0].quantities).toEqual(["40 hours"]);
   });
   it("drafts can save missing business information, but sent checklist reports it", () => {
     const q = newQuote({ ...defaults, targetMargin: 30 }, []);
@@ -533,12 +531,12 @@ describe("V2 testing refinements", () => {
     }));
     const rows = customerRows(q);
     expect(rows).toEqual([
-      { description: "Framing", amount: 324, quantities: [] },
+      { description: "Framing", scopeText: "", amount: 324, quantities: [] },
     ]);
     expect(rows.reduce((s, r) => s + r.amount, 0)).toBe(calculate(q).subtotal);
     q.details.exposeContingency = true;
     expect(customerRows(q)).toEqual([
-      { description: "Framing", amount: 315, quantities: [] },
+      { description: "Framing", scopeText: "", amount: 315, quantities: [] },
       { description: "Contingency allowance", amount: 9, quantities: [] },
     ]);
   });
@@ -848,4 +846,231 @@ it("Bathroom Renovation includes practical wall preparation and finishing stages
   const store = seed();
   store.quotes = [saved];
   expect(migrate(store).quotes[0]).toEqual(before);
+});
+
+import { customerDocument, customerScopesFor } from "./customerDocument";
+import { addAnalysisSuggestions } from "./planAnalysis";
+import { paymentError, companyDefaults } from "./model";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import CustomerQuote from "./CustomerQuote";
+describe("customer document and readiness refinements", () => {
+  it("hides zero scopes and rolls bathroom rows into broad editable scopes without changing totals", () => {
+    const q = applyTemplate(
+      newQuote(
+        { ...defaults, labourRate: 100, overhead: 10, contingency: 5 },
+        [],
+      ),
+      constructionTemplates.find((t) => t.id === "bathroom")!,
+    );
+    const drywall = q.lines.find(
+      (l) => l.description === "Drywall / board installation labour",
+    )!;
+    drywall.quantity = 2;
+    const prep = q.lines.find(
+      (l) => l.scopeGroup === "Floor Preparation" && l.kind === "Labour",
+    )!;
+    prep.quantity = 1;
+    expect(customerRows(q)).toHaveLength(1);
+    expect(customerRows(q)[0]).toMatchObject({
+      description: "Framing & Wall Preparation",
+      amount: 345,
+    });
+    expect(JSON.stringify(customerRows(q))).not.toContain("HVAC");
+    q.customerScopes = customerScopesFor(q).map((scope) =>
+      scope.label === "Framing & Wall Preparation"
+        ? {
+            ...scope,
+            label: "Walls and floors",
+            description: "Prepare agreed walls and floors.",
+          }
+        : scope,
+    );
+    expect(customerRows(q)[0]).toMatchObject({
+      description: "Walls and floors",
+      scopeText: "Prepare agreed walls and floors.",
+    });
+    expect(calculate(q).subtotal).toBe(345);
+  });
+  it("projects only allowed customer values and suppresses known helper placeholders", () => {
+    const q = newQuote(defaults, []);
+    q.name = "Public project";
+    q.description = "Public agreed scope";
+    q.notes = "PRIVATE NOTES";
+    q.details.assumptions =
+      "Leave blank as a company default. These are usually job-specific.";
+    q.details.exclusions =
+      "Leave blank as a default for now. We can eventually create better standard exclusions.";
+    q.lines = [
+      {
+        ...newLine("Materials", defaults),
+        description: "PRIVATE RECIPE",
+        scopeGroup: "Customer scope",
+        quantity: 2,
+        cost: 30,
+        markup: 50,
+        materialNotes: "PRIVATE MATERIAL NOTES",
+        supplier: "PRIVATE SUPPLIER",
+        takeoffSource: {
+          documentName: "PRIVATE DRAWING",
+          page: 1,
+          quantity: 2,
+          unit: "each",
+          notes: "PRIVATE TAKEOFF NOTES",
+          confidence: "Low",
+        },
+      },
+    ];
+    q.takeoff = [
+      {
+        id: "takeoff",
+        documentId: "d",
+        page: 1,
+        description: "PRIVATE MEASUREMENT",
+        quantity: 2,
+        unit: "each",
+        notes: "PRIVATE TAKEOFF NOTES",
+        status: "Proposed",
+        confidence: "Low",
+      },
+    ];
+    const projected = JSON.stringify(customerDocument(q));
+    expect(projected).not.toMatch(
+      /PRIVATE|leave blank|eventually|markup|margin|profit|labourRate|materialNotes|cost/i,
+    );
+    for (const mode of ["Simplified", "Detailed"] as const) {
+      q.mode = mode;
+      const markup = renderToStaticMarkup(
+        createElement(CustomerQuote, {
+          quote: q,
+          onClose: () => {},
+          onMode: () => {},
+          onDetails: () => {},
+        }),
+      );
+      const article = markup.slice(markup.indexOf("<article"));
+      expect(article).toContain("Public project");
+      expect(article).not.toMatch(
+        /PRIVATE|leave blank|eventually|markup|margin|profit|hourly/i,
+      );
+      expect(article).toContain("$90.00");
+      expect(article).toContain("$11.70");
+      expect(article).toContain("$101.70");
+      if (mode === "Simplified")
+        expect(article).not.toContain("Customer scope");
+      else expect(article).toContain("Customer scope");
+    }
+  });
+  it("omits all unused rows when a template has not been priced", () => {
+    const q = applyTemplate(
+      newQuote(defaults, []),
+      constructionTemplates.find((t) => t.id === "bathroom")!,
+    );
+    expect(customerRows(q)).toEqual([]);
+  });
+  it("validates percentage payment schedules without inventing default payments", () => {
+    expect(
+      paymentError("20% acceptance, 30% start, 30% midpoint, 20% completion"),
+    ).toBeNull();
+    expect(
+      paymentError("33.33% start, 33.33% midpoint, 33.34% completion"),
+    ).toBeNull();
+    expect(paymentError("20% deposit, 70% completion")).toContain(
+      "currently 90%",
+    );
+    expect(paymentError("")).toBeNull();
+    expect(paymentError("Payment upon completion")).toBeNull();
+    const q = newQuote(defaults, []);
+    q.details.payment = "20% deposit";
+    expect(validate(q)).toContain("100%");
+  });
+  it("snapshots company contact and document defaults for new quotes", () => {
+    const company = { ...companyDefaults, phone: "555-1234" };
+    const options = {
+      ...seed().quoteDefaults,
+      payment: "100% on completion",
+      assumptions: "Public assumption",
+    };
+    const q = newQuote(defaults, [], options, company);
+    company.phone = "555-9999";
+    options.payment = "50% start, 50% finish";
+    expect(q.company!.phone).toBe("555-1234");
+    expect(q.details.payment).toBe("100% on completion");
+    const store = seed();
+    store.quotes = [q];
+    store.company = company;
+    expect(migrate(store).quotes[0].company).toEqual(q.company);
+    const old = seed();
+    delete old.company;
+    old.quotes.forEach((item) => {
+      delete item.company;
+      delete item.customerScopes;
+    });
+    expect(migrate(old).quotes).toEqual(old.quotes);
+  });
+  it("preserves source traceability after approval/conversion/removal and rejects unapproved analysis", () => {
+    const q = newQuote(defaults, []);
+    q.documents = [
+      {
+        id: "drawing",
+        name: "Deck Plan",
+        type: "image/png",
+        data: "data:image/png;base64,AA==",
+        addedAt: new Date().toISOString(),
+      },
+    ];
+    const suggestion = {
+      description: "Deck area",
+      quantity: 384,
+      unit: "sq. ft.",
+      documentId: "drawing",
+      page: 2,
+      notes: "Confirm dimensions on site",
+      confidence: "Low" as const,
+    };
+    const proposed = addAnalysisSuggestions(q, {
+      suggestions: [{ ...suggestion, status: "Reviewed" } as typeof suggestion],
+      warnings: [],
+    });
+    expect(proposed.takeoff[0].status).toBe("Proposed");
+    expect(() =>
+      takeoffToLine(proposed, proposed.takeoff[0], "Materials"),
+    ).toThrow();
+    proposed.takeoff[0].status = "Approved";
+    proposed.takeoff[0].reviewAcknowledged = true;
+    proposed.takeoff[0].destination = "Materials";
+    const converted = takeoffToLine(proposed, proposed.takeoff[0], "Materials");
+    converted.documents = [];
+    converted.takeoff = [];
+    expect(converted.lines[0].takeoffSource).toMatchObject({
+      documentName: "Deck Plan",
+      page: 2,
+      quantity: 384,
+      notes: "Confirm dimensions on site",
+    });
+    expect(() =>
+      addAnalysisSuggestions(q, {
+        suggestions: [{ ...suggestion, documentId: "unknown" }],
+        warnings: [],
+      }),
+    ).toThrow();
+  });
+  it("target margin advice excludes HST and never changes quote price", () => {
+    const q = newQuote({ ...defaults, targetMargin: 25 }, []);
+    q.lines = [
+      {
+        ...newLine("Materials", defaults),
+        quantity: 1,
+        cost: 800,
+        override: 1000,
+      },
+    ];
+    const t = calculate(q);
+    expect(t.profit).toBe(200);
+    expect(t.margin).toBe(20);
+    expect(t.belowTarget).toBe(true);
+    expect(t.targetPrice).toBe(1066.67);
+    expect(t.total).toBe(1130);
+    expect(q.lines[0].override).toBe(1000);
+  });
 });

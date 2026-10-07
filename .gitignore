@@ -3,3 +3,11 @@ dist/
 *.tsbuildinfo
 playwright-report/
 test-results/
+
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+.wrangler/
+!.dev.vars.example

@@ -1,8 +1,23 @@
+import {
+  planAnalysisService,
+  documentFingerprint,
+  addAnalysisSuggestions,
+  editTakeoff,
+  reviewTakeoff,
+  approveTakeoff,
+  canConvert,
+} from "./planAnalysis";
+import {
+  destinations,
+  classifications,
+  validateDocuments,
+} from "../shared/analysis";
+import { validatePlanFile } from "./validatePlanFile";
 import PdfPreview from "./PdfPreview";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import NumberInput from "./NumberInput";
-import { id, units, takeoffToLine } from "./model";
+import { id, units, categories, takeoffToLine } from "./model";
 import type { Quote, PlanDocument, TakeoffItem, Kind } from "./model";
 function DocumentPreview({ document: d }: { document: PlanDocument }) {
   const [url, setUrl] = useState("");
@@ -43,12 +58,119 @@ export default function PlansTakeoff({
   locked,
   onChange,
   onError,
+  onViewEstimate,
 }: {
   quote: Quote;
   locked: boolean;
   onChange: (q: Quote) => void;
   onError: (s: string) => void;
+  onViewEstimate?: () => void;
 }) {
+  const [excludedDocuments, setExcludedDocuments] = useState<string[]>([]);
+  const latest = useRef(q);
+  latest.current = q;
+  const request = useRef<AbortController | null>(null);
+  const [analysisState, setAnalysisState] = useState("Ready to analyze");
+  const [analysisError, setAnalysisError] = useState("");
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const busy =
+    analysisState === "Uploading/preparing" ||
+    analysisState === "Analyzing plans";
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      request.current = null;
+    },
+    [],
+  );
+  async function analyze() {
+    if (request.current || locked) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setAnalysisError("");
+    setAnalysisState("Uploading/preparing");
+    try {
+      const documents = structuredClone(
+        latest.current.documents.filter(
+          (d) => !excludedDocuments.includes(d.id),
+        ),
+      );
+      validateDocuments(documents);
+      const fingerprint = await documentFingerprint(documents);
+      if (
+        latest.current.analysisReports?.some(
+          (report) => report.fingerprint === fingerprint,
+        )
+      )
+        throw new Error(
+          "These plans have already been analyzed. Review the existing proposed items.",
+        );
+      setAnalysisState("Analyzing plans");
+      const result = await planAnalysisService.analyze(
+        documents,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      if (
+        (await documentFingerprint(
+          latest.current.documents.filter((d) =>
+            documents.some((source) => source.id === d.id),
+          ),
+        )) !== fingerprint
+      )
+        throw new Error(
+          "Source files changed during analysis. Results were not added; analyze the current files.",
+        );
+      onChange(addAnalysisSuggestions(latest.current, result, fingerprint));
+      setAnalysisState(
+        result.suggestions.length || result.dimensions?.length
+          ? "Analysis complete — needs review"
+          : "Analysis complete — no usable takeoff found",
+      );
+    } catch (error) {
+      if (request.current === controller) {
+        setAnalysisState("Analysis failed");
+        setAnalysisError(
+          controller.signal.aborted
+            ? "Analysis cancelled. Existing estimates are unchanged."
+            : (error as Error).message,
+        );
+      }
+    } finally {
+      if (request.current === controller) request.current = null;
+    }
+  }
+  function updateItem(
+    item: TakeoffItem,
+    action: (item: TakeoffItem) => TakeoffItem,
+  ) {
+    try {
+      const next = action(item);
+      onChange({
+        ...q,
+        takeoff: q.takeoff.map((t) => (t.id === item.id ? next : t)),
+      });
+    } catch (error) {
+      onError((error as Error).message);
+    }
+  }
+  function bulkApprove(reviewedOnly = false) {
+    const chosen = q.takeoff.filter(
+      (t) =>
+        !t.convertedLineId &&
+        (reviewedOnly ? t.status === "Reviewed" : selectedItems.includes(t.id)),
+    );
+    try {
+      const approved = chosen.map(approveTakeoff);
+      onChange({
+        ...q,
+        takeoff: q.takeoff.map((t) => approved.find((a) => a.id === t.id) ?? t),
+      });
+      setSelectedItems([]);
+    } catch (error) {
+      onError((error as Error).message);
+    }
+  }
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const current = q.documents.find((d) => d.id === selected);
@@ -84,13 +206,15 @@ export default function PlansTakeoff({
             r.onerror = () => reject(new Error("Unable to read document."));
             r.readAsDataURL(f);
           });
-          return {
+          const document = {
             id: replaceId ?? id(),
             name: f.name,
             type: f.type,
             data,
             addedAt: new Date().toISOString(),
           } as PlanDocument;
+          await validatePlanFile(document);
+          return document;
         }),
       );
       onChange({
@@ -101,7 +225,12 @@ export default function PlansTakeoff({
         takeoff: replaceId
           ? q.takeoff.map((t) =>
               t.documentId === replaceId
-                ? { ...t, status: "Proposed", confidence: "Unspecified" }
+                ? {
+                    ...t,
+                    status: "Proposed",
+                    confidence: "Unspecified",
+                    reviewAcknowledged: false,
+                  }
                 : t,
             )
           : q.takeoff,
@@ -117,9 +246,7 @@ export default function PlansTakeoff({
     onChange({
       ...q,
       takeoff: q.takeoff.map((t) =>
-        t.id === item.id
-          ? { ...t, ...delta, status: delta.status ?? "Proposed" }
-          : t,
+        t.id === item.id ? editTakeoff(t, delta) : t,
       ),
     });
   }
@@ -127,30 +254,124 @@ export default function PlansTakeoff({
     <>
       <div className="info">
         <b>
-          Upload plans → Proposed takeoff → Contractor review → Approve →
-          Convert to estimate
+          1 Upload → 2 Analyze → 3 Review → 4 Approve → 5 Convert to Estimate
         </b>
         <p>
-          Record your measurements from plans. This version does not interpret
-          drawings or check engineering. Future AI results must enter as
-          Proposed suggestions and require your review. Confidence is your own
-          assessment.
+          AI-assisted takeoff for estimating purposes only. Verify dimensions,
+          quantities, specifications and site conditions before quoting or
+          construction.
+        </p>
+        <p>
+          Analysis sends the attached files to the server and OpenAI. Plans may
+          contain personal information; redact anything unnecessary first.
+          Extracted results stay private to your estimate.
         </p>
       </div>
-      <button
-        className="button secondary"
-        disabled
-        title="Manual takeoff only; future analysis requires contractor approval"
-      >
-        Analyze plans · coming later
-      </button>
+      <div className="heading-actions">
+        <button
+          className="button"
+          disabled={
+            locked ||
+            busy ||
+            uploading ||
+            !q.documents.some((d) => !excludedDocuments.includes(d.id))
+          }
+          onClick={analyze}
+        >
+          Analyze Plans
+        </button>
+        {busy && (
+          <button
+            className="button secondary"
+            onClick={() => request.current?.abort()}
+          >
+            Cancel analysis
+          </button>
+        )}
+        {q.takeoff.some((t) => t.convertedLineId) && (
+          <button className="button secondary" onClick={onViewEstimate}>
+            View Estimate
+          </button>
+        )}
+      </div>
+      <p role="status" aria-live="polite">
+        {uploading ? "Uploading/preparing" : analysisState}
+      </p>
+      {busy && <progress aria-label="Plan analysis progress" />}
+      {analysisError && (
+        <p className="error" role="alert">
+          {analysisError}
+        </p>
+      )}
+      {(q.analysisReports ?? []).map((report) => (
+        <details key={report.id} className="analysis-report" open>
+          <summary>
+            Plan summary · {new Date(report.createdAt).toLocaleDateString()}
+          </summary>
+          {report.project && (
+            <>
+              <p>
+                <b>
+                  {report.project.projectType} · {report.project.drawingTitle}
+                </b>
+              </p>
+              <p>{report.project.description}</p>
+              <small>
+                {[
+                  report.project.drawingNumbers.join(", "),
+                  report.project.revision,
+                  report.project.date,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </small>
+            </>
+          )}
+          {!!report.dimensions?.length && (
+            <>
+              <h3>Key dimensions (information only)</h3>
+              {report.dimensions.map((dimension, i) => (
+                <p key={i}>
+                  <b>{dimension.description}</b>:{" "}
+                  {dimension.quantity ?? "Requires contractor input"}{" "}
+                  {dimension.unit} · {dimension.confidence} confidence ·{" "}
+                  {q.documents.find((d) => d.id === dimension.documentId)
+                    ?.name ?? "Removed source"}
+                  {dimension.page ? ` — Page ${dimension.page}` : ""}
+                  <small>{dimension.notes}</small>
+                </p>
+              ))}
+            </>
+          )}
+          {!!report.assumptions.length && (
+            <>
+              <h3>Assumptions</h3>
+              <ul>
+                {report.assumptions.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {!!report.warnings.length && (
+            <div className="margin-warning">
+              <h3>Plan warnings / estimating notes</h3>
+              <ul>
+                {report.warnings.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </details>
+      ))}
       <h3 className="subheading">Plans & documents</h3>
       <p className="muted">
         PDF plans, engineer drawings or photos · up to 8 files, 2 MB each.
         Stored in this browser. Save the quote after attaching; total browser
         storage may be smaller than combined file sizes.
       </p>
-      <fieldset disabled={locked || uploading}>
+      <fieldset disabled={locked || uploading || busy}>
         <label className="upload">
           {uploading
             ? "Reading documents…"
@@ -176,7 +397,22 @@ export default function PlansTakeoff({
             >
               {d.name}
             </button>
-            <fieldset disabled={locked || uploading}>
+            <label className="check-options">
+              <input
+                type="checkbox"
+                disabled={busy || locked}
+                checked={!excludedDocuments.includes(d.id)}
+                onChange={(e) =>
+                  setExcludedDocuments(
+                    e.target.checked
+                      ? excludedDocuments.filter((id) => id !== d.id)
+                      : [...excludedDocuments, d.id],
+                  )
+                }
+              />
+              Include in analysis
+            </label>
+            <fieldset disabled={locked || uploading || busy}>
               <label className="replace-document">
                 Replace
                 <input
@@ -202,6 +438,7 @@ export default function PlansTakeoff({
                             ...t,
                             status: "Proposed",
                             confidence: "Unspecified",
+                            reviewAcknowledged: false,
                           }
                         : t,
                     ),
@@ -227,6 +464,33 @@ export default function PlansTakeoff({
           <option key={u} value={u} />
         ))}
       </datalist>
+      {!!q.takeoff.some((t) => t.origin === "ai") && (
+        <div className="heading-actions">
+          <button
+            className="button secondary"
+            disabled={locked || !selectedItems.length}
+            onClick={() => bulkApprove()}
+          >
+            Approve selected reviewed items
+          </button>
+          <button
+            className="button secondary"
+            disabled={
+              locked ||
+              !q.takeoff.some(
+                (t) =>
+                  t.origin === "ai" &&
+                  t.status === "Reviewed" &&
+                  t.reviewAcknowledged &&
+                  !t.convertedLineId,
+              )
+            }
+            onClick={() => bulkApprove(true)}
+          >
+            Approve all reviewed items
+          </button>
+        </div>
+      )}
       {q.takeoff.map((t) => (
         <fieldset className="line-card" key={t.id} disabled={locked}>
           <div className="line-title">
@@ -249,11 +513,137 @@ export default function PlansTakeoff({
               <Trash2 size={17} />
             </button>
           </div>
+          {t.origin === "ai" && (
+            <>
+              <p className={`confidence ${t.confidence.toLowerCase()}`}>
+                <b>{t.confidence.toUpperCase()} confidence</b> ·{" "}
+                {t.classification} · {t.status}
+              </p>
+              {t.quantity === null && (
+                <p className="margin-warning">
+                  Requires contractor input — no quantity was invented.
+                </p>
+              )}
+              <p className="tiny">
+                Source: {t.sourceDocumentName}
+                {t.page ? ` — Page ${t.page}` : ""}. Verify the source and
+                uncertainty before approval.
+              </p>
+              {!!t.assumptions?.length && (
+                <p>Assumptions: {t.assumptions.join("; ")}</p>
+              )}
+              {!!t.warnings?.length && (
+                <p className="margin-warning">
+                  Needs verification: {t.warnings.join("; ")}
+                </p>
+              )}
+              <div className="fields">
+                <Field label="Suggested destination">
+                  <select
+                    value={t.destination}
+                    onChange={(e) =>
+                      patch(t, {
+                        destination: e.target
+                          .value as TakeoffItem["destination"],
+                      })
+                    }
+                  >
+                    {destinations.map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Takeoff category">
+                  <select
+                    value={t.category}
+                    onChange={(e) => patch(t, { category: e.target.value })}
+                  >
+                    {[
+                      ...new Set([
+                        ...categories,
+                        t.category ?? "Miscellaneous",
+                      ]),
+                    ].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Evidence type">
+                  <select
+                    value={t.classification}
+                    onChange={(e) =>
+                      patch(t, {
+                        classification: e.target
+                          .value as TakeoffItem["classification"],
+                      })
+                    }
+                  >
+                    {classifications.map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="check-options">
+                <label>
+                  <input
+                    type="checkbox"
+                    disabled={t.convertedLineId !== undefined}
+                    checked={selectedItems.includes(t.id)}
+                    onChange={(e) =>
+                      setSelectedItems(
+                        e.target.checked
+                          ? [...selectedItems, t.id]
+                          : selectedItems.filter((id) => id !== t.id),
+                      )
+                    }
+                  />
+                  Select for approval
+                </label>
+              </div>
+              {!t.convertedLineId && (
+                <div className="heading-actions">
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => updateItem(t, reviewTakeoff)}
+                  >
+                    Mark reviewed — I verified this item
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={t.status !== "Reviewed" || !t.reviewAcknowledged}
+                    onClick={() => updateItem(t, approveTakeoff)}
+                  >
+                    Approve item
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() =>
+                      updateItem(t, (item) => ({
+                        ...item,
+                        status: "Rejected",
+                        reviewAcknowledged: false,
+                      }))
+                    }
+                  >
+                    Reject item
+                  </button>
+                </div>
+              )}
+            </>
+          )}
           <div className="fields compact">
             <Field label="Takeoff quantity">
               <NumberInput
                 value={t.quantity}
-                onChange={(n) => patch(t, { quantity: n })}
+                nullable={t.origin === "ai"}
+                placeholder="Requires contractor input"
+                onChange={(n) =>
+                  patch(t, { quantity: Number.isNaN(n) ? null : n })
+                }
               />
             </Field>
             <Field label="Takeoff unit">
@@ -308,11 +698,31 @@ export default function PlansTakeoff({
               <select
                 value={t.status}
                 onChange={(e) =>
-                  patch(t, { status: e.target.value as TakeoffItem["status"] })
+                  updateItem(t, (item) =>
+                    e.target.value === "Reviewed"
+                      ? t.origin === "ai"
+                        ? reviewTakeoff(item)
+                        : { ...item, status: "Reviewed" }
+                      : e.target.value === "Approved"
+                        ? approveTakeoff(item)
+                        : {
+                            ...item,
+                            status: e.target.value as TakeoffItem["status"],
+                            reviewAcknowledged: false,
+                          },
+                  )
                 }
               >
                 <option>Proposed</option>
-                <option>Reviewed</option>
+                <option value="Reviewed">
+                  {t.origin === "ai"
+                    ? "Reviewed — awaiting approval"
+                    : "Approved"}
+                </option>
+                {t.origin === "ai" && (
+                  <option value="Approved">Approved</option>
+                )}
+                <option value="Rejected">Rejected</option>
               </select>
             </Field>
           </div>
@@ -331,7 +741,7 @@ export default function PlansTakeoff({
             <Field label="Convert reviewed item to estimate">
               <select
                 value=""
-                disabled={t.status !== "Reviewed" || !t.description.trim()}
+                disabled={!canConvert(t) || !t.description.trim()}
                 onChange={(e) => {
                   try {
                     onChange(takeoffToLine(q, t, e.target.value as Kind));
@@ -341,7 +751,14 @@ export default function PlansTakeoff({
                 }}
               >
                 <option value="">Choose line type…</option>
-                {["Materials", "Labour", "Other Costs"].map((k) => (
+                {(t.origin === "ai"
+                  ? [
+                      t.destination === "Subcontractor"
+                        ? "Other Costs"
+                        : t.destination,
+                    ].filter((k) => k !== "Informational" && k !== undefined)
+                  : ["Materials", "Labour", "Other Costs"]
+                ).map((k) => (
                   <option key={k}>{k}</option>
                 ))}
               </select>

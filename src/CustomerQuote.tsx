@@ -1,12 +1,6 @@
 import { ArrowLeft, Printer, TreePine } from "lucide-react";
-import {
-  calculate,
-  estimateFor,
-  money,
-  detailLabels,
-  responsibilityText,
-} from "./model";
-import { customerRows } from "./customerDocument";
+import { money, paymentError } from "./model";
+import { customerDocument } from "./customerDocument";
 import type { Quote, QuoteDetails } from "./model";
 
 export default function CustomerQuote({
@@ -20,9 +14,8 @@ export default function CustomerQuote({
   onMode: (mode: Quote["mode"]) => void;
   onDetails: (details: QuoteDetails) => void;
 }) {
-  const e = estimateFor(q),
-    t = calculate(e);
-  const customerLines = customerRows(q);
+  const doc = customerDocument(q);
+  const paymentProblem = paymentError(q.details.payment);
   return (
     <div className="preview-overlay">
       <div className="preview-toolbar">
@@ -34,33 +27,43 @@ export default function CustomerQuote({
           value={q.mode}
           onChange={(e) => onMode(e.target.value as Quote["mode"])}
         >
-          <option>Simplified</option>
+          <option value="Simplified">Summary</option>
           <option>Detailed</option>
         </select>
-        <button className="button" onClick={() => window.print()}>
+        <button
+          className="button"
+          disabled={!!paymentProblem}
+          onClick={() => {
+            (document.activeElement as HTMLElement)?.blur();
+            window.print();
+          }}
+        >
           <Printer size={17} /> Print / Save PDF
         </button>
       </div>
       <div className="preview-options check-options">
-        {(["showQuantities", "showLabourHours", "groupLines"] as const).map(
-          (k) => (
-            <label key={k}>
-              <input
-                type="checkbox"
-                checked={q.details[k]}
-                onChange={(e) =>
-                  onDetails({ ...q.details, [k]: e.target.checked })
-                }
-              />
-              {k === "showQuantities"
-                ? "Show quantities"
-                : k === "showLabourHours"
-                  ? "Show labour hours"
-                  : "Group by scope"}
-            </label>
-          ),
-        )}
+        {(["showQuantities", "showLabourHours"] as const).map((k) => (
+          <label key={k}>
+            <input
+              type="checkbox"
+              checked={q.details[k]}
+              onChange={(e) =>
+                onDetails({ ...q.details, [k]: e.target.checked })
+              }
+            />
+            {k === "showQuantities"
+              ? "Show quantities"
+              : k === "showLabourHours"
+                ? "Show labour hours"
+                : "Group by scope"}
+          </label>
+        ))}
       </div>
+      {paymentProblem && (
+        <p className="preview-options error" role="alert">
+          {paymentProblem}
+        </p>
+      )}
       <article className="customer-document">
         <header className="document-header">
           <div className="document-brand">
@@ -71,31 +74,51 @@ export default function CustomerQuote({
           </div>
           <div>
             <h1>PROJECT QUOTE</h1>
-            <p>{q.number}</p>
+            <p>{doc.number}</p>
           </div>
         </header>
         <div className="document-meta">
           <div>
             <h3>PREPARED FOR</h3>
-            <b>{q.customer.name}</b>
-            <p>{q.customer.address}</p>
-            <p>{q.customer.email}</p>
-            <p>{q.customer.phone}</p>
+            <b>{doc.customer.name}</b>
+            {doc.customer.address && <p>{doc.customer.address}</p>}
+            {doc.customer.email && <p>{doc.customer.email}</p>}
+            {doc.customer.phone && <p>{doc.customer.phone}</p>}
           </div>
           <div>
             <p>
-              <b>Quote date</b> {q.date}
+              <b>Quote date</b> {doc.date}
             </p>
-            {q.expiry && (
+            {doc.expiry && (
               <p>
-                <b>Valid until</b> {q.expiry}
+                <b>Valid until</b> {doc.expiry}
               </p>
             )}
           </div>
         </div>
-        <h2>{q.name}</h2>
+        <h2>{doc.name}</h2>
+        {doc.projectAddress && (
+          <p>
+            <b>Project address</b> {doc.projectAddress}
+          </p>
+        )}
+        {(doc.company.name ||
+          doc.company.address ||
+          doc.company.phone ||
+          doc.company.email) && (
+          <p className="company-contact">
+            {[
+              doc.company.name,
+              doc.company.address,
+              doc.company.phone,
+              doc.company.email,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
         <h3>SCOPE OF WORK</h3>
-        <p className="scope">{q.description || q.name}</p>
+        <p className="scope">{doc.scope || doc.name}</p>
         <table>
           <thead>
             <tr>
@@ -106,15 +129,16 @@ export default function CustomerQuote({
           <tbody>
             {q.mode === "Simplified" ? (
               <tr>
-                <td>{q.name}</td>
-                <td>{money(t.subtotal)}</td>
+                <td>{doc.name}</td>
+                <td>{money(doc.subtotal)}</td>
               </tr>
             ) : (
               <>
-                {customerLines.map((l, i) => (
+                {doc.rows.map((l, i) => (
                   <tr key={i}>
                     <td>
-                      {l.description}
+                      <b>{l.description}</b>
+                      {l.scopeText && <p className="scope">{l.scopeText}</p>}
                       {l.quantities.map((text, j) => (
                         <small key={j}>{text}</small>
                       ))}
@@ -129,33 +153,23 @@ export default function CustomerQuote({
         <div className="document-totals">
           <div>
             <span>Subtotal</span>
-            <b>{money(t.subtotal)}</b>
+            <b>{money(doc.subtotal)}</b>
           </div>
           <div>
-            <span>HST ({e.pricing.hst}%)</span>
-            <b>{money(t.tax)}</b>
+            <span>HST ({doc.hst}%)</span>
+            <b>{money(doc.tax)}</b>
           </div>
           <div className="total">
             <span>Total (CAD)</span>
-            <b>{money(t.total)}</b>
+            <b>{money(doc.total)}</b>
           </div>
         </div>
-        <section className="document-terms">
-          <h3>TERMS & CONDITIONS</h3>
-          <p>{q.terms}</p>
-        </section>
-        {(Object.keys(detailLabels) as (keyof typeof detailLabels)[])
-          .filter((k) => k !== "terms" && q.details[k].trim())
-          .map((k) => (
-            <section className="document-terms" key={k}>
-              <h3>{detailLabels[k].toUpperCase()}</h3>
-              <p>
-                {k === "permits" || k === "engineering"
-                  ? responsibilityText(k, q.details[k])
-                  : q.details[k]}
-              </p>
-            </section>
-          ))}
+        {doc.sections.map((section) => (
+          <section className="document-terms" key={section.label}>
+            <h3>{section.label.toUpperCase()}</h3>
+            <p>{section.text}</p>
+          </section>
+        ))}
         <section className="acceptance">
           <h3>ACCEPTANCE</h3>
           <p>I accept the scope of work and pricing outlined above.</p>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import CustomerScopeEditor from "./CustomerScopeEditor";
 import CustomerQuote from "./CustomerQuote";
 import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
@@ -24,6 +25,8 @@ import {
 } from "lucide-react";
 import {
   calculate,
+  companyDefaults,
+  paymentError,
   estimateFor,
   applyTemplate,
   templateApplied,
@@ -62,7 +65,7 @@ function Field({
 const priceLabels: Record<keyof Pricing, string> = {
   materialMarkup: "Material markup (%)",
   labourRate: "Customer labour rate ($/hour)",
-  overhead: "Overhead / profit addition (%)",
+  overhead: "General overhead & profit adjustment (%)",
   contingency: "Contingency (%)",
   hst: "HST (%)",
   internalLabourCost: "Internal labour cost ($/hour)",
@@ -109,6 +112,12 @@ function PricingFields({
       {fields(
         company ? (Object.keys(priceLabels) as (keyof Pricing)[]) : normal,
       )}
+      <p className="muted">
+        Material and subcontractor markup apply to their own internal line
+        costs. General overhead &amp; profit adjustment and contingency each
+        apply independently to the sum of line selling prices, not to each
+        other. HST applies to the resulting subtotal. Target margin is advisory.
+      </p>
       {!company && (
         <details className="advanced-pricing">
           <summary>Advanced pricing</summary>
@@ -163,6 +172,7 @@ export default function App() {
     [mobileMenu, setMobileMenu] = useState(false),
     [reviewing, setReviewing] = useState(false),
     [quoteDefaults, setQuoteDefaults] = useState(store.quoteDefaults);
+  const [company, setCompany] = useState(store.company ?? companyDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
       id: id(),
@@ -208,6 +218,8 @@ export default function App() {
         description: q.description,
         terms: q.terms,
         details: q.details,
+        customerScopes: q.customerScopes,
+        company: q.company,
         date: q.date,
         expiry: q.expiry,
       }) !==
@@ -219,6 +231,8 @@ export default function App() {
           description: stored.description,
           terms: stored.terms,
           details: stored.details,
+          customerScopes: stored.customerScopes,
+          company: stored.company,
           date: stored.date,
           expiry: stored.expiry,
         })
@@ -278,7 +292,14 @@ export default function App() {
     setError(initial.error);
   }
   function create() {
-    setEditing(newQuote(store.settings, store.quotes, store.quoteDefaults));
+    setEditing(
+      newQuote(
+        store.settings,
+        store.quotes,
+        store.quoteDefaults,
+        store.company ?? companyDefaults,
+      ),
+    );
     setTab("Customer & job");
     setSelectedTemplate("");
     setNotice("");
@@ -536,6 +557,16 @@ export default function App() {
                       {t}
                     </button>
                   ))}
+                  <button
+                    className="totals-shortcut"
+                    onClick={() =>
+                      document
+                        .getElementById("quote-private-summary")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }
+                  >
+                    Private totals · {money(totals!.total)}
+                  </button>
                 </div>
                 <div className="builder">
                   <section className="panel editor">
@@ -597,6 +628,19 @@ export default function App() {
                               />
                             </Field>
                           </div>
+                          <Field label="Customer mailing address (optional)">
+                            <input
+                              value={current.customer.mailingAddress ?? ""}
+                              onChange={(e) =>
+                                patch({
+                                  customer: {
+                                    ...current.customer,
+                                    mailingAddress: e.target.value,
+                                  },
+                                })
+                              }
+                            />
+                          </Field>
                           <Field label="Job address">
                             <input
                               value={current.customer.address}
@@ -759,6 +803,12 @@ export default function App() {
                               overrides them.
                             </p>
                           </div>
+                          <CustomerScopeEditor
+                            quote={current}
+                            onChange={(customerScopes) =>
+                              patch({ customerScopes })
+                            }
+                          />
                           <QuoteDetailsEditor
                             value={current.details}
                             onChange={(details) => patch({ details })}
@@ -836,6 +886,7 @@ export default function App() {
                     )}
                     {tab === "Plans & Takeoff" && (
                       <PlansTakeoff
+                        onViewEstimate={() => setTab("Materials")}
                         quote={current}
                         locked={locked}
                         onChange={(q) => {
@@ -1059,10 +1110,10 @@ export default function App() {
                       </>
                     )}
                   </section>
-                  <aside className="panel summary">
+                  <aside className="panel summary" id="quote-private-summary">
                     <div className="eyebrow">PRIVATE · INTERNAL ONLY</div>
                     <h2>Quote summary</h2>
-                    <h3 className="subheading">Direct job costs</h3>
+                    <h3 className="subheading">Estimated actual cost</h3>
                     <dl>
                       <div>
                         <dt>Labour cost</dt>
@@ -1080,6 +1131,9 @@ export default function App() {
                         <dt>Total direct / estimated actual cost</dt>
                         <dd>{money(totals!.cost)}</dd>
                       </div>
+                    </dl>
+                    <h3 className="subheading">Customer pricing</h3>
+                    <dl>
                       <div>
                         <dt>Labour selling price</dt>
                         <dd>{money(totals!.labourPrice)}</dd>
@@ -1097,7 +1151,7 @@ export default function App() {
                         <dd>{money(totals!.base)}</dd>
                       </div>
                       <div>
-                        <dt>Overhead / profit addition</dt>
+                        <dt>General overhead & profit adjustment</dt>
                         <dd>{money(totals!.overhead)}</dd>
                       </div>
                       <div>
@@ -1124,6 +1178,7 @@ export default function App() {
                       {money(totals!.subtotal)} before HST. Line markups replace
                       quote defaults.
                     </p>
+                    <h3 className="subheading">Profit analysis</h3>
                     <div className="profit-box">
                       <span>Expected gross profit</span>
                       <strong>{money(totals!.profit)}</strong>
@@ -1147,10 +1202,34 @@ export default function App() {
                         </dd>
                       </div>
                     </dl>
+                    <p className="tiny">
+                      Difference from target:{" "}
+                      {(totals!.margin - totals!.targetMargin).toFixed(1)}{" "}
+                      percentage points
+                    </p>
+                    {!totals!.belowTarget && (
+                      <p className="target-met">
+                        ✓ Target met · {totals!.margin.toFixed(1)}% expected /{" "}
+                        {totals!.targetMargin}% target
+                      </p>
+                    )}
                     {totals!.belowTarget && (
                       <div className="margin-warning" role="status">
                         Expected gross margin is below the{" "}
                         {totals!.targetMargin}% target.
+                        {totals!.targetPrice !== null && (
+                          <p>
+                            Minimum pre-tax selling price:{" "}
+                            {money(totals!.targetPrice)}. Suggested increase:{" "}
+                            {money(
+                              Math.max(
+                                0,
+                                totals!.targetPrice - totals!.subtotal,
+                              ),
+                            )}
+                            . Advisory only.
+                          </p>
+                        )}
                       </div>
                     )}
                     <p className="tiny">
@@ -1213,11 +1292,26 @@ export default function App() {
                 <div className="page-heading">
                   <div className="heading-text">
                     <div className="eyebrow">MAKE IT YOURS</div>
-                    <h1>Pricing settings</h1>
+                    <h1>Company settings</h1>
                     <p>Set your starting point. Every quote can be adjusted.</p>
                   </div>
                 </div>
                 <section className="panel settings-panel">
+                  <h2>Company / contact information</h2>
+                  <div className="fields">
+                    {(["name", "phone", "email", "address"] as const).map(
+                      (key) => (
+                        <Field key={key} label={`Company ${key}`}>
+                          <input
+                            value={company[key]}
+                            onChange={(e) =>
+                              setCompany({ ...company, [key]: e.target.value })
+                            }
+                          />
+                        </Field>
+                      ),
+                    )}
+                  </div>
                   <h2>Default pricing</h2>
                   <p className="muted">
                     Business rates start at zero until you choose them. Sample
@@ -1255,7 +1349,21 @@ export default function App() {
                         );
                         return;
                       }
-                      if (saveStore({ ...store, settings, quoteDefaults }))
+                      const paymentProblem = paymentError(
+                        quoteDefaults.payment,
+                      );
+                      if (paymentProblem) {
+                        setError(paymentProblem);
+                        return;
+                      }
+                      if (
+                        saveStore({
+                          ...store,
+                          settings,
+                          quoteDefaults,
+                          company,
+                        })
+                      )
                         setNotice("Pricing defaults saved");
                     }}
                   >

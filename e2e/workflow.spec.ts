@@ -17,7 +17,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Taylor Test");
   await page.getByLabel("Job name *").fill("Test cedar deck");
-  await page.getByLabel("Group detailed quote by scope").uncheck();
+  await expect(page.getByLabel("Group detailed quote by scope")).toBeChecked();
   await page
     .getByLabel("Project description / scope of work")
     .fill("Build a new cedar deck.");
@@ -56,7 +56,8 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
     await expect(doc).not.toContainText(word);
   await expect(doc).not.toContainText("Cedar boards");
   await page.getByLabel("Customer quote mode").selectOption("Detailed");
-  await expect(doc).toContainText("Cedar boards");
+  await expect(doc).toContainText("Project Work");
+  await expect(doc).not.toContainText("Cedar boards");
   await expect(doc).not.toContainText("$720.00");
   await expect(doc).not.toContainText("$300.00");
   await page.emulateMedia({ media: "print" });

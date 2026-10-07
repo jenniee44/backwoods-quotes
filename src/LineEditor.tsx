@@ -63,6 +63,10 @@ export default function LineEditor({
         .filter((l) => l.kind === kind)
         .map((stored) => {
           const l = effectiveLine(stored, q.pricing);
+          const allowance =
+            kind === "Other Costs" &&
+            l.unit === "allowance" &&
+            (l.quantity === 1 || (l.quantity === 0 && l.cost === 0));
           return (
             <fieldset className="line-card" key={l.id} disabled={locked}>
               <div className="line-title">
@@ -116,22 +120,49 @@ export default function LineEditor({
                   </label>
                 ))}
               </div>
-              <div className="fields compact">
-                <F
-                  label={
-                    kind === "Labour"
-                      ? "Estimated hours"
-                      : kind === "Materials"
-                        ? "Required quantity"
-                        : "Quantity"
-                  }
-                >
-                  <NumberInput
-                    value={l.quantity}
-                    onChange={(n) => patch({ ...l, quantity: n })}
-                  />
+              {kind === "Other Costs" && (
+                <F label="Entry method">
+                  <select
+                    value={allowance ? "allowance" : "quantity"}
+                    onChange={(e) =>
+                      patch(
+                        e.target.value === "allowance"
+                          ? {
+                              ...l,
+                              unit: "allowance",
+                              quantity: 1,
+                              cost: lineCost(l),
+                            }
+                          : {
+                              ...l,
+                              unit: l.unit === "allowance" ? "each" : l.unit,
+                            },
+                      )
+                    }
+                  >
+                    <option value="allowance">Amount / allowance</option>
+                    <option value="quantity">Quantity × unit cost</option>
+                  </select>
                 </F>
-                {kind !== "Labour" && (
+              )}
+              <div className="fields compact">
+                {!allowance && (
+                  <F
+                    label={
+                      kind === "Labour"
+                        ? "Estimated hours"
+                        : kind === "Materials"
+                          ? "Required quantity"
+                          : "Quantity"
+                    }
+                  >
+                    <NumberInput
+                      value={l.quantity}
+                      onChange={(n) => patch({ ...l, quantity: n })}
+                    />
+                  </F>
+                )}
+                {kind !== "Labour" && !allowance && (
                   <F label="Unit">
                     <UnitInput
                       value={l.unit}
@@ -162,14 +193,21 @@ export default function LineEditor({
                   label={
                     kind === "Labour"
                       ? "Internal cost / hour ($)"
-                      : "Unit cost ($)"
+                      : allowance
+                        ? "Estimated cost ($)"
+                        : "Unit cost ($)"
                   }
                 >
                   <NumberInput
                     step={kind === "Labour" ? "1" : "0.01"}
                     value={l.cost}
                     onChange={(n) =>
-                      patch({ ...l, cost: n, inheritCost: false })
+                      patch({
+                        ...l,
+                        cost: n,
+                        ...(allowance ? { quantity: 1 } : {}),
+                        inheritCost: false,
+                      })
                     }
                   />
                 </F>
@@ -266,6 +304,29 @@ export default function LineEditor({
                     />
                   </F>
                 </details>
+              )}
+              {kind === "Other Costs" &&
+                /coordination/i.test(l.description) && (
+                  <p className="tiny">
+                    Use this for a real project cost only. General overhead and
+                    profit recovery belong in Pricing; entering both can
+                    duplicate recovery.
+                  </p>
+                )}
+              {l.takeoffSource && (
+                <p className="tiny">
+                  Source: {l.takeoffSource.documentName}
+                  {l.takeoffSource.page
+                    ? ` — Page ${l.takeoffSource.page}`
+                    : ""}{" "}
+                  · approved {l.takeoffSource.quantity} {l.takeoffSource.unit}
+                </p>
+              )}
+              {l.pricingRequired && lineCost(l) === 0 && (
+                <p className="margin-warning">
+                  Pricing required — enter your own cost/rates. AI did not
+                  supply business prices.
+                </p>
               )}
               {l.takeoffId && (
                 <p className="tiny">

@@ -37,7 +37,7 @@ Browser tests: `npx playwright test`. The cloud config uses `/usr/bin/chromium`.
 
 ## Storage and access limitations
 
-This is a working **single-browser development V1**, not a deployed multi-user service. Quotes/settings/photos are stored under `backwoods-quotes-v1` in browser localStorage and survive reloads on that browser and origin. Do not enter sensitive real customer information yet. Clearing browser data removes records; there is no shared synchronization or backup. Tabs are not synchronized; use one editing tab. Storage errors are shown without discarding the in-memory quote. Job photos are limited to eight JPEG/PNG/WebP files under 700 KB each; Plans & Takeoff has separate PDF/image limits described below. The browser's total quota may require smaller files.
+This is a working **single-browser development app**, not a deployed multi-user service. Quotes/settings/photos are stored under `backwoods-quotes-v1` in browser localStorage and survive reloads on that browser and origin. Do not enter sensitive real customer information yet. Clearing browser data removes records; there is no shared synchronization or backup. Tabs are not synchronized; use one editing tab. Storage errors are shown without discarding the in-memory quote. Job photos are limited to eight JPEG/PNG/WebP files under 700 KB each; Plans & Takeoff has separate PDF/image limits described below. The browser's total quota may require smaller files.
 
 The role selector is not login authentication or a security boundary. A production deployment needs identity, server-side authorization and a database; users must never receive other tenants’ internal costing data. Customer quote preview is a separate allowlisted presentation, not a public sharing endpoint.
 
@@ -124,7 +124,7 @@ The internal summary breaks down costs and selling prices by Labour / Materials 
 
 ### Customer documents and lifecycle
 
-Customer documents can independently hide quantities or labour hours and group detailed lines by customer-friendly scope group. Scope groups are editable with common Deck suggestions. Grouped output sums selling prices and does not show internal rates, costs, waste, markup, notes, profit or margin. Simplified output remains a single project amount. Overhead/profit and contingency are normally distributed into scope selling prices, with cent reconciliation; no artificial coordination line is added. Contingency can be explicitly exposed as an allowance.
+Customer documents can independently hide quantities or labour hours. Detailed mode always aggregates customer-facing scope sections. Scope labels and descriptions are editable per quote. Grouped output sums selling prices and does not show internal rates, costs, waste, markup, notes, profit or margin. Simplified output remains a single project amount. Overhead/profit and contingency are normally distributed into scope selling prices, with cent reconciliation; no artificial coordination line is added. Contingency can be explicitly exposed as an allowance.
 
 Quotes include editable payment/deposit schedule, assumptions, exclusions, change orders, timeline, permit and engineering responsibilities, expiry, existing terms and acceptance area. Owner defaults can populate future quotes; `QuoteTemplate.details` supports template-specific text. Actual customer wording should be reviewed for each project.
 
@@ -138,7 +138,7 @@ Plans & Takeoff supports PDF, JPEG, PNG and WebP attachments (eight documents pe
 
 Takeoff items store description, quantity, custom/common unit, attached-document ID, optional page number, notes/source references, confidence and Proposed/Reviewed status (Reviewed is the contractor approval gate). Only contractor-reviewed items can be converted to estimate lines, once per item. Changes reset status to Proposed. Replacing/removing a source resets related items for review but leaves previously converted estimate lines untouched; check those separately. Takeoff confidence is user-assessed, not an engineering assurance.
 
-There is **no AI drawing interpretation** in V2. Future analysis should populate `TakeoffItem` records as Proposed, with document/page provenance, requiring contractor review before `takeoffToLine` conversion. Rendering a PDF does not validate its engineering or measurements.
+Optional **AI-assisted drawing interpretation** is now implemented through the secured Pages Function described below. Analysis populates `TakeoffItem` records as Proposed, with document/page provenance, requiring explicit contractor review and approval before `takeoffToLine` conversion. Rendering a PDF does not validate its engineering or measurements.
 
 ### Safe V1 migration and backups
 
@@ -180,7 +180,7 @@ npm run build
 npm run test:e2e
 ```
 
-Recommended later work: proper authentication/shared database, object storage for large plans, customer sharing/acceptance, additional template management, and reviewed AI takeoff proposals. Those remain separate from this complete manual V2 workflow; no accounting, payroll, inventory or scheduling has been added.
+Recommended later work: proper authentication/shared database, object storage for large plans, customer sharing/acceptance, additional template management, and further live-plan validation of AI takeoff proposals. Shared services remain separate from the V2 workflow; no accounting, payroll, inventory or scheduling has been added.
 
 ## Refinements following V2 field testing
 
@@ -196,6 +196,95 @@ Short permit/engineering entries such as “homeowner” render as complete cust
 
 Quotes autosave locally after a 600 ms pause in model changes. The header shows Saving…, Saved or Save failed. Invalid data or storage quota errors leave the last saved record intact and show an error; correct it and retry. Blank numeric text is temporary until blur/save, so a still-focused blank field has not yet changed the saved numeric model. Manual Save remains available. Tabs stay at the top of the viewport while scrolling. Sending requires checklist review and a native confirmation; `sentAt` records the timestamp and the financial snapshot locks.
 
-Plans & Takeoff explicitly shows Upload → Proposed → Contractor review → Approve → Convert. Analyze plans is disabled/future-state; there is no automatic drawing interpretation. The `WorkflowStage` type prepares Lead through Paid without adding status buttons. Accepted jobs have a Change Orders foundation panel, and `ChangeOrder` / `changeOrderTotals` prepare separately approved contract adjustments. Entry, approval and job-contract adjustment application are intentionally deferred; original accepted estimates remain untouched. These are architecture hooks, not claims of a working change-order approval service.
+Plans & Takeoff explicitly shows Upload → Proposed → Contractor review → Approve → Convert. Analyze Plans uses the secured AI endpoint described below when its server configuration is available; manual takeoff remains available. The `WorkflowStage` type prepares Lead through Paid without adding status buttons. Accepted jobs have a Change Orders foundation panel, and `ChangeOrder` / `changeOrderTotals` prepare separately approved contract adjustments. Entry, approval and job-contract adjustment application are intentionally deferred; original accepted estimates remain untouched. These are architecture hooks, not claims of a working change-order approval service.
 
 Regression coverage includes inheritance vs overrides, double-markup prevention, exact customer group reconciliation, metadata privacy, expiry boundaries, template/group reuse, sent snapshots, numeric steps/blank commits and autosave failure. Physical Safari testing on your Mac/iPhone is recommended after this branch is built by your preview project.
+
+## Production-readiness refinement (local V2 preview)
+
+The React/TypeScript/Vite application and static Cloudflare Pages build remain intact. The subsequent AI implementation adds the server-side Pages Function described below, without committing provider credentials. `npm run build` type-checks both browser and server code and produces the static `dist/` folder; Cloudflare also compiles `functions/`.
+
+- **Allowance entry:** Other Costs with unit `allowance` and quantity one (or an unpriced zero template suggestion) show a single Estimated cost field. Entering the amount sets quantity one. Quantity-based entry remains available; switching an existing line to an allowance preserves its extended internal cost and selling override. No saved line is repriced on load. Coordination is a real project-cost allowance; the UI warns against also using it as general overhead recovery.
+- **Customer documents:** Summary is the UI label for the existing `Simplified` stored mode. Detailed output always aggregates customer scopes and never falls back to private line descriptions, even with an older ungrouped preference. The grouping indicator is always checked for privacy. Quantities and labour hours remain explicit opt-ins; even then private line descriptions are not projected. Zero selling-value rows are excluded before overhead/contingency allocation. `customerDocument()` is an explicit public allowlist used by the renderer. It also suppresses known old helper/placeholder lines at display time without deleting saved text. Customer scope descriptions are intentional public content; review them before sending.
+- **Editable scope sections:** Optional `Quote.customerScopes` contains `{label, description, sourceGroups}` mappings. Bathroom templates map granular internal groups to six broad public sections. Existing bathroom quotes use these presentation defaults when the new metadata is absent; their estimated values do not change. Customer & job has a Customer scope sections editor. Other/custom scope groups remain editable and aggregate by public label.
+- **Company defaults:** Optional `Store.company` stores company name/contact/address. Each new quote snapshots it into optional `Quote.company`; older quotes use the Backwoods branding fallback. Optional customer `mailingAddress` is separate from the existing job `address`. Settings already owns recurring pricing, terms, payment, assumptions, exclusions, change-order language and validity; copies remain independent on existing quotes. Empty optional sections do not print. Permit/engineering responsibilities and customer document text remain editable per quote.
+- **Payments:** Explicit percentages in a payment schedule must sum to 100% (decimal percentages supported). A blank/non-percentage schedule is allowed. Invalid percentage totals block saving and the Print button, with an actionable message; old saved schedules still load. Payment examples are placeholders, not configured legal/payment promises.
+- **Profitability:** `model.calculate()` remains the single formula source. The private summary separates direct cost, customer pricing and gross profit, and displays target status, margin difference and the advisory minimum pre-tax price/increase. HST is never profit. General overhead & profit adjustment and contingency each apply to the same base selling-price sum, independently. The quote price is never changed automatically to reach a target.
+- **Takeoff:** Stored `Reviewed` remains compatible; the UI calls it Approved. New converted lines retain optional private `takeoffSource` snapshots (source document name/page, quantity/unit, confidence and notes), so removing a drawing/takeoff does not remove traceability or estimate lines. Edits still require review again. Old converted rows without snapshots retain their existing takeoff IDs.
+- **Compatibility:** All new fields are optional and validated when present; V1/V2 numeric estimates, original backups, status snapshots and actual costs remain supported. No automatic rewrite of historical pricing or removal of quote information is introduced. Local browser storage remains the data store.
+- **Printing:** Letter paper, hidden editor/preview controls, repeated table headers, heading/content grouping, non-orphaned paragraphs, usable signatures and totals. Long terms can flow across pages. Mobile/tablet/desktop overflow checks and long-PDF tests are included.
+
+### Secure plan analysis and future shared data
+
+`src/planAnalysis.ts` isolates the `PlanAnalysisService` contract and validates/adopts suggestions as **Proposed** only. Analyze Plans calls the secured `/api/plan-analysis` Pages Function using server-side secrets, as documented below. No fake results or browser API keys are implemented. Provider approval/converted IDs cannot bypass contractor review. Analysis is estimating assistance, not engineering/design/code/permit approval. Obtain explicit contractor review and approval before conversion.
+
+Persistence already has one boundary: `model.load()` / `model.persist()` and `migrate()`; components do not directly read/write localStorage. Future shared data/auth should replace that boundary with an authenticated company-scoped repository, retain versioned migrations/backups, add server-side role checks and concurrency handling, and move attachments to authorized object storage. The current development role switch is not production authentication. Shared data and full application login remain deferred; Cloudflare Access protects the AI endpoint, while estimates remain local to each browser.
+
+For manual Safari testing: create a Bathroom quote; enter one plumbing allowance; edit broad customer section text; check zero sections disappear; switch Summary/Detailed; verify defaults remain independent after Settings changes; check a decimal/blank input and a payment schedule totalling 100%; approve a takeoff then replace/remove its drawing; print a long Letter quote and review page breaks, signature, totals and privacy.
+
+## AI-assisted Plans & Takeoff — V2 preview
+
+### What is implemented
+
+The existing workflow now supports **Upload → Analyze → Review → Approve → Convert → View Estimate**. PDF/JPG/JPEG/PNG (and existing WebP attachments) are supported. Choose which attached documents to include. Each file is limited to 2 MB, PDF attachments to 50 pages, and one analysis to **4 MB total** (up to eight smaller files). Browser storage may fill before those limits: export backups, compress large drawings and keep unnecessary personal information out of plans. Original attachments and extracted results still use local browser storage, not a new database.
+
+`functions/api/plan-analysis.ts` is a Cloudflare Pages Function at `/api/plan-analysis`. `server/handler.ts` owns authentication, same-origin checks, bounded requests, file validation, rate limits and generic errors. `server/access.ts` verifies Cloudflare Access JWT signatures/issuer/audience/expiry against Access's public keys. `server/provider.ts` isolates OpenAI Responses with **GPT-5.4 Mini (`gpt-5.4-mini`)**, multimodal PDF/image input, strict structured JSON output and `store:false`. `gpt-5.4-mini` is the default; `OPENAI_MODEL` can override it with another compatible model. There is no provider SDK/key in the Vite client and no automatic pricing, scope acceptance, customer-record extraction or engineering verification.
+
+`shared/analysis.ts` defines and validates the schema on server and client. Results contain project/drawing metadata, informational dimensions, proposed components, source ID/page/reference, confidence, assumptions and warnings. Unknown quantities remain **null**, labelled Requires contractor input, never converted to invented zeros. Evidence labels separate Plan fact, Calculated quantity, Estimating suggestion and Contractor input required. The prompt explicitly surfaces DO NOT SCALE / VERIFY ON SITE / BY OTHERS / OWNER SUPPLIED / OPTIONAL / ALTERNATE / NOT IN CONTRACT notes and prohibits authoritative pixel scaling, prices and business assumptions. The app validates PDF readability on attachment; the server validates size/MIME/signatures and lets the provider reject unreadable contents. File signatures are not a complete PDF/image security scanner.
+
+`src/planAnalysis.ts` performs same-origin API requests, file-content fingerprinting, adoption and review guards. Every accepted result (including informational dimensions) enters **Proposed**, with no approval IDs/status trusted from the response. A contractor must enter missing values and explicitly mark each item reviewed before approval. Untouched low-confidence items cannot be bulk approved. Editing resets review/approval. Approve selected and Approve all reviewed operate only after review; rejected or informational items cannot become estimate lines. Labour must use verified hours, not a count of components. Reviewed destination controls conversion. New lines use the existing pricing engine/company quote profile, with zero unknown material/other costs and a Pricing required notice. Existing manual rows and customers are untouched.
+
+Optional takeoff metadata includes origin, evidence type, category/destination, assumptions/warnings, source name, analysis ID/fact key and review acknowledgement. Optional `Quote.analysisReports` holds private project/dimension summaries, warnings, assumptions, timestamp and file-content fingerprints. Repeated analysis of identical selected files is blocked; repeated identical facts across overlapping analyses are skipped. Existing manual `Reviewed` status remains compatible as legacy approval; new AI rows use explicit Reviewed → Approved. Converted-line provenance persists after source deletion. Public customer documents continue to consume their existing explicit allowlist: none of these private metadata fields are projected.
+
+### Required external services
+
+- An **OpenAI API account with API billing** and a project API key. A ChatGPT subscription alone does not provide API credits. Create a project/key at <https://platform.openai.com/api-keys>. Use a dedicated project, review billing and configure usage alerts/limits supported by your account. Budget alerts are not necessarily hard spending caps.
+- Cloudflare Pages Functions, **Cloudflare Access** (allow only your team's email addresses) and a **KV namespace** for private analysis quotas. No shared quote database or authentication migration is introduced. The existing development role switch remains unrelated to endpoint authorization.
+
+No API key, Access application or KV binding is configured in this workspace. The genuine provider integration is complete, but live provider calls/accuracy on your real deck drawing have not been tested. Automated tests use clearly isolated fixtures, never product-side pretend AI results.
+
+### Beginner-friendly Cloudflare setup — only after approval
+
+These instructions apply to a **separate V2 preview hostname/environment**. Do not change the production V1 hostname, its Access rules or Production variables.
+
+1. In OpenAI, create the API project/key and enable API billing. Keep the key private; do not paste it into this chat, React code, GitHub, a `VITE_` variable or browser Settings.
+2. In Cloudflare, open the Pages project → **Settings → Variables and Secrets** → select **Preview**. Add **Secret** `OPENAI_API_KEY` with your OpenAI API key. Add **Text** variable `OPENAI_MODEL` with `gpt-5.4-mini` (optional; this is the default). Do not set `DEV_ALLOW_LOCAL` in Cloudflare.
+3. In Cloudflare **Zero Trust → Access → Applications**, add a **Self-hosted** application for the exact V2 preview alias (for example, `v2-preview.YOUR-PROJECT.pages.dev`). Protect the whole preview hostname, not the V1 domain. Add an Allow policy containing only your approved email addresses, with email one-time PIN or your chosen identity provider. If a separate Preview project is used, use its actual hostname instead.
+4. Copy that application's **Application Audience (AUD)**. In Pages **Preview** variables, add `CF_ACCESS_AUD` with that value. Find your Access **team domain** (for example, `your-team.cloudflareaccess.com`) in Zero Trust settings; add it as `CF_ACCESS_TEAM_DOMAIN`, without `https://` or a slash. These identify the Access application; they are not provider API keys.
+5. In Cloudflare **Storage & databases → KV**, create a namespace such as `backwoods-preview-analysis-limits`. In Pages **Settings → Bindings**, add a **KV Namespace** binding named exactly `ANALYSIS_LIMITS`, pointing to that namespace for Preview. It stores only hashed identity/file keys and counters/short-lived locks, not plans, extracted text or provider keys.
+6. Use a **Git-based Pages preview build** with command `npm run build`, output directory `dist`, and the repository root as the root directory. Pages must also compile the repository's `functions/` folder. Dragging only static `dist` files into the old static-site uploader does **not** install the API function. Publishing `v2-preview` triggers its connected Cloudflare build; do not change the V1 deployment.
+7. Open the protected V2 preview alias and sign in using your allowed email. Create a draft, upload a redacted/readable deck plan, select its files, and click **Analyze Plans**. First verify all source pages, dimensions, notes, units, evidence classifications and missing quantities. Mark reviewed, approve, then convert. Enter your own supplier costs/waste and verify quote rates before sending anything to a customer.
+
+The endpoint fails closed if Access, the server key or production KV binding is absent. Access tokens are cryptographically verified, not merely trusted because a header exists. Cross-origin POSTs are rejected. Unprotected hash preview URLs do not bypass the JWT check. KV applies a **best-effort 20 attempts/day/user** and a two-minute identical-request lock; attempts include failed provider calls. KV is eventually consistent, so this is not an atomic concurrency/spending guarantee. For a hard multi-user quota, use a Durable Object/atomic backend later; provider-side spend controls and a Cloudflare rate-limit rule are advisable before broader use. Browser cancellation/disconnect may not prevent a provider charge for a request already started.
+
+### Local development
+
+Use the repository's Node/npm version requirements, then:
+
+```sh
+npm ci
+npm run build
+cp .dev.vars.example .dev.vars
+```
+
+Edit `.dev.vars` **locally** to put the API key in `OPENAI_API_KEY`. It is ignored by Git. Do not change the empty tracked example to contain a real key. `DEV_ALLOW_LOCAL="true"` bypasses Access only for actual localhost/127.0.0.1 request URLs; keep this development server private. Run the API in one terminal:
+
+```sh
+npm run dev:api -- --ip 127.0.0.1 --compatibility-date 2026-10-06
+```
+
+Run Vite in another, restricted to your own machine when using a paid key:
+
+```sh
+npm run dev -- --host 127.0.0.1
+```
+
+Vite proxies `/api` to the local Cloudflare runtime at port 8788. Static `vite preview` alone cannot run the API. The cloud workspace needed a writable CLI configuration/log location, so its verified command also set `XDG_CONFIG_HOME=/tmp/backwoods-cloudflare-config`, `WRANGLER_LOG_PATH=/tmp/backwoods-wrangler.log` and `WRANGLER_SEND_METRICS=false`. These are local tooling settings, not Cloudflare production bindings. Local tests do not need a paid key.
+
+### Privacy, validation and remaining checks
+
+The **selected original files** (including any embedded names/addresses, title blocks and metadata) are sent over HTTPS through Cloudflare to OpenAI, along with opaque source IDs. Filenames sent to the provider are generic. Prompts tell the model not to intentionally extract personal information; that cannot guarantee a plan contains none. Redact unnecessary details yourself. No company costs, rates, profit, quote/customer records or business notes are sent. The code does not log file contents/extracted text or return credentials. `store:false` disables stored Responses; provider abuse-monitoring/retention rules still apply—review <https://platform.openai.com/docs/guides/your-data>. Local reports/backups contain private takeoff information and should be kept securely.
+
+Run `npm test` (model/schema/provider/handler tests), `npm run test:e2e`, `npm run lint`, `npm run typecheck`, and `npm run build`. The build type-checks both browser and server code. Wrangler locally compiles the actual Pages Function. Tests cover schemas, unknown quantities, low-confidence review gates, edit/reset, approval/rejection, conversions, duplicate protections, preserved manual pricing, private provenance, auth signatures/audience, API failures, file limits, cancellations, and customer allowlist privacy.
+
+Before a live preview pilot: configure the key/Access/KV, verify allowed versus denied login and deployed function routing, then run a **real OpenAI call with your deck plan** and manually audit each extracted fact. No benchmark plan was supplied and no live credential exists, so accuracy and provider-account availability remain unverified. Large/scanned/multi-revision plans may return partial information, require contractor input or need splitting. This feature is estimating assistance, not structural design, code/permit approval or authoritative site measurements. Shared/cloud file storage, complete shared-user authentication and hard atomic quotas remain future work. Nothing in this task was committed, pushed, merged or deployed.

@@ -12,7 +12,7 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
     ["Customer labour rate ($/hour)", "90"],
     ["Material markup (%)", "20"],
     ["Other Costs / subcontractor markup (%)", "15"],
-    ["Overhead / profit addition (%)", "10"],
+    ["General overhead & profit adjustment (%)", "10"],
     ["Contingency (%)", "5"],
     ["Default quote validity (days)", "30"],
   ]) {
@@ -101,11 +101,9 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
     "15",
   );
 
-  await expect(page.getByLabel("Unit", { exact: true })).toHaveValue(
-    "allowance",
-  );
+  await expect(page.getByLabel("Entry method")).toHaveValue("allowance");
   await page.getByLabel("Customer scope group (optional)").fill("Framing");
-  await page.getByLabel("Unit cost ($)", { exact: true }).fill("100");
+  await page.getByLabel("Estimated cost ($)", { exact: true }).fill("100");
   await page.getByRole("button", { name: "Pricing", exact: true }).click();
   await page.getByLabel("Customer labour rate ($/hour)").fill("110");
   await expect(page.getByLabel("Internal labour cost ($/hour)")).toBeHidden();

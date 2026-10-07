@@ -1,0 +1,5 @@
+# Copy to .dev.vars locally. Never commit .dev.vars or a real API key.
+OPENAI_API_KEY=""
+OPENAI_MODEL="gpt-5.4-mini"
+# Only honored for actual localhost/127.0.0.1 request URLs. Never set on Cloudflare.
+DEV_ALLOW_LOCAL="true"

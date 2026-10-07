@@ -1480,7 +1480,7 @@ fieldset:disabled select {
 }
 @media print {
   @page {
-    size: A4;
+    size: letter;
     margin: 15mm;
   }
   body {
@@ -1817,4 +1817,83 @@ details[open] > summary {
   padding: 12px;
   font-size: 10px;
   color: #87947e;
+}
+
+.customer-document {
+  overflow-wrap: anywhere;
+}
+.customer-document .scope {
+  white-space: pre-line;
+}
+.customer-document td p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.scope-editor {
+  margin: 20px 0;
+}
+.scope-editor summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 12px 0;
+}
+.target-met {
+  color: #43663a;
+  font-weight: 700;
+}
+@media print {
+  .preview-options,
+  .preview-toolbar {
+    display: none !important;
+  }
+  .customer-document {
+    width: 100%;
+  }
+  .customer-document h2,
+  .customer-document h3 {
+    break-after: avoid;
+  }
+  .customer-document p {
+    orphans: 3;
+    widows: 3;
+  }
+  .document-terms {
+    break-inside: auto;
+  }
+  .document-totals,
+  .acceptance,
+  .document-header {
+    break-inside: avoid;
+  }
+}
+
+#quote-private-summary {
+  scroll-margin-top: 80px;
+}
+.tabs .totals-shortcut {
+  color: #43663a;
+  font-weight: 700;
+}
+.analysis-report {
+  padding: 16px;
+  margin: 18px 0;
+  border: 1px solid #d8e2d3;
+  border-radius: 12px;
+}
+.analysis-report small {
+  display: block;
+  margin-top: 8px;
+}
+.confidence {
+  padding: 10px;
+  border-radius: 8px;
+  background: #eff4ec;
+}
+.confidence.low {
+  background: #fff1dc;
+  color: #7a4c0b;
+}
+.confidence.medium {
+  background: #f7f3dd;
 }

@@ -15,6 +15,15 @@ export type Line = {
   waste?: number;
   scopeGroup?: string;
   takeoffId?: string;
+  pricingRequired?: boolean;
+  takeoffSource?: {
+    documentName: string;
+    page: number | null;
+    quantity: number;
+    unit: string;
+    notes: string;
+    confidence: TakeoffItem["confidence"];
+  };
   inheritCost?: boolean;
   inheritRate?: boolean;
   inheritMarkup?: boolean;
@@ -33,7 +42,25 @@ export type Pricing = {
   targetMargin?: number;
   validityDays?: number;
 };
+export type CompanyInfo = {
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+};
+export const companyDefaults: CompanyInfo = {
+  name: "Backwoods Building & Maintenance",
+  phone: "",
+  email: "",
+  address: "",
+};
+export type CustomerScope = {
+  label: string;
+  description: string;
+  sourceGroups: string[];
+};
 export type Customer = {
+  mailingAddress?: string;
   name: string;
   phone: string;
   email: string;
@@ -93,6 +120,8 @@ export type Quote = {
   terms: string;
   mode: "Simplified" | "Detailed";
   job?: Job;
+  company?: CompanyInfo;
+  customerScopes?: CustomerScope[];
   templateCategory?: string;
   appliedTemplateIds?: string[];
   snapshot?: Estimate;
@@ -101,6 +130,22 @@ export type Quote = {
   details: QuoteDetails;
   documents: PlanDocument[];
   takeoff: TakeoffItem[];
+  analysisReports?: {
+    id: string;
+    fingerprint: string;
+    createdAt: string;
+    project?: {
+      projectType: string;
+      drawingTitle: string;
+      drawingNumbers: string[];
+      revision: string;
+      date: string;
+      description: string;
+    };
+    dimensions?: import("../shared/analysis").AnalysisSuggestion[];
+    assumptions: string[];
+    warnings: string[];
+  }[];
 };
 export type QuoteDetails = {
   showQuantities: boolean;
@@ -126,14 +171,24 @@ export type PlanDocument = {
 export type TakeoffItem = {
   id: string;
   description: string;
-  quantity: number;
+  quantity: number | null;
   unit: string;
   documentId: string;
   page: number | null;
   notes: string;
-  status: "Proposed" | "Reviewed";
+  status: "Proposed" | "Reviewed" | "Approved" | "Rejected";
   confidence: "Unspecified" | "Low" | "Medium" | "High";
   convertedLineId?: string;
+  origin?: "ai";
+  category?: string;
+  destination?: import("../shared/analysis").AnalysisSuggestion["destination"];
+  classification?: import("../shared/analysis").AnalysisSuggestion["classification"];
+  assumptions?: string[];
+  warnings?: string[];
+  analysisId?: string;
+  analysisSourceKey?: string;
+  reviewAcknowledged?: boolean;
+  sourceDocumentName?: string;
 };
 export type QuoteTemplate = {
   id: string;
@@ -145,10 +200,12 @@ export type QuoteTemplate = {
     "kind" | "description" | "unit" | "scopeGroup" | "category"
   >[];
   details?: Partial<QuoteDetails>;
+  customerScopes?: CustomerScope[];
 };
 export type Store = {
   version: 2;
   pricingRevision?: 3;
+  company?: CompanyInfo;
   settings: Pricing;
   quoteDefaults: QuoteDetails;
   quotes: Quote[];
@@ -294,6 +351,13 @@ export function applyTemplate(q: Quote, template: QuoteTemplate): Quote {
     ...q,
     appliedTemplateIds: [...(q.appliedTemplateIds ?? []), template.id],
     templateCategory: template.category,
+    customerScopes: [
+      ...(q.customerScopes ?? []),
+      ...structuredClone(template.customerScopes ?? []).filter(
+        (scope) =>
+          !q.customerScopes?.some((existing) => existing.label === scope.label),
+      ),
+    ],
     scopeGroups: [...new Set([...(q.scopeGroups ?? []), ...template.groups])],
     terms: template.details?.terms ?? q.terms,
     details: { ...q.details, ...template.details },
@@ -533,6 +597,7 @@ export function newQuote(
   settings: Pricing,
   quotes: Quote[],
   options: QuoteDetails = detailDefaults,
+  company: CompanyInfo = companyDefaults,
 ): Quote {
   const date = new Date().toLocaleDateString("en-CA");
 
@@ -542,6 +607,7 @@ export function newQuote(
     date,
     expiry: expiryFor(date, settings.validityDays ?? 0),
     scopeGroups: [],
+    company: structuredClone(company),
     details: structuredClone(options),
     documents: [],
     takeoff: [],
@@ -559,6 +625,8 @@ export function newQuote(
   };
 }
 export function validate(q: Quote): string | null {
+  const paymentProblem = paymentError(q.details.payment);
+  if (paymentProblem) return paymentProblem;
   if (q.customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q.customer.email))
     return "Enter a valid email address.";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(q.date)) return "Enter a quote date.";
@@ -586,8 +654,8 @@ export function validate(q: Quote): string | null {
   if (
     q.takeoff.some(
       (t) =>
-        !Number.isFinite(t.quantity) ||
-        t.quantity < 0 ||
+        (t.quantity !== null &&
+          (!Number.isFinite(t.quantity) || t.quantity < 0)) ||
         (t.page !== null && (!Number.isInteger(t.page) || t.page < 1)),
     )
   )
@@ -617,6 +685,8 @@ export function duplicate(q: Quote, quotes: Quote[]): Quote {
     lines: structuredClone(q.lines).map((l) => ({ ...l, id: id() })),
     terms: q.terms,
     templateCategory: q.templateCategory,
+    customerScopes: structuredClone(q.customerScopes ?? []),
+    company: structuredClone(q.company ?? companyDefaults),
     job: undefined,
     sentAt: undefined,
     scopeGroups: [...(q.scopeGroups ?? [])],
@@ -739,6 +809,17 @@ function line(v: unknown) {
     ["inheritCost", "inheritRate", "inheritMarkup"].every(
       (k) => v[k] === undefined || typeof v[k] === "boolean",
     ) &&
+    (v.takeoffSource === undefined ||
+      (record(v.takeoffSource) &&
+        strings(v.takeoffSource, ["documentName", "unit", "notes"]) &&
+        numbers(v.takeoffSource, ["quantity"]) &&
+        (v.takeoffSource.page === null ||
+          (typeof v.takeoffSource.page === "number" &&
+            Number.isInteger(v.takeoffSource.page) &&
+            v.takeoffSource.page > 0)) &&
+        ["Unspecified", "Low", "Medium", "High"].includes(
+          String(v.takeoffSource.confidence),
+        ))) &&
     ["scopeGroup", "supplier", "sku", "materialNotes"].every(
       (k) => v[k] === undefined || typeof v[k] === "string",
     ) &&
@@ -774,6 +855,8 @@ function quote(v: unknown) {
     !["Simplified", "Detailed"].includes(String(v.mode)) ||
     !record(v.customer) ||
     !strings(v.customer, ["name", "phone", "email", "address"]) ||
+    (v.customer.mailingAddress !== undefined &&
+      typeof v.customer.mailingAddress !== "string") ||
     !Array.isArray(v.photos) ||
     !v.photos.every(
       (p) =>
@@ -786,6 +869,18 @@ function quote(v: unknown) {
     (v.appliedTemplateIds !== undefined &&
       (!Array.isArray(v.appliedTemplateIds) ||
         !v.appliedTemplateIds.every((id) => typeof id === "string"))) ||
+    (v.company !== undefined &&
+      (!record(v.company) ||
+        !strings(v.company, ["name", "phone", "email", "address"]))) ||
+    (v.customerScopes !== undefined &&
+      (!Array.isArray(v.customerScopes) ||
+        !v.customerScopes.every(
+          (scope) =>
+            record(scope) &&
+            strings(scope, ["label", "description"]) &&
+            Array.isArray(scope.sourceGroups) &&
+            scope.sourceGroups.every((g) => typeof g === "string"),
+        ))) ||
     (v.sentAt !== undefined && typeof v.sentAt !== "string")
   )
     return false;
@@ -841,11 +936,46 @@ export function reviewWarnings(q: Quote): string[] {
 export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
   if (
     q.status !== "Draft" ||
-    item.status !== "Reviewed" ||
+    !(
+      item.status === "Approved" ||
+      (item.status === "Reviewed" && item.origin !== "ai")
+    ) ||
     item.convertedLineId
   )
     throw new Error(
       "Review the takeoff item before converting it once into a draft estimate.",
+    );
+  if (
+    item.origin === "ai" &&
+    kind !==
+      (item.destination === "Subcontractor" ? "Other Costs" : item.destination)
+  )
+    throw new Error(
+      "Convert to the reviewed destination, or edit and reapprove the item.",
+    );
+  const stored = q.takeoff.find((t) => t.id === item.id);
+  if (
+    !stored ||
+    stored.convertedLineId ||
+    JSON.stringify(stored) !== JSON.stringify(item)
+  )
+    throw new Error(
+      "This takeoff has changed or was already converted. Review the current item.",
+    );
+  if (
+    item.quantity === null ||
+    !Number.isFinite(item.quantity) ||
+    item.quantity < 0
+  )
+    throw new Error(
+      "Enter and verify the quantity before approval/conversion.",
+    );
+  if (
+    item.origin === "ai" &&
+    (!item.reviewAcknowledged || item.destination === "Informational")
+  )
+    throw new Error(
+      "Verify the proposed item and its destination before conversion.",
     );
   if (!item.description.trim()) throw new Error("Add a takeoff description.");
   const l = {
@@ -854,6 +984,29 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
     quantity: item.quantity,
     unit: item.unit,
     takeoffId: item.id,
+    pricingRequired:
+      kind !== "Labour" ||
+      !q.pricing.labourRate ||
+      !q.pricing.internalLabourCost,
+    ...(kind === "Other Costs"
+      ? {
+          category: normalizeCategory(
+            item.category ?? "Other Subcontractor",
+            item.description,
+          ),
+        }
+      : {}),
+    takeoffSource: {
+      documentName:
+        q.documents.find((d) => d.id === item.documentId)?.name ??
+        item.sourceDocumentName ??
+        "Source drawing unavailable",
+      page: item.page,
+      quantity: item.quantity,
+      unit: item.unit,
+      notes: item.notes,
+      confidence: item.confidence,
+    },
   };
   return {
     ...q,
@@ -920,18 +1073,95 @@ function validExtensions(v: unknown) {
       (t) =>
         record(t) &&
         strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
-        numbers(t, ["quantity"]) &&
+        (t.quantity === null || numbers(t, ["quantity"])) &&
         (t.page === null ||
           (typeof t.page === "number" &&
             Number.isInteger(t.page) &&
             t.page >= 1)) &&
-        ["Proposed", "Reviewed"].includes(String(t.status)) &&
+        ["Proposed", "Reviewed", "Approved", "Rejected"].includes(
+          String(t.status),
+        ) &&
         ["Unspecified", "Low", "Medium", "High"].includes(
           String(t.confidence),
         ) &&
+        (t.origin === undefined || t.origin === "ai") &&
+        (t.reviewAcknowledged === undefined ||
+          typeof t.reviewAcknowledged === "boolean") &&
+        [
+          "category",
+          "analysisId",
+          "analysisSourceKey",
+          "sourceDocumentName",
+        ].every((key) => t[key] === undefined || typeof t[key] === "string") &&
+        ["assumptions", "warnings"].every(
+          (key) =>
+            t[key] === undefined ||
+            (Array.isArray(t[key]) &&
+              (t[key] as unknown[]).every((text) => typeof text === "string")),
+        ) &&
+        (t.destination === undefined ||
+          [
+            "Labour",
+            "Materials",
+            "Subcontractor",
+            "Other Costs",
+            "Informational",
+          ].includes(String(t.destination))) &&
+        (t.classification === undefined ||
+          [
+            "Plan fact",
+            "Calculated quantity",
+            "Estimating suggestion",
+            "Contractor input required",
+          ].includes(String(t.classification))) &&
         (t.convertedLineId === undefined ||
           typeof t.convertedLineId === "string"),
     )
+  )
+    return false;
+  if (
+    v.analysisReports !== undefined &&
+    (!Array.isArray(v.analysisReports) ||
+      !v.analysisReports.every(
+        (report) =>
+          record(report) &&
+          strings(report, ["id", "fingerprint", "createdAt"]) &&
+          ["assumptions", "warnings"].every(
+            (key) =>
+              Array.isArray(report[key]) &&
+              (report[key] as unknown[]).every(
+                (text) => typeof text === "string",
+              ),
+          ) &&
+          (report.project === undefined ||
+            (record(report.project) &&
+              strings(report.project, [
+                "projectType",
+                "drawingTitle",
+                "revision",
+                "date",
+                "description",
+              ]) &&
+              Array.isArray(report.project.drawingNumbers) &&
+              report.project.drawingNumbers.every(
+                (text) => typeof text === "string",
+              ))) &&
+          (report.dimensions === undefined ||
+            (Array.isArray(report.dimensions) &&
+              report.dimensions.every(
+                (d) =>
+                  record(d) &&
+                  strings(d, ["description", "documentId", "unit", "notes"]) &&
+                  ["Unspecified", "Low", "Medium", "High"].includes(
+                    String(d.confidence),
+                  ) &&
+                  (d.quantity === null || numbers(d, ["quantity"])) &&
+                  (d.page === null ||
+                    (typeof d.page === "number" &&
+                      Number.isInteger(d.page) &&
+                      d.page > 0)),
+              ))),
+      ))
   )
     return false;
   return true;
@@ -945,6 +1175,12 @@ export function migrate(input: unknown): Store {
     !pricing(input.settings)
   )
     throw new Error("Saved data is not a supported Backwoods file.");
+  if (
+    input.company !== undefined &&
+    (!record(input.company) ||
+      !strings(input.company, ["name", "phone", "email", "address"]))
+  )
+    throw new Error("Company information is invalid.");
   if (input.version === 2) {
     if (
       !validDetails(input.quoteDefaults) ||
@@ -1096,6 +1332,54 @@ const interiorMaterials: SuggestedMaterial[] = [
     "Finish Carpentry",
   ],
 ];
+export const bathroomCustomerScopes: CustomerScope[] = [
+  {
+    label: "Demolition & Preparation",
+    description:
+      "Protect work area, complete specified demolition and prepare the space for construction.",
+    sourceGroups: ["Bathroom Preparation"],
+  },
+  {
+    label: "Framing & Wall Preparation",
+    description:
+      "Complete specified framing/blocking, floor preparation, wall-board installation and surface preparation.",
+    sourceGroups: [
+      "Framing & Blocking",
+      "Floor Preparation",
+      "Drywall & Wall Preparation",
+    ],
+  },
+  {
+    label: "Waterproofing & Tile",
+    description:
+      "Prepare specified wet areas and install waterproofing, tile, grout and related finishes.",
+    sourceGroups: ["Waterproofing", "Tiling"],
+  },
+  {
+    label: "Fixtures & Finishes",
+    description:
+      "Install specified fixtures and trim, paint and complete sealing and finishing work.",
+    sourceGroups: [
+      "Fixtures",
+      "Trim & Finishing",
+      "Painting",
+      "Sealing & Caulking",
+    ],
+  },
+  {
+    label: "Mechanical Trades",
+    description:
+      "Electrical, plumbing and HVAC work as specified in the project scope.",
+    sourceGroups: ["Electrical", "Plumbing", "HVAC"],
+  },
+  {
+    label: "Cleanup & Completion",
+    description:
+      "Construction cleanup, disposal and final project checks as specified.",
+    sourceGroups: ["Final Cleanup & Checks", "Project Costs"],
+  },
+];
+
 function bathroomTemplate(): QuoteTemplate {
   const template = constructionTemplate(
     "bathroom",
@@ -1151,6 +1435,7 @@ function bathroomTemplate(): QuoteTemplate {
     scopeGroup: "Drywall & Wall Preparation",
     category: "Miscellaneous",
   });
+  template.customerScopes = structuredClone(bathroomCustomerScopes);
   return template;
 }
 export const constructionTemplates: QuoteTemplate[] = [
@@ -1238,4 +1523,17 @@ export function responsibilityText(
     return `Unless specifically included in the scope above, ${subject} are the responsibility of ${/^(the |a |an )/i.test(v) ? v : `the ${v}`}.`;
   }
   return v;
+}
+
+export function paymentError(text: string): string | null {
+  const percentages = [...text.matchAll(/(-?\d+(?:\.\d+)?)\s*%/g)].map(
+    (match) => Number(match[1]),
+  );
+  if (!percentages.length) return null;
+  if (percentages.some((n) => n < 0 || n > 100))
+    return "Payment percentages must be between 0% and 100%.";
+  const total = percentages.reduce((sum, n) => sum + n, 0);
+  return Math.abs(total - 100) < 0.01
+    ? null
+    : `Payment percentages must total 100% (currently ${round(total)}%).`;
 }
