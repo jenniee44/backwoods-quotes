@@ -267,7 +267,7 @@ export const deckTemplate: QuoteTemplate = {
       description: "Disposal allowance",
       unit: "allowance",
       scopeGroup: scopeGroups[5],
-      category: "Dump/disposal fees",
+      category: "Dump / Disposal Fees",
     },
   ],
 };
@@ -311,19 +311,75 @@ export function applyTemplate(q: Quote, template: QuoteTemplate): Quote {
   };
 }
 export const categories = [
-  "Subcontractor",
-  "Disposal",
-  "Equipment",
-  "Permit",
-  "Subcontractors",
-  "Equipment rentals",
-  "Dump/disposal fees",
+  "Plumbing",
+  "Electrical",
+  "HVAC",
+  "Drywall",
+  "Painting",
+  "Tiling",
+  "Roofing",
+  "Excavation",
+  "Concrete / Masonry",
+  "Other Subcontractor",
+  "Equipment Rental",
+  "Dump / Disposal Fees",
   "Delivery",
-  "Permits",
+  "Permit",
   "Engineering",
   "Travel",
   "Miscellaneous",
 ];
+export function normalizeCategory(
+  category: string,
+  description = "",
+  scopeGroup = "",
+): string {
+  const aliases: Record<string, string> = {
+    Subcontractor: "Other Subcontractor",
+    Subcontractors: "Other Subcontractor",
+    Equipment: "Equipment Rental",
+    "Equipment rentals": "Equipment Rental",
+    Disposal: "Dump / Disposal Fees",
+    "Dump/disposal fees": "Dump / Disposal Fees",
+    Permits: "Permit",
+    Plumber: "Plumbing",
+    Electrician: "Electrical",
+  };
+  const mapped = aliases[category] ?? category;
+  if (mapped !== "Other Subcontractor") return mapped;
+  const text = `${scopeGroup} ${description}`;
+  const trades: [string, RegExp][] = [
+    ["Plumbing", /\b(plumbing|plumber)\b/i],
+    ["Electrical", /\b(electrical|electrician)\b/i],
+    ["HVAC", /\b(hvac|heating|ventilation)\b/i],
+    ["Drywall", /\bdrywall\b/i],
+    ["Painting", /\b(painting|painter)\b/i],
+    ["Tiling", /\b(tiling|tile)\b/i],
+    ["Roofing", /\b(roofing|roofer)\b/i],
+    ["Excavation", /\b(excavation|excavator)\b/i],
+    ["Concrete / Masonry", /\b(concrete|masonry|mason)\b/i],
+  ];
+  const matches = trades.filter(([, pattern]) => pattern.test(text));
+  return matches.length === 1 ? matches[0][0] : mapped;
+}
+function normalizeStoreCategories(store: Store): Store {
+  for (const q of store.quotes) {
+    for (const estimate of [q, q.snapshot, q.job?.snapshot]) {
+      estimate?.lines.forEach((line) => {
+        if (line.kind === "Other Costs")
+          line.category = normalizeCategory(
+            line.category,
+            line.description,
+            line.scopeGroup,
+          );
+      });
+    }
+    q.job?.actuals.forEach((actual) => {
+      actual.category = normalizeCategory(actual.category, actual.description);
+    });
+  }
+  return store;
+}
 export const templates = [
   "Deck",
   "Fence",
@@ -467,7 +523,7 @@ export function newLine(kind: Kind, p: Pricing): Line {
     waste: 0,
     scopeGroup: "",
     override: null,
-    category: kind === "Other Costs" ? "Subcontractor" : "Miscellaneous",
+    category: kind === "Other Costs" ? "Other Subcontractor" : "Miscellaneous",
     inheritCost: kind === "Labour",
     inheritRate: kind === "Labour",
     inheritMarkup: kind !== "Labour",
@@ -905,13 +961,13 @@ export function migrate(input: unknown): Store {
         groupLines: true,
       };
     }
-    return result;
+    return normalizeStoreCategories(result);
   }
   const old = structuredClone(input) as unknown as {
     settings: Pricing;
     quotes: Quote[];
   };
-  return {
+  return normalizeStoreCategories({
     version: 2,
     pricingRevision: 3,
     settings: upgradePricing(old.settings),
@@ -937,7 +993,7 @@ export function migrate(input: unknown): Store {
         result.snapshot = structuredClone(result.job?.snapshot ?? e);
       return result;
     }),
-  };
+  });
 }
 export const storageKey = "backwoods-quotes-v1"; // Keep original key so deployed V1 browser records are found.
 export const backupKey = "backwoods-quotes-v1-backup";
@@ -1005,14 +1061,14 @@ function constructionTemplate(
         description: `${group} subcontractor allowance`,
         unit: "allowance",
         scopeGroup: group,
-        category: "Subcontractor",
+        category: normalizeCategory("Other Subcontractor", group),
       })),
       {
         kind: "Other Costs",
         description: "Waste / disposal allowance",
         unit: "allowance",
         scopeGroup: "Project Costs",
-        category: "Dump/disposal fees",
+        category: "Dump / Disposal Fees",
       },
       {
         kind: "Other Costs",

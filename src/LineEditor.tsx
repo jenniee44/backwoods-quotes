@@ -203,7 +203,7 @@ export default function LineEditor({
                         patch({
                           ...l,
                           category: e.target.value,
-                          ...(e.target.value === "Subcontractor"
+                          ...(categories.slice(0, 10).includes(e.target.value)
                             ? { unit: "allowance" }
                             : {}),
                         })

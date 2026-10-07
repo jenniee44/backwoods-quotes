@@ -697,3 +697,103 @@ it("recognizes previously applied V2 catalogs without application history", () =
   q.lines[0].quantity = 10;
   expect(applyTemplate(q, deckTemplate)).toBe(q);
 });
+
+import { categories, normalizeCategory } from "./model";
+describe("trade categories", () => {
+  it("uses the exact clean catalog without role or duplicate options", () => {
+    expect(categories).toEqual([
+      "Plumbing",
+      "Electrical",
+      "HVAC",
+      "Drywall",
+      "Painting",
+      "Tiling",
+      "Roofing",
+      "Excavation",
+      "Concrete / Masonry",
+      "Other Subcontractor",
+      "Equipment Rental",
+      "Dump / Disposal Fees",
+      "Delivery",
+      "Permit",
+      "Engineering",
+      "Travel",
+      "Miscellaneous",
+    ]);
+    expect(inheritedLine("Other Costs", defaults).category).toBe(
+      "Other Subcontractor",
+    );
+  });
+  for (const template of constructionTemplates) {
+    it(`${template.name} suggestions use canonical categories and correct trades`, () => {
+      for (const line of template.lines.filter(
+        (l) => l.kind === "Other Costs",
+      )) {
+        expect(categories).toContain(line.category);
+        if (line.scopeGroup === "Plumbing")
+          expect(line.category).toBe("Plumbing");
+        if (line.scopeGroup === "Electrical")
+          expect(line.category).toBe("Electrical");
+        if (line.scopeGroup === "HVAC") expect(line.category).toBe("HVAC");
+        if (line.scopeGroup === "Excavation")
+          expect(line.category).toBe("Excavation");
+      }
+    });
+  }
+  it("maps old labels conservatively without touching prices, snapshots or original data", () => {
+    const store = seed();
+    const q = store.quotes[0];
+    q.lines = [
+      "Subcontractor",
+      "Subcontractors",
+      "Equipment rentals",
+      "Dump/disposal fees",
+      "Permits",
+      "Custom historical category",
+    ].map((category, i) => ({
+      ...newLine("Other Costs", q.pricing),
+      category,
+      description: i === 0 ? "Licensed plumber" : "Allowance",
+      quantity: 2,
+      cost: 123,
+      markup: 17,
+    }));
+    q.snapshot = structuredClone({ lines: q.lines, pricing: q.pricing });
+    q.job = {
+      snapshot: structuredClone(q.snapshot),
+      convertedAt: new Date().toISOString(),
+      actuals: [
+        {
+          id: "actual",
+          category: "Subcontractors",
+          description: "Electrical subcontractor",
+          quantity: 1,
+          cost: 456,
+        },
+      ],
+    };
+    const original = structuredClone(store);
+    const result = migrate(store);
+    expect(result.quotes[0].lines.map((l) => l.category)).toEqual([
+      "Plumbing",
+      "Other Subcontractor",
+      "Equipment Rental",
+      "Dump / Disposal Fees",
+      "Permit",
+      "Custom historical category",
+    ]);
+    expect(calculate(result.quotes[0])).toEqual(calculate(q));
+    expect(calculate(result.quotes[0].snapshot!)).toEqual(
+      calculate(q.snapshot),
+    );
+    expect(jobTotals(result.quotes[0])).toEqual(jobTotals(q));
+    expect(result.quotes[0].job!.actuals[0].category).toBe("Electrical");
+    expect(result.quotes[0].snapshot!.lines[0].category).toBe("Plumbing");
+    expect(result.quotes[0].job!.snapshot.lines[0].category).toBe("Plumbing");
+    expect(store).toEqual(original);
+    expect(migrate(result)).toEqual(result);
+    expect(
+      normalizeCategory("Subcontractor", "Plumbing and electrical allowance"),
+    ).toBe("Other Subcontractor");
+  });
+});

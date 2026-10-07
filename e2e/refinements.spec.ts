@@ -76,7 +76,31 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
     .click();
   await page.getByRole("button", { name: "Add cost", exact: true }).click();
   await page.getByLabel("Description *").fill("Internal subcontractor");
-  await expect(page.getByLabel("Category")).toHaveValue("Subcontractor");
+  await expect(page.getByLabel("Category")).toHaveValue("Other Subcontractor");
+  await expect(page.getByLabel("Category").locator("option")).toHaveText([
+    "Plumbing",
+    "Electrical",
+    "HVAC",
+    "Drywall",
+    "Painting",
+    "Tiling",
+    "Roofing",
+    "Excavation",
+    "Concrete / Masonry",
+    "Other Subcontractor",
+    "Equipment Rental",
+    "Dump / Disposal Fees",
+    "Delivery",
+    "Permit",
+    "Engineering",
+    "Travel",
+    "Miscellaneous",
+  ]);
+  await page.getByLabel("Category").selectOption("Plumbing");
+  await expect(page.getByLabel("Markup (%)", { exact: true })).toHaveValue(
+    "15",
+  );
+
   await expect(page.getByLabel("Unit", { exact: true })).toHaveValue(
     "allowance",
   );
