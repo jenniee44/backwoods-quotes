@@ -2021,3 +2021,16 @@ details[open] > summary {
   min-width: 0;
   max-width: 100%;
 }
+
+.quote-delete-actions {
+  border-top: 1px solid #dce3dd;
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+}
+.quote-delete-actions summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+.quote-delete-actions .button {
+  width: 100%;
+}

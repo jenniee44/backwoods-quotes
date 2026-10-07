@@ -223,6 +223,9 @@ export type Store = {
   settings: Pricing;
   quoteDefaults: QuoteDetails;
   quotes: Quote[];
+  // Independent job records retained when their originating quote is deleted.
+  jobs?: Quote[];
+  lastQuoteNumber?: number;
 };
 export const detailDefaults: QuoteDetails = {
   showQuantities: false,
@@ -441,7 +444,7 @@ export function normalizeCategory(
   return matches.length === 1 ? matches[0][0] : mapped;
 }
 function normalizeStoreCategories(store: Store): Store {
-  for (const q of store.quotes) {
+  for (const q of [...store.quotes, ...(store.jobs ?? [])]) {
     for (const estimate of [q, q.snapshot, q.job?.snapshot]) {
       estimate?.lines.forEach((line) => {
         if (line.kind === "Other Costs")
@@ -456,6 +459,7 @@ function normalizeStoreCategories(store: Store): Store {
       actual.category = normalizeCategory(actual.category, actual.description);
     });
   }
+  store.lastQuoteNumber = quoteNumberHighWater(store);
   return store;
 }
 export const templates = [
@@ -612,12 +616,13 @@ export function newQuote(
   quotes: Quote[],
   options: QuoteDetails = detailDefaults,
   company: CompanyInfo = companyDefaults,
+  lastQuoteNumber = 1000,
 ): Quote {
   const date = new Date().toLocaleDateString("en-CA");
 
   return {
     id: id(),
-    number: `BW-${String(Math.max(1000, ...quotes.map((q) => Number(q.number.split("-")[1]) || 1000)) + 1)}`,
+    number: `BW-${String(Math.max(1000, lastQuoteNumber, ...quotes.map((q) => Number(q.number.split("-")[1]) || 1000)) + 1)}`,
     date,
     expiry: expiryFor(date, settings.validityDays ?? 0),
     scopeGroups: [],
@@ -688,10 +693,14 @@ export function convert(q: Quote): Quote {
     },
   };
 }
-export function duplicate(q: Quote, quotes: Quote[]): Quote {
+export function duplicate(
+  q: Quote,
+  quotes: Quote[],
+  lastQuoteNumber = 1000,
+): Quote {
   return {
     ...structuredClone(q),
-    ...newQuote(q.pricing, quotes, q.details),
+    ...newQuote(q.pricing, quotes, q.details, q.company, lastQuoteNumber),
     customer: structuredClone(q.customer),
     name: `${q.name} (copy)`,
     description: q.description,
@@ -1237,6 +1246,20 @@ export function migrate(input: unknown): Store {
       !strings(input.company, ["name", "phone", "email", "address"]))
   )
     throw new Error("Company information is invalid.");
+  if (
+    input.lastQuoteNumber !== undefined &&
+    (!Number.isSafeInteger(input.lastQuoteNumber) ||
+      Number(input.lastQuoteNumber) < 1000)
+  )
+    throw new Error("Saved quote numbering is invalid.");
+  if (
+    input.jobs !== undefined &&
+    (!Array.isArray(input.jobs) ||
+      !input.jobs.every(
+        (job) => quote(job) && validExtensions(job) && !!job.job,
+      ))
+  )
+    throw new Error("Saved job records are invalid.");
   if (input.version === 2) {
     if (
       !validDetails(input.quoteDefaults) ||
@@ -1287,6 +1310,94 @@ export function migrate(input: unknown): Store {
     }),
   });
 }
+export function quoteNumberHighWater(store: Store): number {
+  return Math.max(
+    1000,
+    store.lastQuoteNumber ?? 1000,
+    ...[...store.quotes, ...(store.jobs ?? [])].map((q) => {
+      const match = /^BW-(\d+)$/.exec(q.number);
+      const value = match ? Number(match[1]) : 1000;
+      return Number.isSafeInteger(value) ? value : 1000;
+    }),
+  );
+}
+export function deleteQuote(store: Store, quoteId: string): Store {
+  const target = store.quotes.find((q) => q.id === quoteId);
+  if (!target) throw new Error("This quote no longer exists.");
+  const jobs = [...(store.jobs ?? [])];
+  if (target.job && !jobs.some((job) => job.id === target.id)) {
+    // Explicit job projection: preserve contract context and financial figures,
+    // never carry uploaded plans, photos, takeoff, reports or quote-only notes.
+    const cleanEstimate = (estimate: Estimate): Estimate => ({
+      pricing: structuredClone(estimate.pricing),
+      lines: estimate.lines.map((line) => {
+        const clean = structuredClone(line);
+        delete clean.takeoffSource;
+        delete clean.takeoffId;
+        return clean;
+      }),
+    });
+    jobs.push({
+      id: target.id,
+      number: target.number,
+      date: target.date,
+      expiry: target.expiry,
+      status: target.status,
+      customer: structuredClone(target.customer),
+      name: target.name,
+      description: target.description,
+      measurements: "",
+      notes: "",
+      photos: [],
+      ...cleanEstimate(target.job.snapshot),
+      snapshot: cleanEstimate(target.job.snapshot),
+      job: {
+        ...structuredClone(target.job),
+        snapshot: cleanEstimate(target.job.snapshot),
+      },
+      terms: target.terms,
+      mode: target.mode,
+      company: structuredClone(target.company),
+      details: structuredClone(target.details),
+      customerScopes: structuredClone(target.customerScopes ?? []),
+      scopeGroups: [...(target.scopeGroups ?? [])],
+      documents: [],
+      takeoff: [],
+    });
+  }
+  return {
+    ...store,
+    lastQuoteNumber: quoteNumberHighWater(store),
+    quotes: store.quotes.filter((q) => q.id !== quoteId),
+    ...(jobs.length || store.jobs ? { jobs } : {}),
+  };
+}
+// The legacy migration backup can also contain the deleted quote. Redact only
+// that record, keeping unrelated backup records. Prepare before any write.
+export function persistQuoteDeletion(store: Store, quoteId: string) {
+  const oldBackup = localStorage.getItem(backupKey);
+  let nextBackup = oldBackup;
+  if (oldBackup) {
+    const backup = JSON.parse(oldBackup);
+    if (!record(backup) || !Array.isArray(backup.quotes))
+      throw new Error("The migration backup needs recovery before deletion.");
+    if (backup.quotes.some((q) => record(q) && q.id === quoteId))
+      nextBackup = JSON.stringify({
+        ...backup,
+        quotes: backup.quotes.filter((q) => !record(q) || q.id !== quoteId),
+      });
+  }
+  if (nextBackup !== oldBackup && nextBackup !== null)
+    localStorage.setItem(backupKey, nextBackup);
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(store));
+  } catch (error) {
+    if (nextBackup !== oldBackup && oldBackup !== null)
+      localStorage.setItem(backupKey, oldBackup);
+    throw error;
+  }
+}
+
 export const storageKey = "backwoods-quotes-v1"; // Keep original key so deployed V1 browser records are found.
 export const backupKey = "backwoods-quotes-v1-backup";
 export function load(): Store {

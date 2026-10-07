@@ -24,6 +24,9 @@ import {
   Menu,
 } from "lucide-react";
 import {
+  deleteQuote,
+  persistQuoteDeletion,
+  quoteNumberHighWater,
   calculate,
   companyDefaults,
   paymentError,
@@ -184,6 +187,7 @@ export default function App() {
       cost: 0,
     });
   function saveStore(next: Store): boolean {
+    next = { ...next, lastQuoteNumber: quoteNumberHighWater(next) };
     if (initial.error) {
       setError("Saved data needs recovery before changes can be stored.");
       return false;
@@ -208,7 +212,8 @@ export default function App() {
       setSaveState("Save failed");
       return false;
     }
-    const stored = store.quotes.find((x) => x.id === q.id);
+    const storedJob = store.jobs?.find((x) => x.id === q.id);
+    const stored = store.quotes.find((x) => x.id === q.id) ?? storedJob;
     if (
       stored &&
       stored.status !== "Draft" &&
@@ -249,9 +254,14 @@ export default function App() {
     if (
       saveStore({
         ...store,
-        quotes: exists
-          ? store.quotes.map((x) => (x.id === q.id ? q : x))
-          : [q, ...store.quotes],
+        ...(storedJob
+          ? { jobs: store.jobs!.map((x) => (x.id === q.id ? q : x)) }
+          : {}),
+        quotes: storedJob
+          ? store.quotes
+          : exists
+            ? store.quotes.map((x) => (x.id === q.id ? q : x))
+            : [q, ...store.quotes],
       })
     ) {
       setSaveState("Saved");
@@ -270,7 +280,11 @@ export default function App() {
       !editing ||
       initial.error ||
       JSON.stringify(editing) ===
-        JSON.stringify(storeRef.current.quotes.find((q) => q.id === editing.id))
+        JSON.stringify(
+          [...storeRef.current.quotes, ...(storeRef.current.jobs ?? [])].find(
+            (q) => q.id === editing.id,
+          ),
+        )
     )
       return;
     setSaveState("Saving…");
@@ -281,7 +295,11 @@ export default function App() {
     if (
       editing &&
       JSON.stringify(editing) !==
-        JSON.stringify(store.quotes.find((q) => q.id === editing.id)) &&
+        JSON.stringify(
+          [...store.quotes, ...(store.jobs ?? [])].find(
+            (q) => q.id === editing.id,
+          ),
+        ) &&
       !confirm("Leave the quote editor? Unsaved changes will be lost.")
     )
       return;
@@ -293,6 +311,44 @@ export default function App() {
     setMobileMenu(false);
     setError(initial.error);
   }
+  function removeQuote() {
+    if (!editing || !store.quotes.some((q) => q.id === editing.id)) return;
+    if (initial.error) {
+      setError("Saved data needs recovery before deletion.");
+      return;
+    }
+    const target = store.quotes.find((q) => q.id === editing.id)!;
+    if (
+      !confirm(
+        `Permanently delete quote ${target.number} — ${target.customer.name || "Customer not added"} / ${target.name || "Untitled project"}?\n\nThis deletes the quote, attachments and plan/takeoff analysis from this device. Deletion cannot be undone.${target.job ? "\n\nThe existing job, original estimate and actual costs will be preserved separately." : ""}`,
+      )
+    )
+      return;
+    try {
+      const next = deleteQuote(storeRef.current, target.id);
+      persistQuoteDeletion(next, target.id);
+      setStore(next);
+      setEditing(null);
+      setPreview(null);
+      setReviewing(false);
+      setPdfOrientations((previous) => {
+        const next = { ...previous };
+        for (const document of target.documents) delete next[document.id];
+        return next;
+      });
+      setPage("Quotes");
+      setFilter("All");
+      setSearch("");
+      setError("");
+      setNotice(
+        `Quote ${target.number} deleted permanently.${target.job ? " Its job was preserved in Jobs." : ""}`,
+      );
+    } catch {
+      setError(
+        "Could not delete the quote. Check browser storage and backup data, then try again.",
+      );
+    }
+  }
   function create() {
     setEditing(
       newQuote(
@@ -300,6 +356,7 @@ export default function App() {
         store.quotes,
         store.quoteDefaults,
         store.company ?? companyDefaults,
+        quoteNumberHighWater(store),
       ),
     );
     setTab("Customer & job");
@@ -310,8 +367,12 @@ export default function App() {
   const active = store.quotes.filter(
     (q) => q.status === "Draft" || q.status === "Sent",
   );
-  const accepted = store.quotes.filter((q) => q.status === "Accepted");
-  const listed = store.quotes.filter(
+  const accepted = [...store.quotes, ...(store.jobs ?? [])].filter(
+    (q) => q.status === "Accepted",
+  );
+  const listed = (
+    page === "Jobs" ? [...store.quotes, ...(store.jobs ?? [])] : store.quotes
+  ).filter(
     (q) =>
       (filter === "All" || q.status === filter) &&
       `${q.name} ${q.customer.name} ${q.number}`
@@ -319,6 +380,8 @@ export default function App() {
         .includes(search.toLowerCase()),
   );
   const current = editing;
+  const retainedJob =
+    !!current && !!store.jobs?.some((job) => job.id === current.id);
   const locked =
     !!current &&
     (!!current.job ||
@@ -327,7 +390,10 @@ export default function App() {
       current.status === "Completed");
   const totals = current ? calculate(estimateFor(current)) : null;
   function patch(p: Partial<Quote>) {
-    if (current) setEditing({ ...current, ...p });
+    if (current)
+      setEditing((previous) =>
+        previous?.id === current.id ? { ...previous, ...p } : previous,
+      );
     setNotice("");
   }
   async function photos(files: FileList | null) {
@@ -518,6 +584,12 @@ export default function App() {
                     >
                       {saveState} · stored on this device
                     </div>
+                    {retainedJob && (
+                      <p className="tiny">
+                        The source quote was deleted. This separate job retains
+                        its original estimate and actual costs.
+                      </p>
+                    )}
                     <p>
                       {locked
                         ? "Original estimate is locked. Record job actuals separately."
@@ -537,7 +609,8 @@ export default function App() {
                       className="button"
                       onClick={() => saveQuote(current)}
                     >
-                      <Check size={17} /> Save quote
+                      <Check size={17} />{" "}
+                      {retainedJob ? "Save job" : "Save quote"}
                     </button>
                   </div>
                 </div>
@@ -894,7 +967,9 @@ export default function App() {
                         quote={current}
                         locked={locked}
                         onChange={(q) => {
-                          setEditing(q);
+                          setEditing((previous) =>
+                            previous?.id === q.id ? q : previous,
+                          );
                           setNotice("");
                         }}
                         onError={setError}
@@ -1280,7 +1355,11 @@ export default function App() {
                       <button
                         className="button secondary"
                         onClick={() => {
-                          const q = duplicate(current, store.quotes);
+                          const q = duplicate(
+                            current,
+                            [...store.quotes, ...(store.jobs ?? [])],
+                            quoteNumberHighWater(store),
+                          );
                           setEditing(q);
                           setTab("Customer & job");
                         }}
@@ -1288,6 +1367,21 @@ export default function App() {
                         <Copy size={16} /> Duplicate quote
                       </button>
                     </div>
+                    {store.quotes.some((q) => q.id === current.id) && (
+                      <details className="quote-delete-actions">
+                        <summary>Quote actions</summary>
+                        <p className="tiny">
+                          Permanently remove this quote from this device.
+                          Existing jobs are preserved.
+                        </p>
+                        <button
+                          className="button secondary danger"
+                          onClick={removeQuote}
+                        >
+                          <Trash2 size={16} /> Delete quote
+                        </button>
+                      </details>
+                    )}
                   </aside>
                 </div>
               </>
@@ -1478,7 +1572,12 @@ export default function App() {
                         >
                           <span className={`status-dot ${s.toLowerCase()}`} />
                           <strong>
-                            {store.quotes.filter((q) => q.status === s).length}
+                            {
+                              [
+                                ...store.quotes,
+                                ...(i >= 2 ? (store.jobs ?? []) : []),
+                              ].filter((q) => q.status === s).length
+                            }
                           </strong>
                           <span>
                             {s} {i < 2 ? "Quotes" : "Jobs"}
