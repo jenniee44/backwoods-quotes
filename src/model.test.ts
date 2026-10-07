@@ -567,7 +567,7 @@ describe("V2 testing refinements", () => {
       scopeGroup: "Custom masonry",
     });
     expect(groupsFor(reno)).toContain("Custom masonry");
-    expect(constructionTemplates).toHaveLength(7);
+    expect(constructionTemplates).toHaveLength(12);
   });
   it("calculates expiry across month and year boundaries and handles optional validity", () => {
     expect(expiryFor("2026-12-20", 30)).toBe("2027-01-19");
@@ -620,4 +620,80 @@ describe("V2 testing refinements", () => {
     ).toEqual({ subtotal: 1000, tax: 130, total: 1130 });
     expect(JSON.stringify(q)).toBe(before);
   });
+});
+
+describe("construction template regression", () => {
+  for (const template of constructionTemplates) {
+    it(`${template.name}: correct catalog, zero quantities and idempotent application`, () => {
+      const q = newQuote(defaults, []);
+      const applied = applyTemplate(q, template);
+      expect(applied.lines.map((l) => l.description)).toEqual(
+        template.lines.map((l) => l.description),
+      );
+      expect(applied.scopeGroups).toEqual([...new Set(template.groups)]);
+      expect(
+        applied.lines.every(
+          (l) => l.quantity === 0 && l.cost === 0 && l.override === null,
+        ),
+      ).toBe(true);
+      expect(applyTemplate(applied, template)).toBe(applied);
+      expect(new Set(applied.lines.map((l) => l.id)).size).toBe(
+        applied.lines.length,
+      );
+      expect(calculate(applied).total).toBe(0);
+      if (template.id !== "deck")
+        expect(applied.scopeGroups).not.toContain("Footings & Structure");
+      if (template.id === "deck")
+        expect(applied.scopeGroups).toContain("Footings & Structure");
+    });
+  }
+  it("retains user edits and application history when templates are mixed or duplicated", () => {
+    const q = applyTemplate(newQuote(defaults, []), constructionTemplates[1]);
+    q.lines[0].quantity = 12;
+    const mixed = applyTemplate(q, constructionTemplates[2]);
+    expect(applyTemplate(mixed, constructionTemplates[1]).lines).toEqual(
+      mixed.lines,
+    );
+    expect(mixed.lines[0].quantity).toBe(12);
+    expect(
+      applyTemplate(duplicate(mixed, [mixed]), constructionTemplates[1]).lines,
+    ).toHaveLength(mixed.lines.length);
+  });
+  it("snapshots all company defaults and isolates quote and line overrides", () => {
+    const settings = {
+      ...defaults,
+      labourRate: 90,
+      internalLabourCost: 35,
+      materialMarkup: 20,
+      otherMarkup: 15,
+      overhead: 10,
+      contingency: 5,
+      targetMargin: 25,
+      hst: 13,
+    };
+    const q = newQuote(settings, []);
+    expect(q.pricing).toEqual(settings);
+    settings.labourRate = 200;
+    expect(q.pricing.labourRate).toBe(90);
+    const second = newQuote(settings, [q]);
+    q.pricing.labourRate = 100;
+    expect(second.pricing.labourRate).toBe(200);
+    q.lines = [
+      inheritedLine("Labour", q.pricing),
+      inheritedLine("Labour", q.pricing),
+    ];
+    q.lines.forEach((l) => (l.quantity = 2));
+    q.lines[0].inheritRate = false;
+    q.lines[0].rate = 120;
+    expect(linePrice(q.lines[0], q.pricing)).toBe(240);
+    expect(linePrice(q.lines[1], q.pricing)).toBe(200);
+    expect(calculate(q).tax).toBe(round(calculate(q).subtotal * 0.13));
+  });
+});
+
+it("recognizes previously applied V2 catalogs without application history", () => {
+  const q = applyTemplate(newQuote(defaults, []), deckTemplate);
+  delete q.appliedTemplateIds;
+  q.lines[0].quantity = 10;
+  expect(applyTemplate(q, deckTemplate)).toBe(q);
 });

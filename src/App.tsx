@@ -26,6 +26,7 @@ import {
   calculate,
   estimateFor,
   applyTemplate,
+  templateApplied,
   constructionTemplates,
   expiryFor,
   markSent,
@@ -137,6 +138,7 @@ function Stat({
 }
 
 export default function App() {
+  const [selectedTemplate, setSelectedTemplate] = useState("");
   const [initial] = useState(() => {
     try {
       return { store: load(), error: "" };
@@ -278,6 +280,7 @@ export default function App() {
   function create() {
     setEditing(newQuote(store.settings, store.quotes, store.quoteDefaults));
     setTab("Customer & job");
+    setSelectedTemplate("");
     setNotice("");
     setError(initial.error);
   }
@@ -678,21 +681,17 @@ export default function App() {
                               </select>
                             </Field>
                           </div>
+                          <p className="hint">
+                            Project category is a label only. To add suggested
+                            estimate items, choose and apply a construction
+                            template below.
+                          </p>
                           <Field label="Apply construction template">
                             <select
-                              value=""
-                              onChange={(e) => {
-                                const template = constructionTemplates.find(
-                                  (t) => t.id === e.target.value,
-                                );
-                                if (
-                                  template &&
-                                  confirm(
-                                    "Append template suggestions? Existing lines are kept; quantities remain editable.",
-                                  )
-                                )
-                                  setEditing(applyTemplate(current, template));
-                              }}
+                              value={selectedTemplate}
+                              onChange={(e) =>
+                                setSelectedTemplate(e.target.value)
+                              }
                             >
                               <option value="">Choose a template…</option>
                               {constructionTemplates.map((t) => (
@@ -702,6 +701,56 @@ export default function App() {
                               ))}
                             </select>
                           </Field>
+                          <button
+                            type="button"
+                            disabled={
+                              !selectedTemplate ||
+                              constructionTemplates.some(
+                                (t) =>
+                                  t.id === selectedTemplate &&
+                                  templateApplied(current, t),
+                              )
+                            }
+                            onClick={() => {
+                              const template = constructionTemplates.find(
+                                (t) => t.id === selectedTemplate,
+                              );
+                              if (
+                                !template ||
+                                templateApplied(current, template)
+                              )
+                                return;
+                              if (
+                                current.lines.length &&
+                                !confirm(
+                                  `Add ${template.name} suggestions? Your ${current.lines.length} existing estimate lines will remain. ${template.lines.length} new suggested items will be added with zero quantities.`,
+                                )
+                              )
+                                return;
+                              setEditing((previous) =>
+                                previous
+                                  ? applyTemplate(previous, template)
+                                  : previous,
+                              );
+                              setNotice(
+                                `${template.name} template applied — ${template.lines.length} suggested items added.`,
+                              );
+                              if (template.lines.length)
+                                setTab(template.lines[0].kind);
+                            }}
+                          >
+                            Apply selected template
+                          </button>
+                          <p role="status">
+                            Applied templates:{" "}
+                            {(current.appliedTemplateIds ?? [])
+                              .map(
+                                (id) =>
+                                  constructionTemplates.find((t) => t.id === id)
+                                    ?.name ?? id,
+                              )
+                              .join(", ") || "None"}
+                          </p>
                           <div className="info">
                             <p>
                               Templates append suggested lines and

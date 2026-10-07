@@ -94,6 +94,7 @@ export type Quote = {
   mode: "Simplified" | "Detailed";
   job?: Job;
   templateCategory?: string;
+  appliedTemplateIds?: string[];
   snapshot?: Estimate;
   scopeGroups?: string[];
   sentAt?: string;
@@ -270,10 +271,28 @@ export const deckTemplate: QuoteTemplate = {
     },
   ],
 };
+export function templateApplied(q: Quote, template: QuoteTemplate): boolean {
+  if (q.appliedTemplateIds?.includes(template.id)) return true;
+  // Older V2 quotes have no application history. Recognize a complete matching
+  // catalog by stable descriptions/groups, even when quantities were edited.
+  return (
+    template.lines.length > 0 &&
+    template.lines.every((suggestion) =>
+      q.lines.some(
+        (line) =>
+          line.kind === suggestion.kind &&
+          line.description === suggestion.description &&
+          line.scopeGroup === suggestion.scopeGroup,
+      ),
+    )
+  );
+}
 export function applyTemplate(q: Quote, template: QuoteTemplate): Quote {
   if (q.status !== "Draft") throw new Error("Only drafts can use templates.");
+  if (templateApplied(q, template)) return q;
   return {
     ...q,
+    appliedTemplateIds: [...(q.appliedTemplateIds ?? []), template.id],
     templateCategory: template.category,
     scopeGroups: [...new Set([...(q.scopeGroups ?? []), ...template.groups])],
     terms: template.details?.terms ?? q.terms,
@@ -545,6 +564,7 @@ export function duplicate(q: Quote, quotes: Quote[]): Quote {
     job: undefined,
     sentAt: undefined,
     scopeGroups: [...(q.scopeGroups ?? [])],
+    appliedTemplateIds: [...(q.appliedTemplateIds ?? [])],
     snapshot: undefined,
   };
 }
@@ -707,6 +727,9 @@ function quote(v: unknown) {
     (v.scopeGroups !== undefined &&
       (!Array.isArray(v.scopeGroups) ||
         !v.scopeGroups.every((g) => typeof g === "string"))) ||
+    (v.appliedTemplateIds !== undefined &&
+      (!Array.isArray(v.appliedTemplateIds) ||
+        !v.appliedTemplateIds.every((id) => typeof id === "string"))) ||
     (v.sentAt !== undefined && typeof v.sentAt !== "string")
   )
     return false;
@@ -945,81 +968,155 @@ export function groupsFor(q: Quote): string[] {
     ),
   ];
 }
-const renovationGroups = [
-  "Site Preparation",
-  "Framing",
-  "Insulation",
-  "Drywall",
-  "Flooring",
-  "Finish Carpentry",
-  "Painting",
-  "Electrical",
-  "Plumbing",
-  "Cleanup",
-];
+type SuggestedMaterial = [string, string, string];
 function constructionTemplate(
   id: string,
   name: string,
-  groups: string[],
+  materials: SuggestedMaterial[],
+  trades: string[] = [],
 ): QuoteTemplate {
+  const groups = [
+    ...new Set(materials.map(([, , group]) => group)),
+    ...trades,
+    "Project Costs",
+  ];
   return {
     id,
     name,
     category: name,
     groups,
-    lines: groups.flatMap((g) => [
-      {
+    lines: [
+      ...[...new Set(materials.map(([, , group]) => group))].map((group) => ({
         kind: "Labour" as const,
-        description: `${g} labour`,
+        description: `${group} labour`,
         unit: "hour",
-        scopeGroup: g,
+        scopeGroup: group,
         category: "Miscellaneous",
+      })),
+      ...materials.map(([description, unit, scopeGroup]) => ({
+        kind: "Materials" as const,
+        description,
+        unit,
+        scopeGroup,
+        category: "Miscellaneous",
+      })),
+      ...trades.map((group) => ({
+        kind: "Other Costs" as const,
+        description: `${group} subcontractor allowance`,
+        unit: "allowance",
+        scopeGroup: group,
+        category: "Subcontractor",
+      })),
+      {
+        kind: "Other Costs",
+        description: "Waste / disposal allowance",
+        unit: "allowance",
+        scopeGroup: "Project Costs",
+        category: "Dump/disposal fees",
       },
       {
-        kind: "Materials" as const,
-        description: `${g} materials`,
-        unit: "each",
-        scopeGroup: g,
+        kind: "Other Costs",
+        description: "Project coordination allowance",
+        unit: "allowance",
+        scopeGroup: "Project Costs",
         category: "Miscellaneous",
       },
-    ]),
+    ],
   };
 }
+const interiorMaterials: SuggestedMaterial[] = [
+  ["Demolition consumables", "allowance", "Site Preparation"],
+  ["Wall framing lumber", "linear ft.", "Framing"],
+  ["Insulation", "sq. ft.", "Insulation"],
+  ["Vapour barrier", "sq. ft.", "Insulation"],
+  ["Drywall", "sheets", "Drywall"],
+  ["Flooring", "sq. ft.", "Flooring"],
+  ["Interior doors", "each", "Finish Carpentry"],
+  ["Baseboard / trim", "linear ft.", "Finish Carpentry"],
+  ["Paint", "gallon", "Painting"],
+  [
+    "Fasteners / adhesives / miscellaneous materials",
+    "allowance",
+    "Finish Carpentry",
+  ],
+];
 export const constructionTemplates: QuoteTemplate[] = [
   deckTemplate,
-  constructionTemplate("renovation", "Basement / Renovation", renovationGroups),
-  constructionTemplate("framing", "Framing", [
-    "Site Preparation",
-    "Framing",
-    "Cleanup",
+  constructionTemplate("renovation", "Basement Renovation", interiorMaterials, [
+    "Electrical",
+    "Plumbing",
+  ]),
+  constructionTemplate(
+    "bathroom",
+    "Bathroom Renovation",
+    [
+      ["Bathroom demolition consumables", "allowance", "Bathroom Preparation"],
+      ["Waterproofing membrane", "sq. ft.", "Waterproofing"],
+      ["Tile", "sq. ft.", "Tiling"],
+      ["Vanity and fixtures", "each", "Fixtures"],
+      ["Bathroom paint", "gallon", "Painting"],
+    ],
+    ["Electrical", "Plumbing"],
+  ),
+  constructionTemplate(
+    "kitchen",
+    "Kitchen Renovation",
+    [
+      ["Kitchen demolition consumables", "allowance", "Kitchen Preparation"],
+      ["Cabinets", "linear ft.", "Cabinetry"],
+      ["Countertops", "sq. ft.", "Countertops"],
+      ["Backsplash tile", "sq. ft.", "Backsplash"],
+      ["Kitchen flooring", "sq. ft.", "Flooring"],
+    ],
+    ["Electrical", "Plumbing"],
+  ),
+  constructionTemplate("framing", "Framing / Carpentry", [
+    ["Structural framing lumber", "linear ft.", "Framing"],
+    ["Sheathing", "sheets", "Sheathing"],
+    ["Connectors / fasteners", "allowance", "Framing"],
+  ]),
+  constructionTemplate(
+    "addition",
+    "Addition",
+    [
+      ["Foundation materials", "allowance", "Foundation"],
+      ["Addition framing lumber", "linear ft.", "Framing"],
+      ["Roofing", "sq. ft.", "Roofing"],
+      ["Exterior cladding", "sq. ft.", "Exterior"],
+      ["Interior drywall", "sheets", "Interior"],
+    ],
+    ["Excavation", "Electrical", "Plumbing", "HVAC"],
+  ),
+  constructionTemplate(
+    "interior",
+    "Interior Renovation",
+    interiorMaterials.filter(([, , group]) => group !== "Insulation"),
+    ["Electrical"],
+  ),
+  constructionTemplate("exterior", "Exterior / Siding", [
+    ["Siding", "sq. ft.", "Siding"],
+    ["House wrap", "sq. ft.", "Weather Protection"],
+    ["Exterior trim", "linear ft.", "Exterior Trim"],
+    ["Flashing", "linear ft.", "Weather Protection"],
+  ]),
+  constructionTemplate("repairs", "Repairs & Maintenance", [
+    ["Repair materials", "allowance", "Repairs"],
+    ["Maintenance consumables", "allowance", "Maintenance"],
   ]),
   constructionTemplate("fence", "Fence", [
-    "Site Preparation",
-    "Posts & Footings",
-    "Fence Panels",
-    "Gates",
-    "Cleanup",
-  ]),
-  constructionTemplate("addition", "Addition", [
-    "Site Preparation",
-    "Foundation",
-    "Framing",
-    "Roofing",
-    "Exterior",
-    "Interior",
-    "Project Costs",
+    ["Fence posts", "each", "Posts & Footings"],
+    ["Fence boards", "each", "Fence Panels"],
+    ["Gate hardware", "each", "Gates"],
   ]),
   constructionTemplate("garage", "Garage / Shed", [
-    "Site Preparation",
-    "Foundation",
-    "Framing",
-    "Roofing",
-    "Doors & Exterior",
-    "Cleanup",
+    ["Garage foundation materials", "allowance", "Foundation"],
+    ["Garage framing lumber", "linear ft.", "Framing"],
+    ["Garage roofing", "sq. ft.", "Roofing"],
+    ["Garage doors", "each", "Doors & Exterior"],
   ]),
   {
     id: "blank",
-    name: "Custom / Blank",
+    name: "Custom / Blank Quote",
     category: "Custom",
     groups: [],
     lines: [],

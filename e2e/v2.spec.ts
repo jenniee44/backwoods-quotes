@@ -94,8 +94,11 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Deck customer");
   await page.getByLabel("Job name *").fill("Muskoka deck");
-  page.once("dialog", (d) => d.accept());
   await page.getByLabel("Apply construction template").selectOption("deck");
+  await page.getByRole("button", { name: "Apply selected template" }).click();
+  await page
+    .getByRole("button", { name: "Customer & job", exact: true })
+    .click();
   await page
     .getByLabel("Payment / deposit schedule")
     .fill("20% deposit, balance at completion.");
