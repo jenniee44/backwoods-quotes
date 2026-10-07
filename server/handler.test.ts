@@ -172,35 +172,38 @@ it("verifies Access RSA signature, audience and expiry", async () => {
 it.each([
   [undefined, "gpt-5.4-mini"],
   ["custom-compatible-model", "custom-compatible-model"],
-])("provider uses model %s and preserves file/privacy/schema controls", async (model, expectedModel) => {
-  let payload: Record<string, unknown> = {};
-  const mock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-    payload = JSON.parse(String(init?.body));
-    return Response.json({
-      status: "completed",
-      output: [
-        {
-          content: [
-            { type: "output_text", text: JSON.stringify(analysisFixture()) },
-          ],
-        },
-      ],
+])(
+  "provider uses model %s and preserves file/privacy/schema controls",
+  async (model, expectedModel) => {
+    let payload: Record<string, unknown> = {};
+    const mock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      payload = JSON.parse(String(init?.body));
+      return Response.json({
+        status: "completed",
+        output: [
+          {
+            content: [
+              { type: "output_text", text: JSON.stringify(analysisFixture()) },
+            ],
+          },
+        ],
+      });
     });
-  });
-  const result = await openAIProvider(
-    "test-server-secret",
-    model,
-    mock as typeof fetch,
-  ).analyze([document], new AbortController().signal);
-  expect(result.suggestions).toHaveLength(2);
-  expect(payload.model).toBe(expectedModel);
-  expect(payload.store).toBe(false);
-  expect(JSON.stringify(payload)).not.toContain("homeowner");
-  expect(JSON.stringify(payload)).not.toContain("test-server-secret");
-  expect((payload.text as { format: { strict: boolean } }).format.strict).toBe(
-    true,
-  );
-});
+    const result = await openAIProvider(
+      "test-server-secret",
+      model,
+      mock as typeof fetch,
+    ).analyze([document], new AbortController().signal);
+    expect(result.suggestions).toHaveLength(2);
+    expect(payload.model).toBe(expectedModel);
+    expect(payload.store).toBe(false);
+    expect(JSON.stringify(payload)).not.toContain("homeowner");
+    expect(JSON.stringify(payload)).not.toContain("test-server-secret");
+    expect(
+      (payload.text as { format: { strict: boolean } }).format.strict,
+    ).toBe(true);
+  },
+);
 it("provider rejects invalid JSON, refusal, truncation and API errors", async () => {
   for (const response of [
     Response.json({ status: "incomplete" }),
@@ -220,4 +223,67 @@ it("provider rejects invalid JSON, refusal, truncation and API errors", async ()
         new AbortController().signal,
       ),
     ).rejects.toThrow();
+});
+
+it("provider prioritizes contractor takeoff with supported calculations and preserves the secured schema", async () => {
+  let payload: Record<string, unknown> = {};
+  const fixture = analysisFixture();
+  Object.assign(fixture.suggestions[1], {
+    calculationBasis: "6 supports counted once",
+    sourceFacts: ["Six distinct joists on page 1"],
+    quantityMethod: "Counted",
+    classification: "Calculated quantity",
+  });
+  const provider = openAIProvider(
+    "test-only-placeholder",
+    undefined,
+    async (_url, init) => {
+      payload = JSON.parse(String(init?.body));
+      return Response.json({
+        status: "completed",
+        output: [
+          { content: [{ type: "output_text", text: JSON.stringify(fixture) }] },
+        ],
+      });
+    },
+  );
+  const response = await handleAnalysis(
+    req(),
+    { DEV_ALLOW_LOCAL: "true" },
+    provider,
+  );
+  expect(response.status).toBe(200);
+  expect(payload.model).toBe("gpt-5.4-mini");
+  const instructions = String(payload.instructions);
+  for (const phrase of [
+    "Produce a contractor estimating takeoff",
+    "joist size",
+    "footing/pier",
+    "DO NOT SCALE",
+    "NEVER invent",
+    "contractor enters all labour hours",
+    "NOT automatically subcontracted",
+    "sourceFacts",
+    "calculationBasis",
+    "untrusted data",
+    "No customer quote text",
+  ])
+    expect(instructions).toContain(phrase);
+  expect(instructions).not.toMatch(/9 visible|9 concrete|2 elevation/);
+  const format = (
+    payload.text as {
+      format: {
+        strict: boolean;
+        schema: { properties: Record<string, unknown> };
+      };
+    }
+  ).format;
+  expect(format.strict).toBe(true);
+  expect(format.schema.properties).toHaveProperty("summary");
+  expect(await response.json()).toMatchObject({
+    suggestions: [
+      { quantity: null },
+      { quantity: 6, sourceFacts: ["Six distinct joists on page 1"] },
+    ],
+  });
 });

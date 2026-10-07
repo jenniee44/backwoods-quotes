@@ -314,13 +314,53 @@ export default function LineEditor({
                   </p>
                 )}
               {l.takeoffSource && (
-                <p className="tiny">
-                  Source: {l.takeoffSource.documentName}
-                  {l.takeoffSource.page
-                    ? ` — Page ${l.takeoffSource.page}`
-                    : ""}{" "}
-                  · approved {l.takeoffSource.quantity} {l.takeoffSource.unit}
-                </p>
+                <>
+                  <p className="tiny">
+                    Source: {l.takeoffSource.documentName}
+                    {l.takeoffSource.page
+                      ? ` — Page ${l.takeoffSource.page}`
+                      : ""}{" "}
+                    · approved {l.takeoffSource.quantity} {l.takeoffSource.unit}
+                  </p>
+                  <details className="takeoff-evidence">
+                    <summary>
+                      Approved takeoff evidence (private snapshot)
+                    </summary>
+                    <p>
+                      {l.takeoffSource.classification} ·{" "}
+                      {l.takeoffSource.confidence} confidence
+                    </p>
+                    {l.takeoffSource.specification && (
+                      <p>Specification: {l.takeoffSource.specification}</p>
+                    )}
+                    {l.takeoffSource.location && (
+                      <p>Location: {l.takeoffSource.location}</p>
+                    )}
+                    {!!l.takeoffSource.sourceFacts?.length && (
+                      <ul>
+                        {l.takeoffSource.sourceFacts.map((fact, i) => (
+                          <li key={i}>{fact}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {l.takeoffSource.calculationBasis && (
+                      <p>
+                        Calculation basis: {l.takeoffSource.calculationBasis}
+                      </p>
+                    )}
+                    {!!l.takeoffSource.assumptions?.length && (
+                      <p>
+                        Assumptions: {l.takeoffSource.assumptions.join("; ")}
+                      </p>
+                    )}
+                    {!!l.takeoffSource.warnings?.length && (
+                      <p>Verification: {l.takeoffSource.warnings.join("; ")}</p>
+                    )}
+                    {l.takeoffSource.notes && (
+                      <p>Source notes: {l.takeoffSource.notes}</p>
+                    )}
+                  </details>
+                </>
               )}
               {l.pricingRequired && lineCost(l) === 0 && (
                 <p className="margin-warning">

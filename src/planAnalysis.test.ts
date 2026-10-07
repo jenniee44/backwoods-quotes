@@ -103,12 +103,15 @@ it("AI metadata survives reload/source removal but cannot enter customer documen
   );
 });
 
-it("overlapping analysis does not duplicate retained facts and informational dimensions remain Proposed", () => {
+it("overlapping analysis does not duplicate retained facts and dimensions stay in the plan summary", () => {
   const first = addAnalysisSuggestions(quote(), analysisFixture(), "first");
-  expect(first.takeoff.at(-1)).toMatchObject({
-    destination: "Informational",
-    status: "Proposed",
-  });
+  expect(first.analysisReports![0].dimensions![0].description).toBe(
+    "Deck area",
+  );
+  expect(first.takeoff.some((item) => item.description === "Deck area")).toBe(
+    false,
+  );
+  expect(first.takeoff.every((item) => item.status === "Proposed")).toBe(true);
   const second = addAnalysisSuggestions(first, analysisFixture(), "second");
   expect(second.takeoff).toHaveLength(first.takeoff.length);
 });
@@ -134,4 +137,113 @@ it("browser network failures are understandable and do not disclose implementati
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+it("calculated takeoff provenance persists privately through conversion, reload and source removal", () => {
+  const fixture = analysisFixture();
+  Object.assign(fixture.suggestions[1], {
+    scopeGroup: "Framing",
+    specification: "INTERNAL_SPECIFICATION",
+    location: "INTERNAL_LOCATION",
+    sourceFacts: ["INTERNAL_SOURCE_FACT"],
+    calculationBasis: "INTERNAL_CALCULATION_BASIS",
+    quantityMethod: "Calculated",
+    classification: "Calculated quantity",
+    warnings: ["INTERNAL_WARNING"],
+    assumptions: ["INTERNAL_ASSUMPTION"],
+  });
+  let q = addAnalysisSuggestions(quote(), fixture, "INTERNAL_FINGERPRINT");
+  q.takeoff[1] = approveTakeoff(reviewTakeoff(q.takeoff[1]));
+  q = takeoffToLine(q, q.takeoff[1], "Materials");
+  q.lines[0].cost = 10; // Ensure non-zero customer row exercises projection.
+  const source = q.lines[0].takeoffSource!;
+  expect(source).toMatchObject({
+    calculationBasis: "INTERNAL_CALCULATION_BASIS",
+    sourceFacts: ["INTERNAL_SOURCE_FACT"],
+    warnings: ["INTERNAL_WARNING"],
+    classification: "Calculated quantity",
+  });
+  q.documents = [];
+  q.takeoff = [];
+  const store = seed();
+  store.quotes = [q];
+  const reloaded = migrate(store).quotes[0];
+  expect(reloaded.lines[0].takeoffSource).toEqual(source);
+  expect(JSON.stringify(customerDocument(reloaded))).not.toMatch(
+    /INTERNAL_|private-plan|sourceFacts|sourcePage|calculationBasis|confidence|provenance|markup|profit|analysis/i,
+  );
+  expect(calculate(reloaded)).toEqual(calculate(q));
+});
+it("overlapping semantic facts are skipped without changing reviewed originals or collapsing distinct locations", () => {
+  const fixture = analysisFixture();
+  fixture.suggestions[1].description = "Concrete footings";
+  fixture.suggestions[1].location = "Main deck";
+  const first = addAnalysisSuggestions(quote(), fixture, "first");
+  first.takeoff[1] = approveTakeoff(reviewTakeoff(first.takeoff[1]));
+  const original = structuredClone(first.takeoff);
+  fixture.suggestions[1].description = "Concrete piers";
+  const duplicate = addAnalysisSuggestions(first, fixture, "second");
+  expect(duplicate.takeoff).toEqual(original);
+  expect(duplicate.analysisReports!.at(-1)!.duplicatesReduced).toBe(2);
+  fixture.suggestions[1].location = "Landing";
+  const distinct = addAnalysisSuggestions(duplicate, fixture, "third");
+  expect(distinct.takeoff).toHaveLength(original.length + 1);
+  expect(distinct.takeoff.slice(0, original.length)).toEqual(original);
+});
+it("old saved estimates and analysis reports remain compatible and unchanged", () => {
+  const q = quote();
+  q.takeoff = [
+    {
+      id: "old",
+      description: "Manual old takeoff",
+      quantity: 2,
+      unit: "each",
+      documentId: "plan",
+      page: 1,
+      notes: "",
+      confidence: "Low",
+      status: "Reviewed",
+    },
+  ];
+  q.analysisReports = [
+    {
+      id: "old-report",
+      fingerprint: "old",
+      createdAt: "2026-01-01",
+      dimensions: analysisFixture().dimensions,
+      project: analysisFixture().project,
+      assumptions: [],
+      warnings: [],
+    },
+  ];
+  const store = seed();
+  store.quotes = [q];
+  const reloaded = migrate(store).quotes[0];
+  expect(reloaded.takeoff).toEqual(q.takeoff);
+  expect(reloaded.analysisReports).toEqual(q.analysisReports);
+  expect(canConvert(reloaded.takeoff[0])).toBe(true);
+});
+it("editing calculation evidence resets approval and low confidence still requires explicit acknowledgement", () => {
+  const q = addAnalysisSuggestions(quote(), analysisFixture());
+  let item = editTakeoff(q.takeoff[0], {
+    quantity: 4,
+    calculationBasis: "Verified by contractor",
+    sourceFacts: ["Reviewed source"],
+  });
+  expect(() => approveTakeoff(item)).toThrow();
+  item = approveTakeoff(reviewTakeoff(item));
+  expect(item.confidence).toBe("Low");
+  const edited = editTakeoff(item, { calculationBasis: "Changed calculation" });
+  expect(edited.status).toBe("Proposed");
+  expect(canConvert(edited)).toBe(false);
+});
+it("corrupted saved evidence and summary are safely rejected", () => {
+  const q = addAnalysisSuggestions(quote(), analysisFixture());
+  const store = seed();
+  store.quotes = [q];
+  Object.assign(q.takeoff[0], { sourceFacts: "bad" });
+  expect(() => migrate(store)).toThrow("invalid");
+  q.takeoff[0].sourceFacts = [];
+  Object.assign(q.analysisReports![0], { summary: { majorScope: "bad" } });
+  expect(() => migrate(store)).toThrow("invalid");
 });

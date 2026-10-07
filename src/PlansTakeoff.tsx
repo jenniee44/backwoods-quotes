@@ -11,7 +11,9 @@ import {
   destinations,
   classifications,
   validateDocuments,
+  constructionGroups,
 } from "../shared/analysis";
+import { scopeFor } from "../shared/takeoff";
 import { validatePlanFile } from "./validatePlanFile";
 import PdfPreview from "./PdfPreview";
 import { useEffect, useState, useRef } from "react";
@@ -73,6 +75,16 @@ export default function PlansTakeoff({
   const [analysisState, setAnalysisState] = useState("Ready to analyze");
   const [analysisError, setAnalysisError] = useState("");
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const takeoffGroups = [
+    ...new Set(q.takeoff.map((item) => scopeFor(item))),
+  ].sort((a, b) => {
+    const index = (group: string) => {
+      const i = constructionGroups.indexOf(group);
+      return i < 0 ? constructionGroups.length - 1 : i;
+    };
+    return index(a) - index(b);
+  });
   const busy =
     analysisState === "Uploading/preparing" ||
     analysisState === "Analyzing plans";
@@ -121,7 +133,9 @@ export default function PlansTakeoff({
         throw new Error(
           "Source files changed during analysis. Results were not added; analyze the current files.",
         );
-      onChange(addAnalysisSuggestions(latest.current, result, fingerprint));
+      onChange(
+        addAnalysisSuggestions(latest.current, result, fingerprint, documents),
+      );
       setAnalysisState(
         result.suggestions.length || result.dimensions?.length
           ? "Analysis complete — needs review"
@@ -316,16 +330,70 @@ export default function PlansTakeoff({
                 </b>
               </p>
               <p>{report.project.description}</p>
-              <small>
-                {[
-                  report.project.drawingNumbers.join(", "),
-                  report.project.revision,
-                  report.project.date,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </small>
+              <p className="tiny">
+                Drawing sheets analyzed:{" "}
+                {report.project.drawingNumbers.join(", ") ||
+                  "Sheet labels not readable"}
+              </p>
+              {!!report.sourceDocuments?.length && (
+                <p className="tiny">
+                  Sources:{" "}
+                  {report.sourceDocuments.map((d) => d.name).join(", ")}
+                </p>
+              )}
             </>
+          )}
+          {report.summary && (
+            <div className="plan-summary-grid">
+              {(
+                [
+                  ["Major scope detected", report.summary.majorScope],
+                  [
+                    "Key readable specifications",
+                    report.summary.readableSpecifications,
+                  ],
+                  ["Major unknowns", report.summary.majorUnknowns],
+                  ["Site verification", report.summary.siteVerification],
+                ] as const
+              )
+                .filter(([, values]) => values.length)
+                .map(([label, values]) => (
+                  <section key={label}>
+                    <h3>{label}</h3>
+                    <ul>
+                      {values.slice(0, 6).map((text, i) => (
+                        <li key={i}>{text}</li>
+                      ))}
+                    </ul>
+                    {values.length > 6 && (
+                      <details>
+                        <summary>{values.length - 6} more</summary>
+                        <ul>
+                          {values.slice(6).map((text, i) => (
+                            <li key={i}>{text}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </section>
+                ))}
+            </div>
+          )}
+          {!!report.duplicatesReduced && (
+            <p className="tiny">
+              {report.duplicatesReduced} overlapping suggestion(s) combined or
+              skipped. Existing reviewed/converted items were preserved.
+            </p>
+          )}
+          {!!report.summary?.observations.length && (
+            <details className="source-observations">
+              <summary>Source observations (not estimate lines)</summary>
+              <ul>
+                {report.summary.observations.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </details>
           )}
           {!!report.dimensions?.length && (
             <>
@@ -491,280 +559,422 @@ export default function PlansTakeoff({
           </button>
         </div>
       )}
-      {q.takeoff.map((t) => (
-        <fieldset className="line-card" key={t.id} disabled={locked}>
-          <div className="line-title">
-            <Field label="Takeoff description">
-              <input
-                value={t.description}
-                onChange={(e) => patch(t, { description: e.target.value })}
-              />
-            </Field>
-            <button
-              className="icon danger"
-              aria-label={`Remove takeoff ${t.description || "item"}`}
-              onClick={() =>
-                onChange({
-                  ...q,
-                  takeoff: q.takeoff.filter((x) => x.id !== t.id),
-                })
-              }
-            >
-              <Trash2 size={17} />
-            </button>
-          </div>
-          {t.origin === "ai" && (
-            <>
-              <p className={`confidence ${t.confidence.toLowerCase()}`}>
-                <b>{t.confidence.toUpperCase()} confidence</b> ·{" "}
-                {t.classification} · {t.status}
-              </p>
-              {t.quantity === null && (
-                <p className="margin-warning">
-                  Requires contractor input — no quantity was invented.
-                </p>
-              )}
-              <p className="tiny">
-                Source: {t.sourceDocumentName}
-                {t.page ? ` — Page ${t.page}` : ""}. Verify the source and
-                uncertainty before approval.
-              </p>
-              {!!t.assumptions?.length && (
-                <p>Assumptions: {t.assumptions.join("; ")}</p>
-              )}
-              {!!t.warnings?.length && (
-                <p className="margin-warning">
-                  Needs verification: {t.warnings.join("; ")}
-                </p>
-              )}
-              <div className="fields">
-                <Field label="Suggested destination">
-                  <select
-                    value={t.destination}
-                    onChange={(e) =>
-                      patch(t, {
-                        destination: e.target
-                          .value as TakeoffItem["destination"],
-                      })
-                    }
-                  >
-                    {destinations.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Takeoff category">
-                  <select
-                    value={t.category}
-                    onChange={(e) => patch(t, { category: e.target.value })}
-                  >
-                    {[
-                      ...new Set([
-                        ...categories,
-                        t.category ?? "Miscellaneous",
-                      ]),
-                    ].map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Evidence type">
-                  <select
-                    value={t.classification}
-                    onChange={(e) =>
-                      patch(t, {
-                        classification: e.target
-                          .value as TakeoffItem["classification"],
-                      })
-                    }
-                  >
-                    {classifications.map((value) => (
-                      <option key={value}>{value}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-              <div className="check-options">
-                <label>
-                  <input
-                    type="checkbox"
-                    disabled={t.convertedLineId !== undefined}
-                    checked={selectedItems.includes(t.id)}
-                    onChange={(e) =>
-                      setSelectedItems(
-                        e.target.checked
-                          ? [...selectedItems, t.id]
-                          : selectedItems.filter((id) => id !== t.id),
-                      )
-                    }
-                  />
-                  Select for approval
-                </label>
-              </div>
-              {!t.convertedLineId && (
-                <div className="heading-actions">
+      {takeoffGroups.map((group) => (
+        <section className="takeoff-group" key={group}>
+          <h3>
+            {group}{" "}
+            <span className="tiny">
+              ({q.takeoff.filter((t) => scopeFor(t) === group).length})
+            </span>
+          </h3>
+          {q.takeoff
+            .filter((t) => scopeFor(t) === group)
+            .map((t) => (
+              <fieldset className="line-card" key={t.id} disabled={locked}>
+                <div className="line-title">
+                  <Field label="Takeoff description">
+                    <input
+                      value={t.description}
+                      onChange={(e) =>
+                        patch(t, { description: e.target.value })
+                      }
+                    />
+                  </Field>
                   <button
-                    type="button"
-                    className="button secondary"
-                    onClick={() => updateItem(t, reviewTakeoff)}
-                  >
-                    Mark reviewed — I verified this item
-                  </button>
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={t.status !== "Reviewed" || !t.reviewAcknowledged}
-                    onClick={() => updateItem(t, approveTakeoff)}
-                  >
-                    Approve item
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary"
+                    className="icon danger"
+                    aria-label={`Remove takeoff ${t.description || "item"}`}
                     onClick={() =>
-                      updateItem(t, (item) => ({
-                        ...item,
-                        status: "Rejected",
-                        reviewAcknowledged: false,
-                      }))
+                      onChange({
+                        ...q,
+                        takeoff: q.takeoff.filter((x) => x.id !== t.id),
+                      })
                     }
                   >
-                    Reject item
+                    <Trash2 size={17} />
                   </button>
                 </div>
-              )}
-            </>
-          )}
-          <div className="fields compact">
-            <Field label="Takeoff quantity">
-              <NumberInput
-                value={t.quantity}
-                nullable={t.origin === "ai"}
-                placeholder="Requires contractor input"
-                onChange={(n) =>
-                  patch(t, { quantity: Number.isNaN(n) ? null : n })
-                }
-              />
-            </Field>
-            <Field label="Takeoff unit">
-              <input
-                list="takeoff-units"
-                value={t.unit}
-                onChange={(e) => patch(t, { unit: e.target.value })}
-              />
-            </Field>
-            <Field label="Source document">
-              <select
-                value={t.documentId}
-                onChange={(e) => patch(t, { documentId: e.target.value })}
-              >
-                <option value="">Manual / no attached document</option>
-                {t.documentId &&
-                  !q.documents.some((d) => d.id === t.documentId) && (
-                    <option value={t.documentId}>
-                      Removed source document
-                    </option>
-                  )}
-                {q.documents.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Page number (optional)">
-              <NumberInput
-                nullable
-                step="1"
-                value={t.page}
-                onChange={(n) => patch(t, { page: Number.isNaN(n) ? null : n })}
-              />
-            </Field>
-            <Field label="Confidence">
-              <select
-                value={t.confidence}
-                onChange={(e) =>
-                  patch(t, {
-                    confidence: e.target.value as TakeoffItem["confidence"],
-                  })
-                }
-              >
-                {["Unspecified", "Low", "Medium", "High"].map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Review status">
-              <select
-                value={t.status}
-                onChange={(e) =>
-                  updateItem(t, (item) =>
-                    e.target.value === "Reviewed"
-                      ? t.origin === "ai"
-                        ? reviewTakeoff(item)
-                        : { ...item, status: "Reviewed" }
-                      : e.target.value === "Approved"
-                        ? approveTakeoff(item)
-                        : {
-                            ...item,
-                            status: e.target.value as TakeoffItem["status"],
-                            reviewAcknowledged: false,
-                          },
-                  )
-                }
-              >
-                <option>Proposed</option>
-                <option value="Reviewed">
-                  {t.origin === "ai"
-                    ? "Reviewed — awaiting approval"
-                    : "Approved"}
-                </option>
-                {t.origin === "ai" && (
-                  <option value="Approved">Approved</option>
+                {t.specification && (
+                  <p className="takeoff-specification">{t.specification}</p>
                 )}
-                <option value="Rejected">Rejected</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Takeoff notes / source reference">
-            <textarea
-              value={t.notes}
-              onChange={(e) => patch(t, { notes: e.target.value })}
-            />
-          </Field>
-          {t.convertedLineId ? (
-            <p className="tiny">
-              Converted to an estimate line. Review that line separately if
-              source measurements change.
-            </p>
-          ) : (
-            <Field label="Convert reviewed item to estimate">
-              <select
-                value=""
-                disabled={!canConvert(t) || !t.description.trim()}
-                onChange={(e) => {
-                  try {
-                    onChange(takeoffToLine(q, t, e.target.value as Kind));
-                  } catch (err) {
-                    onError((err as Error).message);
-                  }
-                }}
-              >
-                <option value="">Choose line type…</option>
-                {(t.origin === "ai"
-                  ? [
-                      t.destination === "Subcontractor"
-                        ? "Other Costs"
-                        : t.destination,
-                    ].filter((k) => k !== "Informational" && k !== undefined)
-                  : ["Materials", "Labour", "Other Costs"]
-                ).map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
-              </select>
-            </Field>
-          )}
-        </fieldset>
+                <div className="fields compact">
+                  <Field label="Takeoff quantity">
+                    <NumberInput
+                      value={t.quantity}
+                      nullable={t.origin === "ai"}
+                      placeholder="Requires contractor input"
+                      onChange={(n) =>
+                        patch(t, { quantity: Number.isNaN(n) ? null : n })
+                      }
+                    />
+                  </Field>
+                  <Field label="Takeoff unit">
+                    <input
+                      list="takeoff-units"
+                      value={t.unit}
+                      onChange={(e) => patch(t, { unit: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                {t.origin === "ai" && (
+                  <>
+                    <p className={`confidence ${t.confidence.toLowerCase()}`}>
+                      <b>{t.confidence.toUpperCase()} confidence</b> ·{" "}
+                      {t.classification} · {t.status}
+                    </p>
+                    {t.quantity === null && (
+                      <p className="margin-warning">
+                        Requires contractor input —{" "}
+                        {t.destination === "Labour"
+                          ? "enter verified labour hours; no hours were invented."
+                          : "no quantity was invented."}
+                      </p>
+                    )}
+                    <p className="tiny">
+                      {t.category ?? "Miscellaneous"} · Source:{" "}
+                      {t.sourceDocumentName}
+                      {t.page ? ` — Page ${t.page}` : ""}. Verify the source and
+                      uncertainty before approval.
+                    </p>
+                    {!!t.warnings?.length && (
+                      <p className="takeoff-verification">
+                        <b>Verify:</b> {t.warnings[0]}
+                        {t.warnings.length > 1
+                          ? ` (+${t.warnings.length - 1} more in evidence)`
+                          : ""}
+                      </p>
+                    )}
+                    <div className="check-options">
+                      <label>
+                        <input
+                          type="checkbox"
+                          disabled={t.convertedLineId !== undefined}
+                          checked={selectedItems.includes(t.id)}
+                          onChange={(e) =>
+                            setSelectedItems(
+                              e.target.checked
+                                ? [...selectedItems, t.id]
+                                : selectedItems.filter((id) => id !== t.id),
+                            )
+                          }
+                        />
+                        Select for approval
+                      </label>
+                    </div>
+                    {!t.convertedLineId && (
+                      <div className="heading-actions">
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={() => updateItem(t, reviewTakeoff)}
+                        >
+                          Mark reviewed — I verified this item
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          disabled={
+                            t.status !== "Reviewed" || !t.reviewAcknowledged
+                          }
+                          onClick={() => updateItem(t, approveTakeoff)}
+                        >
+                          Approve item
+                        </button>
+                        <button
+                          type="button"
+                          className="button secondary"
+                          onClick={() =>
+                            updateItem(t, (item) => ({
+                              ...item,
+                              status: "Rejected",
+                              reviewAcknowledged: false,
+                            }))
+                          }
+                        >
+                          Reject item
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+                <details
+                  className="takeoff-evidence"
+                  open={t.origin !== "ai" || expandedItems.includes(t.id)}
+                  onToggle={(event) => {
+                    if (event.currentTarget.open)
+                      setExpandedItems((ids) =>
+                        ids.includes(t.id) ? ids : [...ids, t.id],
+                      );
+                    else
+                      setExpandedItems((ids) =>
+                        ids.filter((id) => id !== t.id),
+                      );
+                  }}
+                >
+                  <summary>Evidence & editing details</summary>
+                  {t.origin === "ai" && (
+                    <>
+                      {!!t.assumptions?.length && (
+                        <p>Assumptions: {t.assumptions.join("; ")}</p>
+                      )}
+                      {!!t.warnings?.length && (
+                        <p>All verification notes: {t.warnings.join("; ")}</p>
+                      )}
+                      {t.specification && (
+                        <p>
+                          <b>Written specification:</b> {t.specification}
+                        </p>
+                      )}
+                      {t.location && (
+                        <p>
+                          <b>Location:</b> {t.location}
+                        </p>
+                      )}
+                      {!!t.sourceFacts?.length && (
+                        <div>
+                          <b>Source facts</b>
+                          <ul>
+                            {t.sourceFacts.map((fact, i) => (
+                              <li key={i}>{fact}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {t.calculationBasis && (
+                        <p>
+                          <b>Calculation basis:</b> {t.calculationBasis}
+                        </p>
+                      )}
+                      {t.quantityMethod && (
+                        <p className="tiny">
+                          Quantity basis: {t.quantityMethod}
+                        </p>
+                      )}
+                      {t.subcontractorBasis && (
+                        <p className="tiny">
+                          Subcontracting basis: {t.subcontractorBasis}
+                        </p>
+                      )}
+                      <div className="fields">
+                        <Field label="Construction scope group">
+                          <input
+                            value={t.scopeGroup ?? scopeFor(t)}
+                            onChange={(e) =>
+                              patch(t, { scopeGroup: e.target.value })
+                            }
+                          />
+                        </Field>
+                        <Field label="Location / assembly">
+                          <input
+                            value={t.location ?? ""}
+                            onChange={(e) =>
+                              patch(t, { location: e.target.value })
+                            }
+                          />
+                        </Field>
+                        <Field label="Source facts">
+                          <textarea
+                            value={(t.sourceFacts ?? []).join("\n")}
+                            onChange={(e) =>
+                              patch(t, {
+                                sourceFacts: e.target.value
+                                  .split("\n")
+                                  .filter(Boolean),
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field label="Written specification">
+                          <textarea
+                            value={t.specification ?? ""}
+                            onChange={(e) =>
+                              patch(t, { specification: e.target.value })
+                            }
+                          />
+                        </Field>
+                        <Field label="Calculation basis">
+                          <textarea
+                            value={t.calculationBasis ?? ""}
+                            onChange={(e) =>
+                              patch(t, { calculationBasis: e.target.value })
+                            }
+                          />
+                        </Field>
+                      </div>
+                      <div className="fields">
+                        <Field label="Suggested destination">
+                          <select
+                            value={t.destination}
+                            onChange={(e) =>
+                              patch(t, {
+                                destination: e.target
+                                  .value as TakeoffItem["destination"],
+                              })
+                            }
+                          >
+                            {destinations.map((value) => (
+                              <option key={value}>{value}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Takeoff category">
+                          <select
+                            value={t.category}
+                            onChange={(e) =>
+                              patch(t, { category: e.target.value })
+                            }
+                          >
+                            {[
+                              ...new Set([
+                                ...categories,
+                                t.category ?? "Miscellaneous",
+                              ]),
+                            ].map((value) => (
+                              <option key={value}>{value}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Evidence type">
+                          <select
+                            value={t.classification}
+                            onChange={(e) =>
+                              patch(t, {
+                                classification: e.target
+                                  .value as TakeoffItem["classification"],
+                              })
+                            }
+                          >
+                            {classifications.map((value) => (
+                              <option key={value}>{value}</option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    </>
+                  )}
+                  <div className="fields compact">
+                    <Field label="Source document">
+                      <select
+                        value={t.documentId}
+                        onChange={(e) =>
+                          patch(t, { documentId: e.target.value })
+                        }
+                      >
+                        <option value="">Manual / no attached document</option>
+                        {t.documentId &&
+                          !q.documents.some((d) => d.id === t.documentId) && (
+                            <option value={t.documentId}>
+                              Removed source document
+                            </option>
+                          )}
+                        {q.documents.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Page number (optional)">
+                      <NumberInput
+                        nullable
+                        step="1"
+                        value={t.page}
+                        onChange={(n) =>
+                          patch(t, { page: Number.isNaN(n) ? null : n })
+                        }
+                      />
+                    </Field>
+                    <Field label="Confidence">
+                      <select
+                        value={t.confidence}
+                        onChange={(e) =>
+                          patch(t, {
+                            confidence: e.target
+                              .value as TakeoffItem["confidence"],
+                          })
+                        }
+                      >
+                        {["Unspecified", "Low", "Medium", "High"].map((c) => (
+                          <option key={c}>{c}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Review status">
+                      <select
+                        value={t.status}
+                        onChange={(e) =>
+                          updateItem(t, (item) =>
+                            e.target.value === "Reviewed"
+                              ? t.origin === "ai"
+                                ? reviewTakeoff(item)
+                                : { ...item, status: "Reviewed" }
+                              : e.target.value === "Approved"
+                                ? approveTakeoff(item)
+                                : {
+                                    ...item,
+                                    status: e.target
+                                      .value as TakeoffItem["status"],
+                                    reviewAcknowledged: false,
+                                  },
+                          )
+                        }
+                      >
+                        <option>Proposed</option>
+                        <option value="Reviewed">
+                          {t.origin === "ai"
+                            ? "Reviewed — awaiting approval"
+                            : "Approved"}
+                        </option>
+                        {t.origin === "ai" && (
+                          <option value="Approved">Approved</option>
+                        )}
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <Field label="Takeoff notes / source reference">
+                    <textarea
+                      value={t.notes}
+                      onChange={(e) => patch(t, { notes: e.target.value })}
+                    />
+                  </Field>
+                </details>
+                {t.convertedLineId ? (
+                  <p className="tiny">
+                    Converted to an estimate line. Review that line separately
+                    if source measurements change.
+                  </p>
+                ) : (
+                  <Field label="Convert reviewed item to estimate">
+                    <select
+                      value=""
+                      disabled={!canConvert(t) || !t.description.trim()}
+                      onChange={(e) => {
+                        try {
+                          onChange(takeoffToLine(q, t, e.target.value as Kind));
+                        } catch (err) {
+                          onError((err as Error).message);
+                        }
+                      }}
+                    >
+                      <option value="">Choose line type…</option>
+                      {(t.origin === "ai"
+                        ? [
+                            t.destination === "Subcontractor"
+                              ? "Other Costs"
+                              : t.destination,
+                          ].filter(
+                            (k) => k !== "Informational" && k !== undefined,
+                          )
+                        : ["Materials", "Labour", "Other Costs"]
+                      ).map((k) => (
+                        <option key={k}>{k}</option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+              </fieldset>
+            ))}
+        </section>
       ))}
       <button
         className="button secondary"

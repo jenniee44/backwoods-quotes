@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { test, expect } from "@playwright/test";
 import { analysisFixture } from "../shared/analysis.fixture";
 const image = Buffer.from(
@@ -198,4 +199,196 @@ test("invalid/API failure and cancellation preserve manual estimates; corrupt fi
   await expect(page.getByLabel("Unit cost ($)", { exact: true })).toHaveValue(
     "50",
   );
+});
+
+test("construction scope, summary-only observations, calculation evidence and safe trade/labour review", async ({
+  page,
+}) => {
+  await page.route("**/api/plan-analysis", async (route) => {
+    const fixture = analysisFixture(
+      route.request().postDataJSON().documents[0].id,
+    );
+    const base = fixture.suggestions[1];
+    fixture.suggestions = [
+      {
+        ...base,
+        description: "Concrete footings/piers",
+        quantity: 5,
+        specification: "Footing depth not readable",
+        scopeGroup: "Footings & Foundations",
+        quantityMethod: "Counted",
+        sourceFacts: ["Five distinct footing symbols on foundation plan"],
+        calculationBasis: "Counted once; confirm against detail",
+        classification: "Calculated quantity",
+        confidence: "Medium",
+        itemRole: "Construction item",
+        warnings: ["Verify footing diameter/depth before pricing"],
+      },
+      {
+        ...base,
+        description: "Visible support/footing locations",
+        quantity: 5,
+        itemRole: "Supporting evidence",
+        notes: "Footing location count is evidence only",
+      },
+      {
+        ...base,
+        description: "Elevation views",
+        quantity: 3,
+        itemRole: "Document observation",
+      },
+      {
+        ...base,
+        description: "Joists",
+        quantity: 11,
+        specification: '2x8 PT @ 16" O/C',
+        scopeGroup: "Framing",
+        quantityMethod: "Calculated",
+        sourceFacts: [
+          "Written width 160 inches; spacing 16 inches; both edges shown",
+        ],
+        calculationBasis: "160 / 16 + 1 = 11; verify edge layout",
+        classification: "Calculated quantity",
+        confidence: "Medium",
+        warnings: ["Contractor must verify edge condition"],
+      },
+      {
+        ...base,
+        description: "Deck stairs assembly",
+        quantity: 2,
+        destination: "Subcontractor",
+        category: "Other Subcontractor",
+        scopeGroup: "Stairs",
+        sourceFacts: ["Stair assembly scope shown; no by-others designation"],
+        itemRole: "Construction item",
+      },
+    ];
+    await route.fulfill({ json: fixture });
+  });
+  await open(page);
+  await page
+    .getByRole("button", { name: "Analyze Plans", exact: true })
+    .click();
+  await expect(
+    page.getByText("Analysis complete — needs review", { exact: true }),
+  ).toBeVisible();
+  const cards = page.locator("fieldset.line-card");
+  await expect(cards).toHaveCount(3);
+  await expect(
+    page.getByRole("heading", { name: "Major scope detected", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Key readable specifications",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const joists = cards.filter({ has: page.locator('input[value="Joists"]') });
+  await expect(joists.getByLabel("Takeoff quantity")).toHaveValue("11");
+  await expect(
+    joists.getByText('2x8 PT @ 16" O/C', { exact: true }).first(),
+  ).toBeVisible();
+  await joists.screenshot({ path: "/tmp/backwoods-compact-takeoff-card.png" });
+  await expect(joists.getByLabel("Calculation basis")).not.toBeVisible();
+  await expect(
+    joists.getByRole("button", { name: "Approve item", exact: true }),
+  ).toBeDisabled();
+  await joists.getByText("Evidence & editing details", { exact: true }).click();
+  await expect(joists.getByLabel("Calculation basis")).toHaveValue(
+    "160 / 16 + 1 = 11; verify edge layout",
+  );
+  await expect(joists.getByLabel("Source facts")).toHaveValue(
+    /Written width 160/,
+  );
+  await joists
+    .getByRole("button", { name: "Mark reviewed — I verified this item" })
+    .click();
+  await joists
+    .getByRole("button", { name: "Approve item", exact: true })
+    .click();
+  await joists
+    .getByLabel("Calculation basis")
+    .fill("Changed contractor basis; requires re-review");
+  await expect(
+    joists.getByRole("button", { name: "Approve item", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    joists.getByLabel("Convert reviewed item to estimate"),
+  ).toBeDisabled();
+  const stairs = cards.filter({
+    has: page.locator('input[value="Deck stairs assembly"]'),
+  });
+  await expect(stairs.getByLabel("Takeoff quantity")).toHaveValue("");
+  await expect(stairs.getByText(/enter verified labour hours/)).toBeVisible();
+  await stairs.getByText("Evidence & editing details", { exact: true }).click();
+  await expect(stairs.getByLabel("Suggested destination")).toHaveValue(
+    "Labour",
+  );
+  await page
+    .getByText("Source observations (not estimate lines)", { exact: true })
+    .click();
+  await expect(page.locator(".source-observations")).toContainText(
+    "Elevation views",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "/tmp/backwoods-construction-takeoff-mobile.png",
+    fullPage: true,
+  });
+  await joists
+    .getByRole("button", { name: "Mark reviewed — I verified this item" })
+    .click();
+  await joists
+    .getByRole("button", { name: "Approve item", exact: true })
+    .click();
+  await joists
+    .getByLabel("Convert reviewed item to estimate")
+    .selectOption("Materials");
+  await page
+    .getByRole("button", { name: "View Estimate", exact: true })
+    .click();
+  await page.getByLabel("Unit cost ($)", { exact: true }).nth(1).fill("15");
+  await page
+    .getByText("Approved takeoff evidence (private snapshot)", { exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      "Calculation basis: Changed contractor basis; requires re-review",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Customer quote", exact: true })
+    .click();
+  const doc = page.locator(".customer-document");
+  for (const text of [
+    "sourceFacts",
+    "Calculation basis",
+    "160 / 16",
+    "confidence",
+    "Footing location count",
+    "test-plan.png",
+    "Verify footing",
+    "2x8 PT",
+  ])
+    await expect(doc).not.toContainText(text);
+  for (const mode of ["Simplified", "Detailed"]) {
+    await page.getByLabel("Customer quote mode").selectOption(mode);
+    await page.emulateMedia({ media: "print" });
+    const pdfPath = `/tmp/backwoods-ai-private-${mode}.pdf`;
+    await page.pdf({ path: pdfPath, format: "Letter", printBackground: true });
+    const text = execFileSync("pdftotext", [pdfPath, "-"], {
+      encoding: "utf8",
+    });
+    expect(text).toContain("PROJECT QUOTE");
+    expect(text).toContain("$215.00");
+    expect(text).not.toMatch(
+      /Changed contractor basis|160 \/ 16|sourceFacts|confidence|Footing location count|test-plan\.png|Verify footing|2x8 PT|Written width|INTERNAL|markup|profit/i,
+    );
+    await page.emulateMedia({ media: "screen" });
+  }
 });

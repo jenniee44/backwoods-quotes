@@ -1,3 +1,11 @@
+import {
+  validConstructionEvidence,
+  validContractorSummary,
+} from "../shared/analysis";
+import type {
+  ConstructionEvidence,
+  ContractorSummary,
+} from "../shared/analysis";
 export type Role = "Admin/Owner" | "Estimator";
 export type Status = "Draft" | "Sent" | "Accepted" | "Completed";
 export type Kind = "Labour" | "Materials" | "Other Costs";
@@ -16,7 +24,10 @@ export type Line = {
   scopeGroup?: string;
   takeoffId?: string;
   pricingRequired?: boolean;
-  takeoffSource?: {
+  takeoffSource?: ConstructionEvidence & {
+    classification?: TakeoffItem["classification"];
+    assumptions?: string[];
+    warnings?: string[];
     documentName: string;
     page: number | null;
     quantity: number;
@@ -134,6 +145,9 @@ export type Quote = {
     id: string;
     fingerprint: string;
     createdAt: string;
+    summary?: ContractorSummary;
+    duplicatesReduced?: number;
+    sourceDocuments?: { id: string; name: string }[];
     project?: {
       projectType: string;
       drawingTitle: string;
@@ -168,7 +182,7 @@ export type PlanDocument = {
   data: string;
   addedAt: string;
 };
-export type TakeoffItem = {
+export type TakeoffItem = ConstructionEvidence & {
   id: string;
   description: string;
   quantity: number | null;
@@ -794,6 +808,23 @@ function pricing(v: unknown) {
     (typeof v.validityDays !== "number" || Number.isInteger(v.validityDays))
   );
 }
+function validPrivateEvidence(v: Record<string, unknown>) {
+  return (
+    (v.classification === undefined ||
+      [
+        "Plan fact",
+        "Calculated quantity",
+        "Estimating suggestion",
+        "Contractor input required",
+      ].includes(String(v.classification))) &&
+    ["assumptions", "warnings"].every(
+      (key) =>
+        v[key] === undefined ||
+        (Array.isArray(v[key]) &&
+          (v[key] as unknown[]).every((text) => typeof text === "string")),
+    )
+  );
+}
 function line(v: unknown) {
   return (
     record(v) &&
@@ -812,6 +843,8 @@ function line(v: unknown) {
     (v.takeoffSource === undefined ||
       (record(v.takeoffSource) &&
         strings(v.takeoffSource, ["documentName", "unit", "notes"]) &&
+        validConstructionEvidence(v.takeoffSource) &&
+        validPrivateEvidence(v.takeoffSource) &&
         numbers(v.takeoffSource, ["quantity"]) &&
         (v.takeoffSource.page === null ||
           (typeof v.takeoffSource.page === "number" &&
@@ -1006,6 +1039,17 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       unit: item.unit,
       notes: item.notes,
       confidence: item.confidence,
+      scopeGroup: item.scopeGroup,
+      specification: item.specification,
+      location: item.location,
+      sourceFacts: structuredClone(item.sourceFacts ?? []),
+      calculationBasis: item.calculationBasis,
+      quantityMethod: item.quantityMethod,
+      itemRole: item.itemRole,
+      subcontractorBasis: item.subcontractorBasis,
+      classification: item.classification,
+      assumptions: structuredClone(item.assumptions ?? []),
+      warnings: structuredClone(item.warnings ?? []),
     },
   };
   return {
@@ -1073,6 +1117,7 @@ function validExtensions(v: unknown) {
       (t) =>
         record(t) &&
         strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
+        validConstructionEvidence(t) &&
         (t.quantity === null || numbers(t, ["quantity"])) &&
         (t.page === null ||
           (typeof t.page === "number" &&
@@ -1126,6 +1171,16 @@ function validExtensions(v: unknown) {
         (report) =>
           record(report) &&
           strings(report, ["id", "fingerprint", "createdAt"]) &&
+          (report.summary === undefined ||
+            validContractorSummary(report.summary)) &&
+          (report.duplicatesReduced === undefined ||
+            (Number.isInteger(report.duplicatesReduced) &&
+              Number(report.duplicatesReduced) >= 0)) &&
+          (report.sourceDocuments === undefined ||
+            (Array.isArray(report.sourceDocuments) &&
+              report.sourceDocuments.every(
+                (d) => record(d) && strings(d, ["id", "name"]),
+              ))) &&
           ["assumptions", "warnings"].every(
             (key) =>
               Array.isArray(report[key]) &&
@@ -1152,6 +1207,7 @@ function validExtensions(v: unknown) {
                 (d) =>
                   record(d) &&
                   strings(d, ["description", "documentId", "unit", "notes"]) &&
+                  validConstructionEvidence(d) &&
                   ["Unspecified", "Low", "Medium", "High"].includes(
                     String(d.confidence),
                   ) &&

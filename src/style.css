@@ -1897,3 +1897,17 @@ details[open] > summary {
 .confidence.medium {
   background: #f7f3dd;
 }
+
+/* Keep construction takeoff scannable without hiding review/approval actions. */
+.plan-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.plan-summary-grid h3 { margin: .5rem 0; font-size: .95rem; }
+.plan-summary-grid ul, .source-observations ul, .takeoff-evidence ul { padding-left: 1.2rem; margin: .4rem 0; }
+.takeoff-group { min-width: 0; }
+.takeoff-group > h3 { margin: 1.2rem 0 .6rem; border-bottom: 1px solid var(--border, #dce3dd); padding-bottom: .5rem; }
+.takeoff-group .line-card { margin-bottom: .8rem; }
+.takeoff-verification { border-left: 3px solid #ba862b; padding-left: .6rem; font-size: .85rem; }
+.takeoff-evidence { margin: .7rem 0; padding: .6rem; background: #f6f8f5; border-radius: .5rem; }
+.takeoff-evidence > summary, .source-observations > summary { cursor: pointer; font-weight: 600; font-size: .85rem; }
+.takeoff-evidence p, .takeoff-evidence li, .analysis-report li { overflow-wrap: anywhere; }
+.takeoff-evidence .fields { margin-top: .8rem; }
+@media (max-width: 600px) { .plan-summary-grid { grid-template-columns: minmax(0, 1fr); gap: .3rem; } }

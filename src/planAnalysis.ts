@@ -1,3 +1,7 @@
+import {
+  prepareConstructionAnalysis,
+  semanticItemKey,
+} from "../shared/takeoff";
 import { id, categories, normalizeCategory } from "./model";
 import type { PlanDocument, Quote, TakeoffItem } from "./model";
 import { validateAnalysis, validateDocuments } from "../shared/analysis";
@@ -77,6 +81,7 @@ export function addAnalysisSuggestions(
   q: Quote,
   result: PlanAnalysisResult,
   fingerprint?: string,
+  analyzedDocuments = q.documents,
 ): Quote {
   if (q.status !== "Draft")
     throw new Error("Only draft quotes accept plan suggestions.");
@@ -87,14 +92,9 @@ export function addAnalysisSuggestions(
     throw new Error(
       "These plans have already been analyzed in this quote. Review the existing results.",
     );
+  result = prepareConstructionAnalysis(result);
   const analysisId = id();
-  const suggestions = [
-    ...result.suggestions,
-    ...(result.dimensions ?? []).map((item) => ({
-      ...item,
-      destination: "Informational" as const,
-    })),
-  ].map((item) => {
+  const suggestions = result.suggestions.map((item) => {
     if (
       !item.description.trim() ||
       (item.quantity !== null && !item.unit.trim()) ||
@@ -106,6 +106,14 @@ export function addAnalysisSuggestions(
     )
       throw new Error("Plan suggestion has an invalid measurement or source.");
     return {
+      scopeGroup: item.scopeGroup,
+      specification: item.specification,
+      location: item.location,
+      sourceFacts: structuredClone(item.sourceFacts ?? []),
+      calculationBasis: item.calculationBasis,
+      quantityMethod: item.quantityMethod,
+      itemRole: item.itemRole,
+      subcontractorBasis: item.subcontractorBasis,
       id: id(),
       description: item.description,
       quantity: item.quantity,
@@ -142,19 +150,22 @@ export function addAnalysisSuggestions(
         .name,
     };
   });
-  const seen = new Set(
-    q.takeoff.map((item) => item.analysisSourceKey).filter(Boolean),
+  const semanticSeen = new Set(
+    q.takeoff.filter((item) => item.origin === "ai").map(semanticItemKey),
   );
+  let duplicatesReduced = result.duplicatesReduced ?? 0;
+  const adopted = suggestions.filter((item) => {
+    const key = semanticItemKey(item);
+    if (semanticSeen.has(key)) {
+      duplicatesReduced++;
+      return false;
+    }
+    semanticSeen.add(key);
+    return true;
+  });
   return {
     ...q,
-    takeoff: [
-      ...q.takeoff,
-      ...suggestions.filter((item) => {
-        if (seen.has(item.analysisSourceKey)) return false;
-        seen.add(item.analysisSourceKey);
-        return true;
-      }),
-    ],
+    takeoff: [...q.takeoff, ...adopted],
     analysisReports: [
       ...(q.analysisReports ?? []),
       {
@@ -162,6 +173,12 @@ export function addAnalysisSuggestions(
         fingerprint: fingerprint ?? id(),
         createdAt: new Date().toISOString(),
         project: result.project,
+        summary: result.summary,
+        duplicatesReduced,
+        sourceDocuments: analyzedDocuments.map((d) => ({
+          id: d.id,
+          name: d.name,
+        })),
         dimensions: result.dimensions,
         assumptions: result.assumptions ?? [],
         warnings: result.warnings,

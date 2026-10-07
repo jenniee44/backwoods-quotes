@@ -1,3 +1,4 @@
+import { prepareConstructionAnalysis } from "./takeoff";
 export const destinations = [
   "Labour",
   "Materials",
@@ -11,7 +12,41 @@ export const classifications = [
   "Estimating suggestion",
   "Contractor input required",
 ] as const;
-export type AnalysisSuggestion = {
+// Optional on saved V2 records; required (empty when unknown) in new provider output.
+export type ConstructionEvidence = {
+  scopeGroup?: string;
+  specification?: string;
+  location?: string;
+  sourceFacts?: string[];
+  calculationBasis?: string;
+  quantityMethod?: "Written" | "Counted" | "Calculated" | "Unknown" | "Scaled";
+  itemRole?:
+    "Construction item" | "Document observation" | "Supporting evidence";
+  subcontractorBasis?:
+    "Explicit by others" | "Separate trade suggestion" | "Not established";
+};
+export type ContractorSummary = {
+  majorScope: string[];
+  readableSpecifications: string[];
+  majorUnknowns: string[];
+  siteVerification: string[];
+  observations: string[];
+};
+export const constructionGroups = [
+  "Site / Demolition",
+  "Footings & Foundations",
+  "Posts & Beams",
+  "Framing",
+  "Decking",
+  "Stairs",
+  "Railings / Guards",
+  "Hardware & Connectors",
+  "Finishing",
+  "Labour",
+  "Subcontracted / By Others",
+  "Informational / Verification",
+];
+export type AnalysisSuggestion = ConstructionEvidence & {
   description: string;
   quantity: number | null;
   unit: string;
@@ -26,6 +61,8 @@ export type AnalysisSuggestion = {
   warnings?: string[];
 };
 export type PlanAnalysisResult = {
+  summary?: ContractorSummary;
+  duplicatesReduced?: number;
   suggestions: AnalysisSuggestion[];
   warnings: string[];
   project?: {
@@ -39,7 +76,58 @@ export type PlanAnalysisResult = {
   dimensions?: AnalysisSuggestion[];
   assumptions?: string[];
 };
+const evidenceProperties = {
+  scopeGroup: { type: "string", maxLength: 100 },
+  specification: { type: "string", maxLength: 1000 },
+  location: { type: "string", maxLength: 200 },
+  sourceFacts: {
+    type: "array",
+    items: { type: "string", maxLength: 1000 },
+    maxItems: 20,
+  },
+  calculationBasis: { type: "string", maxLength: 2000 },
+  quantityMethod: {
+    type: "string",
+    enum: ["Written", "Counted", "Calculated", "Unknown", "Scaled"],
+  },
+  itemRole: {
+    type: "string",
+    enum: ["Construction item", "Document observation", "Supporting evidence"],
+  },
+  subcontractorBasis: {
+    type: "string",
+    enum: [
+      "Explicit by others",
+      "Separate trade suggestion",
+      "Not established",
+    ],
+  },
+};
+export function validConstructionEvidence(v: Record<string, unknown>): boolean {
+  return Object.entries(evidenceProperties).every(([key, schema]) => {
+    const value = v[key];
+    if (value === undefined) return true; // Existing saved quotes/older responses.
+    if ("enum" in schema) return schema.enum.includes(value as never);
+    if (key === "sourceFacts") return texts(value, 20);
+    return "maxLength" in schema && text(value, schema.maxLength);
+  });
+}
+const summaryKeys = [
+  "majorScope",
+  "readableSpecifications",
+  "majorUnknowns",
+  "siteVerification",
+  "observations",
+];
+export function validContractorSummary(v: unknown): boolean {
+  return (
+    record(v) &&
+    Object.keys(v).every((k) => summaryKeys.includes(k)) &&
+    summaryKeys.every((k) => texts(v[k]))
+  );
+}
 const itemProperties = {
+  ...evidenceProperties,
   description: { type: "string", maxLength: 500 },
   quantity: { type: ["number", "null"], minimum: 0 },
   unit: { type: "string", maxLength: 60 },
@@ -71,6 +159,21 @@ export const analysisSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
+    summary: {
+      type: "object",
+      additionalProperties: false,
+      properties: Object.fromEntries(
+        summaryKeys.map((key) => [
+          key,
+          {
+            type: "array",
+            items: { type: "string", maxLength: 1000 },
+            maxItems: 40,
+          },
+        ]),
+      ),
+      required: summaryKeys,
+    },
     project: {
       type: "object",
       additionalProperties: false,
@@ -96,7 +199,14 @@ export const analysisSchema = {
     assumptions: { type: "array", items: { type: "string" }, maxItems: 40 },
     warnings: { type: "array", items: { type: "string" }, maxItems: 40 },
   },
-  required: ["project", "dimensions", "suggestions", "assumptions", "warnings"],
+  required: [
+    "project",
+    "summary",
+    "dimensions",
+    "suggestions",
+    "assumptions",
+    "warnings",
+  ],
 };
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
@@ -120,6 +230,8 @@ export function validateAnalysis(
       (k) =>
         ![
           "project",
+          "summary",
+          "duplicatesReduced",
           "dimensions",
           "suggestions",
           "assumptions",
@@ -127,6 +239,15 @@ export function validateAnalysis(
         ].includes(k),
     ) ||
     !record(value.project)
+  )
+    return fail();
+  if (value.summary !== undefined && !validContractorSummary(value.summary))
+    return fail();
+  if (
+    value.duplicatesReduced !== undefined &&
+    (!Number.isInteger(value.duplicatesReduced) ||
+      Number(value.duplicatesReduced) < 0 ||
+      Number(value.duplicatesReduced) > 250)
   )
     return fail();
   const p = value.project;
@@ -168,7 +289,8 @@ export function validateAnalysis(
         !text(item.notes) ||
         !text(item.category, 100) ||
         !texts(item.assumptions, 20) ||
-        !texts(item.warnings, 20)
+        !texts(item.warnings, 20) ||
+        !validConstructionEvidence(item)
       )
         return fail();
       if (
@@ -203,7 +325,9 @@ export function validateAnalysis(
       }
     }
   }
-  return structuredClone(value) as PlanAnalysisResult;
+  return prepareConstructionAnalysis(
+    structuredClone(value) as PlanAnalysisResult,
+  );
 }
 export type AnalysisDocument = {
   id: string;
