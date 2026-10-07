@@ -1096,24 +1096,70 @@ const interiorMaterials: SuggestedMaterial[] = [
     "Finish Carpentry",
   ],
 ];
+function bathroomTemplate(): QuoteTemplate {
+  const template = constructionTemplate(
+    "bathroom",
+    "Bathroom Renovation",
+    [
+      [
+        "Bathroom demolition / protection consumables",
+        "allowance",
+        "Bathroom Preparation",
+      ],
+      ["Framing / blocking lumber", "linear ft.", "Framing & Blocking"],
+      [
+        "Subfloor / floor preparation materials",
+        "sq. ft.",
+        "Floor Preparation",
+      ],
+      ["Drywall / suitable wall board", "sheets", "Drywall & Wall Preparation"],
+      [
+        "Joint compound / tape / wall preparation supplies",
+        "allowance",
+        "Drywall & Wall Preparation",
+      ],
+      ["Waterproofing membrane", "sq. ft.", "Waterproofing"],
+      ["Tile", "sq. ft.", "Tiling"],
+      ["Tile adhesive / grout", "allowance", "Tiling"],
+      ["Vanity and fixtures", "each", "Fixtures"],
+      ["Shower / tub enclosure and accessories", "each", "Fixtures"],
+      ["Baseboard / trim", "linear ft.", "Trim & Finishing"],
+      ["Bathroom primer / paint", "gallon", "Painting"],
+      ["Sealants / caulking", "allowance", "Sealing & Caulking"],
+      ["Cleanup consumables", "allowance", "Final Cleanup & Checks"],
+    ],
+    ["Electrical", "Plumbing", "HVAC"],
+  );
+  const descriptions: Record<string, string> = {
+    "Bathroom Preparation": "Site protection / bathroom demolition labour",
+    "Drywall & Wall Preparation": "Drywall / board installation labour",
+    "Final Cleanup & Checks":
+      "Final cleanup / fixture checks / deficiency review labour",
+  };
+  template.lines = template.lines.map((line) =>
+    line.kind === "Labour"
+      ? {
+          ...line,
+          description: descriptions[line.scopeGroup ?? ""] ?? line.description,
+        }
+      : line,
+  );
+  template.lines.push({
+    kind: "Labour",
+    description: "Drywall taping / sanding / wall preparation labour",
+    unit: "hour",
+    scopeGroup: "Drywall & Wall Preparation",
+    category: "Miscellaneous",
+  });
+  return template;
+}
 export const constructionTemplates: QuoteTemplate[] = [
   deckTemplate,
   constructionTemplate("renovation", "Basement Renovation", interiorMaterials, [
     "Electrical",
     "Plumbing",
   ]),
-  constructionTemplate(
-    "bathroom",
-    "Bathroom Renovation",
-    [
-      ["Bathroom demolition consumables", "allowance", "Bathroom Preparation"],
-      ["Waterproofing membrane", "sq. ft.", "Waterproofing"],
-      ["Tile", "sq. ft.", "Tiling"],
-      ["Vanity and fixtures", "each", "Fixtures"],
-      ["Bathroom paint", "gallon", "Painting"],
-    ],
-    ["Electrical", "Plumbing"],
-  ),
+  bathroomTemplate(),
   constructionTemplate(
     "kitchen",
     "Kitchen Renovation",

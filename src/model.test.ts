@@ -797,3 +797,55 @@ describe("trade categories", () => {
     ).toBe("Other Subcontractor");
   });
 });
+
+it("Bathroom Renovation includes practical wall preparation and finishing stages at zero", () => {
+  const template = constructionTemplates.find((t) => t.id === "bathroom")!;
+  const q = applyTemplate(newQuote(defaults, []), template);
+  expect(
+    q.lines.find(
+      (l) => l.description === "Drywall / board installation labour",
+    ),
+  ).toMatchObject({
+    kind: "Labour",
+    unit: "hour",
+    scopeGroup: "Drywall & Wall Preparation",
+    quantity: 0,
+    cost: 0,
+  });
+  expect(q.scopeGroups).toEqual(
+    expect.arrayContaining([
+      "Bathroom Preparation",
+      "Framing & Blocking",
+      "Floor Preparation",
+      "Drywall & Wall Preparation",
+      "Waterproofing",
+      "Tiling",
+      "Fixtures",
+      "Trim & Finishing",
+      "Painting",
+      "Sealing & Caulking",
+      "Final Cleanup & Checks",
+      "Electrical",
+      "Plumbing",
+      "HVAC",
+    ]),
+  );
+  expect(
+    q.lines.every(
+      (l) =>
+        l.quantity === 0 && l.cost === 0 && l.rate === 0 && l.override === null,
+    ),
+  ).toBe(true);
+  expect(calculate(q).total).toBe(0);
+  const saved = structuredClone(q);
+  saved.lines = saved.lines.filter(
+    (l) => l.scopeGroup !== "Drywall & Wall Preparation",
+  );
+  saved.lines[0].quantity = 12;
+  const before = structuredClone(saved);
+  expect(applyTemplate(saved, template)).toBe(saved);
+  expect(saved).toEqual(before);
+  const store = seed();
+  store.quotes = [saved];
+  expect(migrate(store).quotes[0]).toEqual(before);
+});
