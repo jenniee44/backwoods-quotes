@@ -1,3 +1,10 @@
+import { optimizeAnalysisPackage } from "./optimizeAnalysisPackage";
+import {
+  analysisPackageSize,
+  packageProblem,
+  dataBytes,
+} from "../shared/analysisPackage";
+import type { AnalysisDocument } from "../shared/analysis";
 import { preparePlanAnalysis } from "./preparePlanAnalysis";
 import { maxDetailRegions } from "../shared/pdf";
 import type { PdfDetailRegion, PdfRotation } from "../shared/pdf";
@@ -20,7 +27,7 @@ import {
 import { scopeFor, requiresScopeVerification } from "../shared/takeoff";
 import { validatePlanFile } from "./validatePlanFile";
 import PdfPreview from "./PdfPreview";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import NumberInput from "./NumberInput";
 import { id, units, categories, takeoffToLine } from "./model";
@@ -102,7 +109,7 @@ export default function PlansTakeoff({
   onViewEstimate?: () => void;
 }) {
   const [excludedDocuments, setExcludedDocuments] = useState<string[]>([]);
-  // Temporary lossless detail views. Bound to exact source bytes; not saved in
+  // Temporary full-resolution detail views. Bound to exact source bytes; not saved in
   // customer records, persisted attachments, or reused after PDF replacement.
   const [detailViews, setDetailViews] = useState<
     {
@@ -112,11 +119,64 @@ export default function PlansTakeoff({
       region: PdfDetailRegion;
     }[]
   >([]);
-  const validDetails = detailViews.filter((view) =>
-    q.documents.some(
-      (d) => d.id === view.documentId && d.data === view.originalData,
-    ),
+  const validDetails = useMemo(
+    () =>
+      detailViews.filter((view) =>
+        q.documents.some(
+          (d) => d.id === view.documentId && d.data === view.originalData,
+        ),
+      ),
+    [detailViews, q.documents],
   );
+  const selectedDocuments = useMemo(
+    () =>
+      q.documents
+        .filter((d) => !excludedDocuments.includes(d.id))
+        .map((d) => ({
+          ...d,
+          ...(validDetails.some((v) => v.documentId === d.id)
+            ? {
+                detailRegions: validDetails
+                  .filter((v) => v.documentId === d.id)
+                  .map((v) => v.region),
+              }
+            : {}),
+        })),
+    [q.documents, excludedDocuments, validDetails],
+  );
+  const [analysisPackage, setAnalysisPackage] = useState<{
+    sources: AnalysisDocument[];
+    documents: AnalysisDocument[];
+    error: string;
+  } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void optimizeAnalysisPackage(selectedDocuments, controller.signal)
+      .then((documents) => {
+        if (documents.length && !packageProblem(documents))
+          validateDocuments(documents);
+        if (!controller.signal.aborted)
+          setAnalysisPackage({
+            sources: selectedDocuments,
+            documents,
+            error: packageProblem(documents),
+          });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setAnalysisPackage({
+            sources: selectedDocuments,
+            documents: selectedDocuments,
+            error: (error as Error).message,
+          });
+      });
+    return () => controller.abort();
+  }, [selectedDocuments]);
+  const packageReady = analysisPackage?.sources === selectedDocuments;
+  const packageSize = analysisPackageSize(
+    packageReady ? analysisPackage.documents : selectedDocuments,
+  );
+  const capturedSize = analysisPackageSize(selectedDocuments);
   const latest = useRef(q);
   latest.current = q;
   const request = useRef<AbortController | null>(null);
@@ -147,7 +207,14 @@ export default function PlansTakeoff({
     [],
   );
   async function analyze() {
-    if (request.current || locked || detailRendering) return;
+    if (
+      request.current ||
+      locked ||
+      detailRendering ||
+      !packageReady ||
+      analysisPackage.error
+    )
+      return;
     const controller = new AbortController();
     request.current = controller;
     setAnalysisError("");
@@ -155,20 +222,7 @@ export default function PlansTakeoff({
     setInputNotes([]);
     setAnalysisState("Uploading/preparing");
     try {
-      const documents = structuredClone(
-        latest.current.documents
-          .filter((d) => !excludedDocuments.includes(d.id))
-          .map((d) => ({
-            ...d,
-            ...(validDetails.some((v) => v.documentId === d.id)
-              ? {
-                  detailRegions: validDetails
-                    .filter((v) => v.documentId === d.id)
-                    .map((v) => v.region),
-                }
-              : {}),
-          })),
-      );
+      const documents = structuredClone(analysisPackage.documents);
       validateDocuments(documents);
       const fingerprint = await documentFingerprint(documents);
       if (
@@ -187,7 +241,7 @@ export default function PlansTakeoff({
           .flatMap((d) => {
             const layer = d.pdfText;
             const notes = [
-              `${d.name}: unchanged original PDF + selectable text from ${layer?.pages.filter((p) => p.text).length ?? 0} page(s) + ${d.detailRegions?.length ?? 0} lossless detail view(s).`,
+              `${d.name}: unchanged original PDF + selectable text from ${layer?.pages.filter((p) => p.text).length ?? 0} page(s) + ${d.detailRegions?.length ?? 0} full-resolution detail view(s).`,
             ];
             if (layer?.truncated)
               notes.push(
@@ -230,7 +284,12 @@ export default function PlansTakeoff({
           "Source files changed during analysis. Results were not added; analyze the current files.",
         );
       onChange(
-        addAnalysisSuggestions(latest.current, result, fingerprint, documents),
+        addAnalysisSuggestions(
+          latest.current,
+          result,
+          fingerprint,
+          selectedDocuments,
+        ),
       );
       setAnalysisState(
         result.suggestions.length || result.dimensions?.length
@@ -390,6 +449,8 @@ export default function PlansTakeoff({
             busy ||
             detailRendering ||
             uploading ||
+            !packageReady ||
+            !!analysisPackage?.error ||
             !q.documents.some((d) => !excludedDocuments.includes(d.id))
           }
           onClick={analyze}
@@ -408,6 +469,62 @@ export default function PlansTakeoff({
           <button className="button secondary" onClick={onViewEstimate}>
             View Estimate
           </button>
+        )}
+      </div>
+      <div
+        className="analysis-package"
+        aria-label="Analysis package"
+        aria-live="polite"
+      >
+        <b>Analysis package</b>
+        <p className="tiny">
+          Original files: {(packageSize.originals / 1_000_000).toFixed(2)} MB ·
+          Detail views: {(packageSize.details / 1_000_000).toFixed(2)} MB (
+          {packageSize.detailCount}) · Estimated total:{" "}
+          {(packageSize.total / 1_000_000).toFixed(2)} MB / 8 MB
+        </p>
+        <p className="tiny">
+          {!packageReady
+            ? "Preparing high-quality detail optimization…"
+            : capturedSize.details > packageSize.details
+              ? `Detail encoding optimized from ${(capturedSize.details / 1_000_000).toFixed(2)} MB to ${(packageSize.details / 1_000_000).toFixed(2)} MB. PNG or high-quality JPEG; all 250 DPI pixels and selected views retained.`
+              : "Original files unchanged. PNG is kept when compact; larger details use high-quality JPEG at the same 250 DPI pixel dimensions. No automatic view removal."}
+        </p>
+        {packageReady && packageSize.detailCount > 0 && (
+          <details className="tiny">
+            <summary>Detail encoding and size</summary>
+            <ul>
+              {analysisPackage.documents.flatMap((d) =>
+                (d.detailRegions ?? []).map((region, index) => (
+                  <li key={`${d.id}-${index}`}>
+                    {d.name} · Page {region.page} · Detail {index + 1} ·{" "}
+                    {region.encoding === "JPEG"
+                      ? `JPEG ${Math.round((region.quality ?? 0.96) * 100)}%`
+                      : "Lossless PNG"}{" "}
+                    · {(dataBytes(region.data) / 1_000_000).toFixed(2)} MB
+                  </li>
+                )),
+              )}
+            </ul>
+            JPEG encoding can introduce artifacts; verify small notes and use
+            Contractor Input Required for unreadable information. Pixels are not
+            resized.
+          </details>
+        )}
+        {packageReady && analysisPackage.error && (
+          <p className="error" role="alert">
+            {analysisPackage.error} Analysis is blocked before any API request.
+            Selected sources: {selectedDocuments.map((d) => d.name).join(", ")}.
+            Selected details:{" "}
+            {selectedDocuments
+              .flatMap((d) =>
+                (d.detailRegions ?? []).map(
+                  (r, i) => `${d.name}, page ${r.page}, detail ${i + 1}`,
+                ),
+              )
+              .join("; ") || "none"}
+            .
+          </p>
         )}
       </div>
       <p role="status" aria-live="polite">
@@ -736,8 +853,8 @@ export default function PlansTakeoff({
         <div className="pdf-detail-list">
           <h3>Detail views included in analysis</h3>
           <p className="tiny">
-            Temporary 250 DPI PNG views, rendered directly from the original
-            PDF. Up to four; original files + details must fit within 4 MB.
+            Temporary 250 DPI views rendered directly from the original PDF. Up
+            to four; original files + optimized details must fit within 8 MB.
             Re-add views after leaving this tab. Only views from selected source
             files are sent.
           </p>

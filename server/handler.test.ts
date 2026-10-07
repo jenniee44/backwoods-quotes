@@ -389,3 +389,40 @@ it("rejects low-resolution detail input before calling the secured provider", as
   expect(response.status).toBe(400);
   expect(analyze).not.toHaveBeenCalled();
 });
+
+it("accepts a bounded package above the old limit but blocks truly oversized packages before provider access", async () => {
+  const sources = Array.from({ length: 5 }, (_, i) => ({
+    ...document,
+    id: i ? `plan-${i}` : "plan",
+    data:
+      "data:application/pdf;base64," +
+      btoa("%PDF-1.7\n" + "x".repeat(1_699_985) + "\n%%EOF"),
+  }));
+  const analyze = vi.fn(async () => analysisFixture("plan"));
+  const accepted = await handleAnalysis(
+    req({ documents: sources.slice(0, 4) }),
+    { DEV_ALLOW_LOCAL: "true" },
+    { analyze },
+  );
+  expect(accepted.status).toBe(200);
+  expect(analyze).toHaveBeenCalledTimes(1);
+  analyze.mockClear();
+  const rejected = await handleAnalysis(
+    req({ documents: sources }),
+    { DEV_ALLOW_LOCAL: "true" },
+    { analyze },
+  );
+  expect(rejected.status).toBe(400);
+  expect(JSON.stringify(await rejected.json())).toContain("8 MB");
+  expect(analyze).not.toHaveBeenCalled();
+});
+it("keeps JSON transport independently bounded before provider access", async () => {
+  const analyze = vi.fn();
+  const response = await handleAnalysis(
+    req({ documents: [document], extra: "x".repeat(12_000_001) }),
+    { DEV_ALLOW_LOCAL: "true" },
+    { analyze },
+  );
+  expect(response.status).toBe(400);
+  expect(analyze).not.toHaveBeenCalled();
+});

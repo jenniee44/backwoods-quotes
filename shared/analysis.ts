@@ -1,3 +1,4 @@
+import { maxAnalysisBytes } from "./analysisPackage";
 import {
   validPdfText,
   validatePdfRegion,
@@ -430,9 +431,9 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
       throw new Error("A plan file could not be read. Please attach it again.");
     }
     total += bytes.length;
-    if (!bytes.length || bytes.length > 2_000_000 || total > 4_000_000)
+    if (!bytes.length || bytes.length > 2_000_000 || total > maxAnalysisBytes)
       throw new Error(
-        "Analyze up to 4 MB of plans at once. Select fewer or smaller files.",
+        "Analyze up to 8 MB of plans at once. Select fewer or smaller files.",
       );
     const signature =
       d.type === "application/pdf"
@@ -468,9 +469,9 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
         total += atob(region.data.split(",")[1]).length;
         if (regionCount > maxDetailRegions)
           throw new Error("Include up to four PDF detail views per analysis.");
-        if (total > 4_000_000)
+        if (total > maxAnalysisBytes)
           throw new Error(
-            "Original files and lossless detail views must fit within 4 MB. Remove a detail or select fewer files; originals are never reduced.",
+            "Original files and detail views must fit within 8 MB. Remove a detail or select fewer files; originals are never reduced.",
           );
       }
     }

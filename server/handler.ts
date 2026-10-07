@@ -1,3 +1,4 @@
+import { maxAnalysisBodyBytes } from "../shared/analysisPackage";
 import { authorize } from "./access";
 import type { AccessEnv } from "./access";
 import { validateDocuments, validateAnalysis } from "../shared/analysis";
@@ -33,9 +34,11 @@ async function boundedBody(request: Request) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > 6_000_000) {
+      if (size > maxAnalysisBodyBytes) {
         await reader.cancel();
-        throw new Error("The plan upload is too large. Use smaller files.");
+        throw new Error(
+          "The analysis JSON request exceeds 12 MB. Select fewer sources or detail views; originals are never reduced.",
+        );
       }
       chunks.push(value);
     }

@@ -36,6 +36,8 @@ export type PdfDetailRegion = {
   pixelWidth: number;
   pixelHeight: number;
   data: string;
+  encoding?: "PNG" | "JPEG";
+  quality?: number;
 };
 export function detailRenderSize(width: number, height: number) {
   const pixelWidth = Math.ceil((width * detailDpi) / 72);
@@ -122,7 +124,21 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     value.pixelHeight !== size.pixelHeight
   )
     return fail();
-  const prefix = "data:image/png;base64,";
+  const jpeg = value.data.startsWith("data:image/jpeg;base64,");
+  const prefix = jpeg ? "data:image/jpeg;base64," : "data:image/png;base64,";
+  if (
+    value.encoding !== undefined &&
+    value.encoding !== (jpeg ? "JPEG" : "PNG")
+  )
+    return fail();
+  if (
+    value.quality !== undefined &&
+    (!jpeg ||
+      typeof value.quality !== "number" ||
+      value.quality < 0.92 ||
+      value.quality > 1)
+  )
+    return fail();
   if (!value.data.startsWith(prefix) || value.data.length > 2_700_000)
     return fail();
   let bytes: string;
@@ -136,9 +152,33 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     (bytes.charCodeAt(offset + 1) << 16) +
     (bytes.charCodeAt(offset + 2) << 8) +
     bytes.charCodeAt(offset + 3);
-  if (
-    bytes.length < 24 ||
-    bytes.length > 2_000_000 ||
+  if (bytes.length < 24 || bytes.length > 2_000_000) return fail();
+  if (jpeg) {
+    if (!bytes.startsWith("\xff\xd8\xff") || !bytes.endsWith("\xff\xd9"))
+      return fail();
+    let dimensions: { width: number; height: number } | undefined;
+    const ushort = (i: number) =>
+      bytes.charCodeAt(i) * 256 + bytes.charCodeAt(i + 1);
+    for (let i = 2; i + 4 < bytes.length;) {
+      if (bytes.charCodeAt(i++) !== 255) return fail();
+      while (bytes.charCodeAt(i) === 255) i++;
+      const marker = bytes.charCodeAt(i++);
+      if (marker === 0xda || marker === 0xd9) break;
+      const length = ushort(i);
+      if (length < 2 || i + length > bytes.length) return fail();
+      if ([0xc0, 0xc1, 0xc2].includes(marker)) {
+        if (length < 8) return fail();
+        dimensions = { height: ushort(i + 3), width: ushort(i + 5) };
+        break;
+      }
+      i += length;
+    }
+    if (
+      dimensions?.width !== size.pixelWidth ||
+      dimensions?.height !== size.pixelHeight
+    )
+      return fail();
+  } else if (
     !bytes.startsWith("\x89PNG\r\n\x1a\n") ||
     bytes.slice(12, 16) !== "IHDR" ||
     uint(16) !== size.pixelWidth ||
@@ -160,6 +200,8 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     dpi: detailDpi,
     ...size,
     data: value.data,
+    ...(value.encoding ? { encoding: value.encoding as "PNG" | "JPEG" } : {}),
+    ...(value.quality !== undefined ? { quality: Number(value.quality) } : {}),
   };
 }
 export function previewRenderSize(

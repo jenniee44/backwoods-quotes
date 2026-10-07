@@ -1,3 +1,4 @@
+import { encodeDetailCanvas } from "./optimizeAnalysisPackage";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { detailDpi, detailRenderSize, maxPdfTextChars } from "../shared/pdf";
@@ -100,11 +101,7 @@ export async function renderPdfDetail(
       viewport: page.getViewport({ scale, rotation }),
       transform: [1, 0, 0, 1, -region.x * scale, -region.y * scale],
     }).promise;
-    const data = canvas.toDataURL("image/png"); // Lossless; never JPEG/recompress original.
-    if (data.length > 2_700_000 || atob(data.split(",")[1]).length > 2_000_000)
-      throw new Error(
-        "This lossless detail exceeds 2 MB. Zoom into a smaller region; it will not be compressed or reduced.",
-      );
+    const encoded = encodeDetailCanvas(canvas);
     return {
       ...region,
       rotation,
@@ -113,7 +110,7 @@ export async function renderPdfDetail(
       pageHeight: original.height,
       dpi: detailDpi,
       ...size,
-      data,
+      ...encoded,
     };
   } finally {
     canvas.width = 0;

@@ -1,3 +1,4 @@
+import { maxAnalysisBodyBytes } from "../shared/analysisPackage";
 import {
   prepareConstructionAnalysis,
   semanticItemKey,
@@ -25,7 +26,7 @@ export const planAnalysisService: PlanAnalysisService = {
   async analyze(documents, signal) {
     const payload = validateDocuments(documents);
     const requestBody = JSON.stringify({ documents: payload });
-    if (new TextEncoder().encode(requestBody).length > 6_000_000)
+    if (new TextEncoder().encode(requestBody).length > maxAnalysisBodyBytes)
       throw new Error(
         "The original plans, text and detail views exceed the request limit. Select fewer files/details; originals will not be reduced.",
       );

@@ -555,11 +555,11 @@ export default function PdfPreview({
             onClick={() => void includeDetail()}
           >
             {capturing
-              ? "Rendering lossless detail…"
+              ? "Rendering detail…"
               : "Include this view in analysis (250 DPI)"}
           </button>
           <p className="tiny">
-            Zoom into notes or connections first. Detail views are lossless
+            Zoom into notes or connections first. Detail views retain 250 DPI
             additions to the original PDF, not replacements. They cannot restore
             detail missing from an embedded scan.
           </p>

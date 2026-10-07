@@ -111,14 +111,18 @@ it("limits detail count and aggregate bytes without touching the original", () =
     validateDocuments([
       {
         ...pdf,
+        data:
+          "data:application/pdf;base64," +
+          btoa("%PDF-1.7\n" + "x".repeat(500_000) + "\n%%EOF"),
         detailRegions: [
+          { ...region, data: large },
           { ...region, data: large },
           { ...region, data: large },
           { ...region, data: large },
         ],
       },
     ]),
-  ).toThrow("4 MB");
+  ).toThrow("8 MB");
   expect(pdf.data).toContain("JVBERi");
 });
 it("validates text/page budgets and rejects text from non-PDF sources", () => {
