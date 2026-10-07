@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { normalizeRotation, previewRenderSize } from "../shared/pdf";
@@ -194,20 +194,199 @@ export default function PdfPreview({
     pixels.pixelHeight,
     pixels.density,
   ]);
-  function changeZoom(value: number | null) {
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const navigation = useRef({ scale: 1, left: 0, top: 0 });
+  const anchor = useRef<{
+    x: number;
+    y: number;
+    px: number;
+    py: number;
+  } | null>(null);
+  useLayoutEffect(() => {
     const node = scroller.current;
-    const centerX = (left + visibleWidth / 2) / scale;
-    const centerY = (top + visibleHeight / 2) / scale;
-    setZoom(value);
-    requestAnimationFrame(() => {
-      if (!node || !pageSize) return;
-      const next = value ?? Math.min(1, node.clientWidth / pageSize.width);
-      node.scrollTo(
-        Math.max(0, centerX * next - node.clientWidth / 2),
-        Math.max(0, centerY * next - node.clientHeight / 2),
-      );
-    });
+    if (node && anchor.current) {
+      const { x, y, px, py } = anchor.current;
+      node.scrollTo(x * scale - px, y * scale - py);
+      anchor.current = null;
+      setBox((b) => ({ ...b, left: node.scrollLeft, top: node.scrollTop }));
+    }
+    navigation.current = {
+      scale,
+      left: node?.scrollLeft ?? left,
+      top: node?.scrollTop ?? top,
+    };
+  }, [scale, left, top, navigationRevision]);
+  function changeZoom(
+    value: number | null,
+    pointer?: { x: number; y: number },
+    sourceAnchor?: { x: number; y: number },
+  ) {
+    const node = scroller.current;
+    if (!node || !pageSize || !pageReady || capturing) return;
+    const fit = Math.min(1, node.clientWidth / pageSize.width);
+    const next =
+      value === null ? fit : Math.max(Math.min(0.25, fit), Math.min(4, value));
+    const current = anchor.current
+      ? navigation.current
+      : {
+          scale: navigation.current.scale,
+          left: node.scrollLeft,
+          top: node.scrollTop,
+        };
+    const px =
+      pointer?.x ??
+      Math.min(node.clientWidth, pageSize.width * current.scale) / 2;
+    const py =
+      pointer?.y ??
+      Math.min(node.clientHeight, pageSize.height * current.scale) / 2;
+    const x = sourceAnchor?.x ?? (current.left + px) / current.scale;
+    const y = sourceAnchor?.y ?? (current.top + py) / current.scale;
+    anchor.current = { x, y, px, py };
+    // Keep consecutive gesture events coherent even before React paints.
+    navigation.current = {
+      scale: next,
+      left: Math.max(
+        0,
+        Math.min(x * next - px, pageSize.width * next - node.clientWidth),
+      ),
+      top: Math.max(
+        0,
+        Math.min(y * next - py, pageSize.height * next - node.clientHeight),
+      ),
+    };
+    setZoom(value === null ? null : next);
+    setNavigationRevision((revision) => revision + 1);
   }
+  const gestureZoom = useRef(changeZoom);
+  useLayoutEffect(() => {
+    gestureZoom.current = changeZoom;
+  });
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node || !document || !pageReady || capturing) return;
+    type GestureEvent = Event & {
+      scale: number;
+      clientX: number;
+      clientY: number;
+    };
+    let safariScale: number | null = null;
+    let touch: {
+      distance: number;
+      scale: number;
+      x: number;
+      y: number;
+    } | null = null;
+    const pointer = (x: number, y: number) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        x: Math.max(
+          0,
+          Math.min(node.clientWidth, x - rect.left - node.clientLeft),
+        ),
+        y: Math.max(
+          0,
+          Math.min(node.clientHeight, y - rect.top - node.clientTop),
+        ),
+      };
+    };
+    const wheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      if (safariScale !== null || touch) return;
+      const delta =
+        event.deltaY *
+        (event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? node.clientHeight
+            : 1);
+      gestureZoom.current(
+        navigation.current.scale *
+          Math.exp(-Math.max(-200, Math.min(200, delta)) * 0.01),
+        pointer(event.clientX, event.clientY),
+      );
+    };
+    const gestureStart = (event: Event) => {
+      event.preventDefault();
+      safariScale = navigation.current.scale;
+    };
+    const gestureChange = (event: Event) => {
+      event.preventDefault();
+      const gesture = event as GestureEvent;
+      if (
+        safariScale !== null &&
+        !touch &&
+        Number.isFinite(gesture.scale) &&
+        gesture.scale > 0
+      )
+        gestureZoom.current(
+          safariScale * gesture.scale,
+          pointer(gesture.clientX, gesture.clientY),
+        );
+    };
+    const gestureEnd = (event: Event) => {
+      event.preventDefault();
+      safariScale = null;
+    };
+    const fingers = (event: TouchEvent) => {
+      const [a, b] = [event.touches[0], event.touches[1]];
+      return {
+        distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        point: pointer(
+          (a.clientX + b.clientX) / 2,
+          (a.clientY + b.clientY) / 2,
+        ),
+      };
+    };
+    const touchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 2) {
+        touch = null;
+        return;
+      }
+      event.preventDefault();
+      const { distance, point } = fingers(event);
+      const current = navigation.current;
+      touch = {
+        distance,
+        scale: current.scale,
+        x: (current.left + point.x) / current.scale,
+        y: (current.top + point.y) / current.scale,
+      };
+    };
+    const touchMove = (event: TouchEvent) => {
+      if (!touch || event.touches.length !== 2) return;
+      event.preventDefault();
+      const { distance, point } = fingers(event);
+      if (!touch.distance) return;
+      // Restore the initial source anchor, allowing two fingers to pan as well as zoom.
+      gestureZoom.current(
+        (touch.scale * distance) / touch.distance,
+        point,
+        touch,
+      );
+    };
+    const touchEnd = () => {
+      touch = null;
+    };
+    node.addEventListener("wheel", wheel, { passive: false });
+    node.addEventListener("gesturestart", gestureStart, { passive: false });
+    node.addEventListener("gesturechange", gestureChange, { passive: false });
+    node.addEventListener("gestureend", gestureEnd, { passive: false });
+    node.addEventListener("touchstart", touchStart, { passive: false });
+    node.addEventListener("touchmove", touchMove, { passive: false });
+    node.addEventListener("touchend", touchEnd);
+    node.addEventListener("touchcancel", touchEnd);
+    return () => {
+      node.removeEventListener("wheel", wheel);
+      node.removeEventListener("gesturestart", gestureStart);
+      node.removeEventListener("gesturechange", gestureChange);
+      node.removeEventListener("gestureend", gestureEnd);
+      node.removeEventListener("touchstart", touchStart);
+      node.removeEventListener("touchmove", touchMove);
+      node.removeEventListener("touchend", touchEnd);
+      node.removeEventListener("touchcancel", touchEnd);
+    };
+  }, [document, pageReady, pageSize, capturing]);
   async function includeDetail() {
     if (!document || !pageSize || !pageReady || !onDetail || capturing) return;
     onDetailBusy?.(true);
@@ -295,6 +474,9 @@ export default function PdfPreview({
                 }
               >
                 <option value="fit">Fit sheet</option>
+                {zoom !== null && ![0.25, 0.5, 1, 2, 3, 4].includes(zoom) && (
+                  <option value={zoom}>{Math.round(zoom * 100)}%</option>
+                )}
                 {[0.25, 0.5, 1, 2, 3, 4].map((z) => (
                   <option key={z} value={z}>
                     {z * 100}%
@@ -322,14 +504,16 @@ export default function PdfPreview({
             </button>
           </div>
           <p className="tiny">
-            Fit sheet is for navigation. Zoom and scroll to read small notes;
-            each view is re-rendered from the original PDF, not enlarged preview
-            pixels.
+            Pinch or hold Cmd/Ctrl and scroll over the drawing to zoom. Scroll
+            to pan; Fit sheet returns to the full width. Zoom to read small
+            notes; each view is re-rendered from the original PDF, not enlarged
+            preview pixels.
           </p>
         </>
       )}
       <div
         className="pdf-scroll-viewport"
+        data-viewer-scale={scale}
         ref={scroller}
         onScroll={(e) => {
           const node = e.currentTarget;

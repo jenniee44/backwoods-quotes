@@ -15,8 +15,9 @@ import {
   classifications,
   validateDocuments,
   constructionGroups,
+  materialCategories,
 } from "../shared/analysis";
-import { scopeFor } from "../shared/takeoff";
+import { scopeFor, requiresScopeVerification } from "../shared/takeoff";
 import { validatePlanFile } from "./validatePlanFile";
 import PdfPreview from "./PdfPreview";
 import { useEffect, useState, useRef } from "react";
@@ -341,6 +342,8 @@ export default function PlansTakeoff({
                     status: "Proposed",
                     confidence: "Unspecified",
                     reviewAcknowledged: false,
+                    scopeVerified: false,
+                    sourceDetailView: null,
                   }
                 : t,
             )
@@ -494,11 +497,48 @@ export default function PlansTakeoff({
               skipped. Existing reviewed/converted items were preserved.
             </p>
           )}
-          {!!report.summary?.observations.length && (
+          {(!!report.summary?.observations.length ||
+            !!report.sourceObservations?.length) && (
             <details className="source-observations">
               <summary>Source observations (not estimate lines)</summary>
               <ul>
-                {report.summary.observations.map((text, i) => (
+                {report.sourceObservations?.map((observation, i) => (
+                  <li key={`source-${i}`}>
+                    <b>{observation.description}</b>:{" "}
+                    {observation.quantity ?? "Quantity not established"}{" "}
+                    {observation.unit}
+                    {observation.specification && (
+                      <p>{observation.specification}</p>
+                    )}
+                    <p className="tiny">
+                      {observation.classification} · {observation.confidence}{" "}
+                      source confidence ·{" "}
+                      {report.sourceDocuments?.find(
+                        (d) => d.id === observation.documentId,
+                      )?.name ??
+                        q.documents.find((d) => d.id === observation.documentId)
+                          ?.name ??
+                        "Removed source"}
+                      {observation.page ? ` — Page ${observation.page}` : ""}
+                      {observation.sourceDetailView
+                        ? ` · Detail view ${observation.sourceDetailView}`
+                        : ""}
+                      {observation.supportBasis &&
+                      observation.supportBasis !== "Not established"
+                        ? ` · ${observation.supportBasis}`
+                        : ""}
+                    </p>
+                    {!!observation.sourceFacts?.length && (
+                      <p className="tiny">
+                        {observation.sourceFacts.join("; ")}
+                      </p>
+                    )}
+                    {observation.calculationBasis && (
+                      <p className="tiny">{observation.calculationBasis}</p>
+                    )}
+                  </li>
+                ))}
+                {report.summary?.observations.map((text, i) => (
                   <li key={i}>{text}</li>
                 ))}
               </ul>
@@ -616,6 +656,8 @@ export default function PlansTakeoff({
                             status: "Proposed",
                             confidence: "Unspecified",
                             reviewAcknowledged: false,
+                            scopeVerified: false,
+                            sourceDetailView: null,
                           }
                         : t,
                     ),
@@ -726,7 +768,7 @@ export default function PlansTakeoff({
         when available. The preview canvas is never an analysis source. Add
         detail views for fine notes on large sheets; no OCR guesses are used.
       </p>
-      <h3 className="subheading">Takeoff items</h3>
+      <h3 className="subheading">Estimate candidates / Takeoff items</h3>
       {reviewError && (
         <p className="error" role="alert">
           {reviewError}
@@ -842,9 +884,28 @@ export default function PlansTakeoff({
                     <p className="tiny">
                       {t.category ?? "Miscellaneous"} · Source:{" "}
                       {t.sourceDocumentName}
-                      {t.page ? ` — Page ${t.page}` : ""}. Verify the source and
-                      uncertainty before approval.
+                      {t.page ? ` — Page ${t.page}` : ""}
+                      {t.sourceDetailView
+                        ? ` · Detail view ${t.sourceDetailView}`
+                        : ""}
+                      . Verify the source and uncertainty before approval.
                     </p>
+                    {t.supportBasis && t.supportBasis !== "Not established" && (
+                      <p className="tiny">Support basis: {t.supportBasis}</p>
+                    )}
+                    {requiresScopeVerification(t) && !t.convertedLineId && (
+                      <label className="check-options">
+                        <input
+                          type="checkbox"
+                          checked={!!t.scopeVerified}
+                          onChange={(e) =>
+                            patch(t, { scopeVerified: e.target.checked })
+                          }
+                        />
+                        I verified existing/new/by-others status and this item
+                        is included in our contract scope.
+                      </label>
+                    )}
                     {!!t.warnings?.length && (
                       <p className="takeoff-verification">
                         <b>Verify:</b> {t.warnings[0]}
@@ -1035,7 +1096,9 @@ export default function PlansTakeoff({
                           >
                             {[
                               ...new Set([
-                                ...categories,
+                                ...(t.destination === "Materials"
+                                  ? materialCategories
+                                  : categories),
                                 t.category ?? "Miscellaneous",
                               ]),
                             ].map((value) => (

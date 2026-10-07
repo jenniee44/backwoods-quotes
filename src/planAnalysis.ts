@@ -1,10 +1,15 @@
 import {
   prepareConstructionAnalysis,
   semanticItemKey,
+  requiresScopeVerification,
 } from "../shared/takeoff";
 import { id, categories, normalizeCategory } from "./model";
 import type { Quote, TakeoffItem } from "./model";
-import { validateAnalysis, validateDocuments } from "../shared/analysis";
+import {
+  materialCategories,
+  validateAnalysis,
+  validateDocuments,
+} from "../shared/analysis";
 import type {
   PlanAnalysisResult,
   AnalysisSuggestion,
@@ -60,6 +65,7 @@ export const planAnalysisService: PlanAnalysisService = {
     return validateAnalysis(
       body,
       documents.map((d) => d.id),
+      payload,
     );
   },
 };
@@ -116,6 +122,9 @@ export function addAnalysisSuggestions(
     )
       throw new Error("Plan suggestion has an invalid measurement or source.");
     return {
+      sourceDetailView: item.sourceDetailView,
+      supportBasis: item.supportBasis,
+      scopeVerified: false,
       scopeGroup: item.scopeGroup,
       specification: item.specification,
       location: item.location,
@@ -143,11 +152,21 @@ export function addAnalysisSuggestions(
         item.quantity,
         item.classification,
       ]),
-      category: categories.includes(
-        normalizeCategory(item.category ?? "Miscellaneous", item.description),
-      )
-        ? normalizeCategory(item.category ?? "Miscellaneous", item.description)
-        : "Miscellaneous",
+      category:
+        item.destination === "Materials" &&
+        materialCategories.includes(item.category ?? "")
+          ? item.category
+          : categories.includes(
+                normalizeCategory(
+                  item.category ?? "Miscellaneous",
+                  item.description,
+                ),
+              )
+            ? normalizeCategory(
+                item.category ?? "Miscellaneous",
+                item.description,
+              )
+            : "Miscellaneous",
       destination: item.destination ?? "Informational",
       classification:
         item.quantity === null
@@ -190,6 +209,7 @@ export function addAnalysisSuggestions(
           name: d.name,
         })),
         dimensions: result.dimensions,
+        sourceObservations: structuredClone(result.sourceObservations ?? []),
         assumptions: result.assumptions ?? [],
         warnings: result.warnings,
       },
@@ -200,9 +220,21 @@ export function editTakeoff(
   item: TakeoffItem,
   delta: Partial<TakeoffItem>,
 ): TakeoffItem {
-  return { ...item, ...delta, status: "Proposed", reviewAcknowledged: false };
+  return {
+    ...item,
+    ...delta,
+    status: "Proposed",
+    reviewAcknowledged: false,
+    scopeVerified: Object.keys(delta).every((key) => key === "scopeVerified")
+      ? (delta.scopeVerified ?? item.scopeVerified)
+      : false,
+  };
 }
 export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
+  if (requiresScopeVerification(item) && !item.scopeVerified)
+    throw new Error(
+      "Verify existing/new/by-others status and confirm this item is included in your contract scope before reviewing.",
+    );
   if (
     item.quantity === null ||
     !Number.isFinite(item.quantity) ||
@@ -216,6 +248,8 @@ export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
   return { ...item, status: "Reviewed", reviewAcknowledged: true };
 }
 export function approveTakeoff(item: TakeoffItem): TakeoffItem {
+  if (requiresScopeVerification(item) && !item.scopeVerified)
+    throw new Error("Confirm contract scope inclusion before approval.");
   if (
     item.origin === "ai" &&
     (item.status !== "Reviewed" || !item.reviewAcknowledged)
@@ -233,6 +267,7 @@ export function approveTakeoff(item: TakeoffItem): TakeoffItem {
 }
 export function canConvert(item: TakeoffItem): boolean {
   return (
+    (!requiresScopeVerification(item) || !!item.scopeVerified) &&
     !item.convertedLineId &&
     item.quantity !== null &&
     item.destination !== "Informational" &&

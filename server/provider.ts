@@ -108,6 +108,7 @@ export function openAIProvider(
       return validateAnalysis(
         JSON.parse(parts[0].text),
         documents.map((d) => d.id),
+        documents,
       );
     },
   };

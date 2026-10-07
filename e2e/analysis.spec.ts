@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { test, expect } from "@playwright/test";
+import { deckTakeoffFixture } from "../shared/deckTakeoff.fixture";
 import { analysisFixture } from "../shared/analysis.fixture";
 const image = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=",
@@ -397,4 +398,188 @@ test("construction scope, summary-only observations, calculation evidence and sa
     );
     await page.emulateMedia({ media: "screen" });
   }
+});
+
+test("useful deck observations become specific estimate candidates while unknowns, scope inclusion and public privacy remain guarded", async ({
+  page,
+}) => {
+  await page.route("**/api/plan-analysis", async (route) => {
+    const documentId = route.request().postDataJSON().documents[0].id;
+    const data = deckTakeoffFixture(documentId);
+    data.suggestions.push({
+      ...analysisFixture(documentId).suggestions[0],
+      description: "Deck framing labour",
+      quantity: 24,
+      quantityMethod: "Calculated",
+      calculationBasis: "Guessed productivity hours",
+      sourceFacts: ["Deck framing scope visible"],
+    });
+    await route.fulfill({ json: data });
+  });
+  await open(page);
+  await page
+    .getByRole("button", { name: "Analyze Plans", exact: true })
+    .click();
+  await expect(
+    page.getByText("Analysis complete — needs review", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Takeoff description")).toHaveCount(6);
+  const card = (description: string) =>
+    page
+      .locator(".takeoff-group .line-card")
+      .filter({ has: page.locator(`input[value="${description}"]`) });
+  const posts = card("6x6 PT posts");
+  const beam = card("3-ply 2x10 PT beam runs");
+  const joists = card("2x6 PT deck joists");
+  const hardware = card("Simpson LUS26 joist hangers");
+  const footing = card("Apparent new footing/pier assemblies");
+  const labour = card("Deck framing labour");
+  await expect(posts.getByLabel("Takeoff quantity")).toHaveValue("3");
+  await expect(beam.getByLabel("Takeoff quantity")).toHaveValue("4");
+  await expect(beam.getByLabel("Takeoff unit")).toHaveValue("runs");
+  for (const item of [joists, hardware, labour]) {
+    await expect(item.getByLabel("Takeoff quantity")).toHaveValue("");
+    await expect(
+      item.getByLabel("Convert reviewed item to estimate"),
+    ).toBeDisabled();
+  }
+  await expect(joists).toContainText("2x6 PT deck joists @ 16 in. O.C.");
+  await expect(hardware).toContainText("Simpson LUS26");
+  await expect(labour.getByLabel("Takeoff unit")).toHaveValue("hours");
+  const observations = page.locator(".source-observations");
+  await observations.locator("summary").click();
+  await expect(observations).toContainText(
+    "Visible support locations on plan: 12",
+  );
+  await expect(observations).toContainText("Total visible locations");
+  await expect(observations).toContainText("High source confidence");
+  await expect(footing.getByLabel("Takeoff quantity")).toHaveValue("7");
+  await expect(footing).toContainText("Apparent new work");
+  await footing
+    .getByRole("button", {
+      name: "Mark reviewed — I verified this item",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("contract scope");
+  await footing.getByLabel("I verified existing/new/by-others status").check();
+  await footing
+    .getByRole("button", {
+      name: "Mark reviewed — I verified this item",
+      exact: true,
+    })
+    .click();
+  await footing
+    .getByRole("button", { name: "Approve item", exact: true })
+    .click();
+  await expect(
+    footing.getByLabel("Convert reviewed item to estimate"),
+  ).toBeEnabled();
+  await posts
+    .getByRole("button", {
+      name: "Mark reviewed — I verified this item",
+      exact: true,
+    })
+    .click();
+  await posts
+    .getByRole("button", { name: "Approve item", exact: true })
+    .click();
+  await posts
+    .getByLabel("Convert reviewed item to estimate")
+    .selectOption("Materials");
+  await expect(posts).toContainText("Converted to an estimate line");
+  await page.getByRole("button", { name: "Save quote", exact: true }).click();
+  const stored = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes.find(
+      (q: { name: string }) => q.name === "Plan quote",
+    ),
+  );
+  expect(stored.lines[0].description).toBe("Manual material");
+  expect(stored.lines[0].cost).toBe(50);
+  expect(stored.lines[1]).toMatchObject({
+    description: "6x6 PT posts",
+    cost: 0,
+    category: "Posts",
+    quantity: 3,
+  });
+  expect(stored.analysisReports[0].sourceObservations[2]).toMatchObject({
+    confidence: "High",
+    classification: "Plan fact",
+  });
+  await page
+    .getByRole("button", { name: "Customer quote", exact: true })
+    .click();
+  const publicQuote = page.locator(".customer-document");
+  for (const internal of [
+    "sourceObservations",
+    "sourceFacts",
+    "supportBasis",
+    "scopeVerified",
+    "High source confidence",
+    "Simpson LUS26",
+    "Total visible locations",
+    "test-plan.png",
+    "DO NOT SCALE",
+  ])
+    await expect(publicQuote).not.toContainText(internal);
+  await page
+    .getByRole("button", { name: "Back to editor", exact: true })
+    .click();
+  await page.reload();
+  await page.getByRole("button", { name: /Plan quote/ }).click();
+  await page
+    .getByRole("button", { name: "Plans & Takeoff", exact: true })
+    .click();
+  await expect(card("2x6 PT deck joists")).toContainText(
+    "2x6 PT deck joists @ 16 in. O.C.",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("autosave persists its snapshot without overwriting a newer editor update", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Create New Quote", exact: true })
+    .click();
+  await page.getByLabel("Customer name *").fill("Autosave customer");
+  await page.getByLabel("Job name *").fill("Original project");
+  await page.evaluate(() => {
+    const originalSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      originalSet.call(this, key, value);
+      if (key !== "backwoods-quotes-v1") return;
+      const input = document.querySelector(
+        'input[value="Original project"]',
+      ) as HTMLInputElement | null;
+      if (!input) return;
+      Storage.prototype.setItem = originalSet;
+      // Reproduce an editor update arriving as an older autosave snapshot is
+      // persisted. Autosave must not write that old snapshot back to the editor.
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Newer editor update");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+  });
+  await expect(page.getByLabel("Job name *")).toHaveValue(
+    "Newer editor update",
+  );
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes.find(
+            (q: { customer: { name: string } }) =>
+              q.customer.name === "Autosave customer",
+          )?.name,
+      ),
+    )
+    .toBe("Newer editor update");
 });

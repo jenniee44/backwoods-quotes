@@ -1980,7 +1980,7 @@ details[open] > summary {
   background: #e7eae5;
   border: 1px solid #dce3dd;
   border-radius: 6px;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 .pdf-page-surface {
   position: relative;

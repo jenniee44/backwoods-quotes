@@ -1,6 +1,8 @@
+import { requiresScopeVerification } from "../shared/takeoff";
 import {
   validConstructionEvidence,
   validContractorSummary,
+  materialCategories,
 } from "../shared/analysis";
 import type {
   ConstructionEvidence,
@@ -157,6 +159,7 @@ export type Quote = {
       description: string;
     };
     dimensions?: import("../shared/analysis").AnalysisSuggestion[];
+    sourceObservations?: import("../shared/analysis").AnalysisSuggestion[];
     assumptions: string[];
     warnings: string[];
   }[];
@@ -201,6 +204,7 @@ export type TakeoffItem = ConstructionEvidence & {
   warnings?: string[];
   analysisId?: string;
   analysisSourceKey?: string;
+  scopeVerified?: boolean;
   reviewAcknowledged?: boolean;
   sourceDocumentName?: string;
 };
@@ -976,6 +980,8 @@ export function reviewWarnings(q: Quote): string[] {
   return warnings;
 }
 export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
+  if (requiresScopeVerification(item) && !item.scopeVerified)
+    throw new Error("Verify contract scope inclusion before conversion.");
   if (
     q.status !== "Draft" ||
     !(
@@ -1022,7 +1028,11 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
   if (!item.description.trim()) throw new Error("Add a takeoff description.");
   const l = {
     ...newLine(kind, q.pricing),
-    description: item.description,
+    description:
+      item.specification &&
+      !item.description.toLowerCase().includes(item.specification.toLowerCase())
+        ? `${item.description} — ${item.specification}`
+        : item.description,
     quantity: item.quantity,
     unit: item.unit,
     takeoffId: item.id,
@@ -1030,6 +1040,9 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       kind !== "Labour" ||
       !q.pricing.labourRate ||
       !q.pricing.internalLabourCost,
+    ...(kind === "Materials" && materialCategories.includes(item.category ?? "")
+      ? { category: item.category! }
+      : {}),
     ...(kind === "Other Costs"
       ? {
           category: normalizeCategory(
@@ -1048,6 +1061,8 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       unit: item.unit,
       notes: item.notes,
       confidence: item.confidence,
+      sourceDetailView: item.sourceDetailView,
+      supportBasis: item.supportBasis,
       scopeGroup: item.scopeGroup,
       specification: item.specification,
       location: item.location,
@@ -1139,6 +1154,8 @@ function validExtensions(v: unknown) {
           String(t.confidence),
         ) &&
         (t.origin === undefined || t.origin === "ai") &&
+        (t.scopeVerified === undefined ||
+          typeof t.scopeVerified === "boolean") &&
         (t.reviewAcknowledged === undefined ||
           typeof t.reviewAcknowledged === "boolean") &&
         [
@@ -1209,6 +1226,28 @@ function validExtensions(v: unknown) {
               Array.isArray(report.project.drawingNumbers) &&
               report.project.drawingNumbers.every(
                 (text) => typeof text === "string",
+              ))) &&
+          (report.sourceObservations === undefined ||
+            (Array.isArray(report.sourceObservations) &&
+              report.sourceObservations.length <= 100 &&
+              report.sourceObservations.every(
+                (observation) =>
+                  record(observation) &&
+                  strings(observation, [
+                    "description",
+                    "documentId",
+                    "unit",
+                    "notes",
+                  ]) &&
+                  validConstructionEvidence(observation) &&
+                  ["Unspecified", "Low", "Medium", "High"].includes(
+                    String(observation.confidence),
+                  ) &&
+                  (observation.quantity === null ||
+                    numbers(observation, ["quantity"])) &&
+                  (observation.page === null ||
+                    (Number.isInteger(observation.page) &&
+                      Number(observation.page) > 0)),
               ))) &&
           (report.dimensions === undefined ||
             (Array.isArray(report.dimensions) &&

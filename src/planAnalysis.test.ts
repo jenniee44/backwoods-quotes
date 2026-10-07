@@ -179,7 +179,9 @@ it("overlapping semantic facts are skipped without changing reviewed originals o
   fixture.suggestions[1].description = "Concrete footings";
   fixture.suggestions[1].location = "Main deck";
   const first = addAnalysisSuggestions(quote(), fixture, "first");
-  first.takeoff[1] = approveTakeoff(reviewTakeoff(first.takeoff[1]));
+  first.takeoff[1] = approveTakeoff(
+    reviewTakeoff({ ...first.takeoff[1], scopeVerified: true }),
+  );
   const original = structuredClone(first.takeoff);
   fixture.suggestions[1].description = "Concrete piers";
   const duplicate = addAnalysisSuggestions(first, fixture, "second");
@@ -246,4 +248,114 @@ it("corrupted saved evidence and summary are safely rejected", () => {
   q.takeoff[0].sourceFacts = [];
   Object.assign(q.analysisReports![0], { summary: { majorScope: "bad" } });
   expect(() => migrate(store)).toThrow("invalid");
+});
+
+it("deck observations yield specific candidates, preserve source evidence privately and retain pricing/review safeguards", async () => {
+  const { deckTakeoffFixture } = await import("../shared/deckTakeoff.fixture");
+  const input = quote();
+  const originalPrice = calculate(input);
+  let q = addAnalysisSuggestions(
+    input,
+    deckTakeoffFixture(),
+    "deck-observations",
+  );
+  expect(q.takeoff).toHaveLength(5);
+  expect(q.analysisReports![0].sourceObservations![2]).toMatchObject({
+    specification: "2x6 PT deck joists @ 16 in. O.C.",
+    confidence: "High",
+    classification: "Plan fact",
+  });
+  expect(calculate(q)).toEqual(originalPrice);
+  const posts = q.takeoff.find((item) => item.category === "Posts")!;
+  const approved = approveTakeoff(reviewTakeoff(posts));
+  q.takeoff = q.takeoff.map((item) =>
+    item.id === approved.id ? approved : item,
+  );
+  q = takeoffToLine(q, approved, "Materials");
+  expect(q.lines[0]).toMatchObject({
+    description: "6x6 PT posts",
+    quantity: 3,
+    cost: 0,
+    category: "Posts",
+    pricingRequired: true,
+  });
+  expect(q.lines[0].takeoffSource).toMatchObject({
+    sourceFacts: posts.sourceFacts,
+    confidence: "High",
+    specification: "6x6 PT posts",
+    quantityMethod: "Counted",
+  });
+  expect(() => takeoffToLine(q, approved, "Materials")).toThrow();
+  expect(() =>
+    reviewTakeoff(q.takeoff.find((item) => item.category === "Joists")!),
+  ).toThrow("missing quantity");
+  const persisted = seed();
+  persisted.quotes = [q];
+  expect(migrate(persisted).quotes[0].analysisReports).toEqual(
+    q.analysisReports,
+  );
+  expect(JSON.stringify(customerDocument(q))).not.toMatch(
+    /sourceObservations|sourceFacts|supportBasis|scopeVerified|sourceDetailView|Counted|confidence|PRIVATE/,
+  );
+});
+it("uncertain support inclusion cannot be reviewed, bulk-approved or forged into conversion before explicit verification", async () => {
+  const { deckTakeoffFixture } = await import("../shared/deckTakeoff.fixture");
+  const q = addAnalysisSuggestions(quote(), deckTakeoffFixture());
+  const footing = q.takeoff.find(
+    (item) => item.category === "Footings / concrete",
+  )!;
+  expect(footing).toMatchObject({
+    quantity: 7,
+    supportBasis: "Apparent new work",
+    scopeVerified: false,
+  });
+  expect(() => reviewTakeoff(footing)).toThrow("contract scope");
+  const forged = {
+    ...footing,
+    status: "Approved" as const,
+    reviewAcknowledged: true,
+  };
+  expect(canConvert(forged)).toBe(false);
+  q.takeoff = q.takeoff.map((item) => (item.id === forged.id ? forged : item));
+  expect(() => takeoffToLine(q, forged, "Materials")).toThrow(
+    "scope inclusion",
+  );
+  const verified = editTakeoff(footing, { scopeVerified: true });
+  const approved = approveTakeoff(reviewTakeoff(verified));
+  expect(canConvert(approved)).toBe(true);
+  expect(editTakeoff(approved, { quantity: 8 })).toMatchObject({
+    status: "Proposed",
+    reviewAcknowledged: false,
+    scopeVerified: false,
+  });
+  expect(() =>
+    approveTakeoff(editTakeoff(approved, { scopeVerified: false })),
+  ).toThrow("scope inclusion");
+});
+it("readable specification and detail-view provenance survive quantity entry, approval and zero-price conversion", async () => {
+  const { deckTakeoffFixture } = await import("../shared/deckTakeoff.fixture");
+  const data = deckTakeoffFixture();
+  data.sourceObservations![2].sourceDetailView = 3;
+  let q = addAnalysisSuggestions(quote(), data);
+  const joists = q.takeoff.find((item) => item.category === "Joists")!;
+  expect(joists).toMatchObject({
+    quantity: null,
+    specification: "2x6 PT deck joists @ 16 in. O.C.",
+    sourceDetailView: 3,
+    confidence: "Low",
+  });
+  const entered = editTakeoff(joists, { quantity: 18 });
+  const approved = approveTakeoff(reviewTakeoff(entered));
+  q.takeoff = q.takeoff.map((item) =>
+    item.id === approved.id ? approved : item,
+  );
+  q = takeoffToLine(q, approved, "Materials");
+  expect(q.lines[0].description).toContain("2x6 PT deck joists @ 16 in. O.C.");
+  expect(q.lines[0].takeoffSource).toMatchObject({
+    sourceDetailView: 3,
+    specification: joists.specification,
+    confidence: "Low",
+    sourceFacts: joists.sourceFacts,
+  });
+  expect(q.lines[0].cost).toBe(0);
 });

@@ -187,7 +187,7 @@ it("normal stairs/carpentry assembly is not subcontracted and labour hours are n
     });
   expect(prepared.suggestions[0].subcontractorBasis).toBe("Not established");
 });
-it("retains explicit by-others work and flags separate trades as unconfirmed suggestions", () => {
+it("retains explicit by-others work but never assumes specialized trades are subcontracted", () => {
   const prepared = validateAnalysis(
     result([
       component({
@@ -206,11 +206,11 @@ it("retains explicit by-others work and flags separate trades as unconfirmed sug
     ]),
     ["plan"],
   );
-  expect(
-    prepared.suggestions.every((item) => item.destination === "Subcontractor"),
-  ).toBe(true);
+  expect(prepared.suggestions[0].destination).toBe("Subcontractor");
+  expect(prepared.suggestions[1].destination).not.toBe("Subcontractor");
+  expect(prepared.suggestions[1].subcontractorBasis).toBe("Not established");
   expect(prepared.suggestions[1].warnings?.join(" ")).toContain(
-    "contractor must confirm",
+    "Confirm who performs this scope",
   );
 });
 it.each([

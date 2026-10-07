@@ -169,6 +169,7 @@ export async function handleAnalysis(
       validateAnalysis(
         result,
         documents.map((d) => d.id),
+        documents,
       ),
     );
   } catch (e) {

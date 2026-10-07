@@ -21,6 +21,13 @@ export const classifications = [
 ] as const;
 // Optional on saved V2 records; required (empty when unknown) in new provider output.
 export type ConstructionEvidence = {
+  sourceDetailView?: number | null;
+  supportBasis?:
+    | "Not established"
+    | "Total visible locations"
+    | "Apparent new work"
+    | "Existing work"
+    | "By others";
   scopeGroup?: string;
   specification?: string;
   location?: string;
@@ -70,6 +77,7 @@ export type AnalysisSuggestion = ConstructionEvidence & {
 export type PlanAnalysisResult = {
   summary?: ContractorSummary;
   duplicatesReduced?: number;
+  sourceObservations?: AnalysisSuggestion[];
   suggestions: AnalysisSuggestion[];
   warnings: string[];
   project?: {
@@ -83,7 +91,32 @@ export type PlanAnalysisResult = {
   dimensions?: AnalysisSuggestion[];
   assumptions?: string[];
 };
+export const materialCategories = [
+  "Posts",
+  "Beams",
+  "Joists",
+  "Ledger",
+  "Blocking",
+  "Footings / concrete",
+  "Hangers / connectors",
+  "Structural fasteners",
+  "Decking",
+  "Fascia / trim",
+  "Guards / railings",
+  "Stairs / stringers",
+];
 const evidenceProperties = {
+  sourceDetailView: { type: ["integer", "null"], minimum: 1, maximum: 4 },
+  supportBasis: {
+    type: "string",
+    enum: [
+      "Not established",
+      "Total visible locations",
+      "Apparent new work",
+      "Existing work",
+      "By others",
+    ],
+  },
   scopeGroup: { type: "string", maxLength: 100 },
   specification: { type: "string", maxLength: 1000 },
   location: { type: "string", maxLength: 200 },
@@ -114,6 +147,14 @@ export function validConstructionEvidence(v: Record<string, unknown>): boolean {
   return Object.entries(evidenceProperties).every(([key, schema]) => {
     const value = v[key];
     if (value === undefined) return true; // Existing saved quotes/older responses.
+    if (key === "sourceDetailView")
+      return (
+        value === null ||
+        (typeof value === "number" &&
+          Number.isInteger(value) &&
+          value >= 1 &&
+          value <= 4)
+      );
     if ("enum" in schema) return schema.enum.includes(value as never);
     if (key === "sourceFacts") return texts(value, 20);
     return "maxLength" in schema && text(value, schema.maxLength);
@@ -201,6 +242,7 @@ export const analysisSchema = {
         "description",
       ],
     },
+    sourceObservations: { type: "array", items: itemSchema, maxItems: 100 },
     dimensions: { type: "array", items: itemSchema, maxItems: 100 },
     suggestions: { type: "array", items: itemSchema, maxItems: 150 },
     assumptions: { type: "array", items: { type: "string" }, maxItems: 40 },
@@ -210,6 +252,7 @@ export const analysisSchema = {
     "project",
     "summary",
     "dimensions",
+    "sourceObservations",
     "suggestions",
     "assumptions",
     "warnings",
@@ -224,6 +267,7 @@ const texts = (v: unknown, max = 40) =>
 export function validateAnalysis(
   value: unknown,
   documentIds: string[],
+  documents?: AnalysisDocument[],
 ): PlanAnalysisResult {
   value = structuredClone(value);
   const fail = () => {
@@ -240,6 +284,7 @@ export function validateAnalysis(
           "summary",
           "duplicatesReduced",
           "dimensions",
+          "sourceObservations",
           "suggestions",
           "assumptions",
           "warnings",
@@ -279,10 +324,12 @@ export function validateAnalysis(
   )
     return fail();
   for (const [key, max] of [
+    ["sourceObservations", 100],
     ["dimensions", 100],
     ["suggestions", 150],
   ] as const) {
     const items = value[key];
+    if (key === "sourceObservations" && items === undefined) continue;
     if (!Array.isArray(items) || items.length > max) return fail();
     for (const item of items) {
       if (
@@ -325,8 +372,14 @@ export function validateAnalysis(
         )
       )
         return fail();
+      if (item.sourceDetailView && documents) {
+        const source = documents.find((d) => d.id === item.documentId);
+        const region =
+          source?.detailRegions?.[Number(item.sourceDetailView) - 1];
+        if (!region || region.page !== item.page) return fail();
+      }
       // Any missing measurement is explicitly uncertain, never silently zero.
-      if (item.quantity === null) {
+      if (item.quantity === null && key !== "sourceObservations") {
         item.confidence = "Low";
         item.classification = "Contractor input required";
       }

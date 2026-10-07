@@ -267,7 +267,8 @@ export default function App() {
       setSaveState("Saved");
       if (!silent) setNotice("Saved on this device");
       if (close) setEditing(null);
-      else setEditing(q);
+      // Autosave must not replace newer editor state (e.g. a just-read upload).
+      else if (!silent) setEditing(q);
       return true;
     }
     setSaveState("Save failed");
