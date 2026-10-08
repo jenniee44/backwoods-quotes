@@ -55,7 +55,7 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
     path: "/tmp/backwoods-ai-takeoff.png",
     fullPage: true,
   });
-  const cards = page.locator("fieldset.line-card");
+  const cards = page.locator("tbody.line-card");
   const labour = cards.nth(0);
   await labour.screenshot({ path: "/tmp/backwoods-ai-review-card.png" });
   const materials = cards.nth(1);
@@ -279,7 +279,7 @@ test("construction scope, summary-only observations, calculation evidence and sa
   await expect(
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
-  const cards = page.locator("fieldset.line-card");
+  const cards = page.locator("tbody.line-card");
   await expect(cards).toHaveCount(3);
   await expect(
     page.getByRole("heading", { name: "Major scope detected", exact: true }),
@@ -292,9 +292,9 @@ test("construction scope, summary-only observations, calculation evidence and sa
   ).toBeVisible();
   const joists = cards.filter({ has: page.locator('input[value="Joists"]') });
   await expect(joists.getByLabel("Takeoff quantity")).toHaveValue("11");
-  await expect(
-    joists.getByText('2x8 PT @ 16" O/C', { exact: true }).first(),
-  ).toBeVisible();
+  await expect(joists.getByLabel("Written specification")).toHaveValue(
+    '2x8 PT @ 16" O/C',
+  );
   await joists.screenshot({ path: "/tmp/backwoods-compact-takeoff-card.png" });
   await expect(joists.getByLabel("Calculation basis")).not.toBeVisible();
   await expect(

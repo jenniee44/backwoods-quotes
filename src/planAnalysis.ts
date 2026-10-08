@@ -1,3 +1,5 @@
+import { includedScope, assertScope } from "./takeoffScope";
+import { calculateMaterial } from "../shared/materialCalculators";
 import { maxAnalysisBodyBytes } from "../shared/analysisPackage";
 import {
   prepareConstructionAnalysis,
@@ -183,10 +185,12 @@ export function addAnalysisSuggestions(
   const semanticSeen = new Set(
     q.takeoff.filter((item) => item.origin === "ai").map(semanticItemKey),
   );
+  const duplicateEvidence: AnalysisSuggestion[] = [];
   let duplicatesReduced = result.duplicatesReduced ?? 0;
   const adopted = suggestions.filter((item) => {
     const key = semanticItemKey(item);
     if (semanticSeen.has(key)) {
+      duplicateEvidence.push(structuredClone(item));
       duplicatesReduced++;
       return false;
     }
@@ -205,6 +209,7 @@ export function addAnalysisSuggestions(
         project: result.project,
         summary: result.summary,
         duplicatesReduced,
+        ...(duplicateEvidence.length ? { duplicateEvidence } : {}),
         sourceDocuments: analyzedDocuments.map((d) => ({
           id: d.id,
           name: d.name,
@@ -221,17 +226,47 @@ export function editTakeoff(
   item: TakeoffItem,
   delta: Partial<TakeoffItem>,
 ): TakeoffItem {
+  const scopeOnly = Object.keys(delta).every(
+    (key) => key === "scopeVerified" || key === "included",
+  );
+  const calculation =
+    "calculation" in delta
+      ? delta.calculation
+      : item.calculation && !scopeOnly
+        ? { ...item.calculation, verified: false }
+        : item.calculation;
   return {
     ...item,
     ...delta,
+    calculation,
+    ...(calculation && !calculation.verified ? { quantity: null } : {}),
     status: "Proposed",
     reviewAcknowledged: false,
-    scopeVerified: Object.keys(delta).every((key) => key === "scopeVerified")
+    scopeVerified: scopeOnly
       ? (delta.scopeVerified ?? item.scopeVerified)
       : false,
   };
 }
 export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
+  if (!includedScope(item))
+    throw new Error(
+      "Explicitly include and verify existing/by-others work before review.",
+    );
+  if (item.calculation) {
+    if (!item.specification?.trim())
+      throw new Error(
+        "Enter and verify the selected material specification before calculator review.",
+      );
+    const result = calculateMaterial(item.calculation);
+    if (
+      result.quantity === null ||
+      result.quantity !== item.quantity ||
+      result.unit !== item.unit
+    )
+      throw new Error(
+        "Complete and verify all calculator inputs before review.",
+      );
+  }
   if (requiresScopeVerification(item) && !item.scopeVerified)
     throw new Error(
       "Verify existing/new/by-others status and confirm this item is included in your contract scope before reviewing.",
@@ -249,11 +284,18 @@ export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
   return { ...item, status: "Reviewed", reviewAcknowledged: true };
 }
 export function approveTakeoff(item: TakeoffItem): TakeoffItem {
+  if (!includedScope(item))
+    throw new Error("Explicitly include excluded scope before approval.");
+  if (
+    item.calculation &&
+    calculateMaterial(item.calculation).quantity !== item.quantity
+  )
+    throw new Error("Verify calculator inputs before approval.");
   if (requiresScopeVerification(item) && !item.scopeVerified)
     throw new Error("Confirm contract scope inclusion before approval.");
   if (
-    item.origin === "ai" &&
-    (item.status !== "Reviewed" || !item.reviewAcknowledged)
+    item.status !== "Reviewed" ||
+    (item.origin === "ai" && !item.reviewAcknowledged)
   )
     throw new Error(
       "Review this proposed item first, including its source, assumptions and uncertainty.",
@@ -268,6 +310,10 @@ export function approveTakeoff(item: TakeoffItem): TakeoffItem {
 }
 export function canConvert(item: TakeoffItem): boolean {
   return (
+    includedScope(item) &&
+    (!item.calculation ||
+      (calculateMaterial(item.calculation).quantity === item.quantity &&
+        item.quantity !== null)) &&
     (!requiresScopeVerification(item) || !!item.scopeVerified) &&
     !item.convertedLineId &&
     item.quantity !== null &&
@@ -275,4 +321,16 @@ export function canConvert(item: TakeoffItem): boolean {
     (item.status === "Approved" ||
       (item.status === "Reviewed" && item.origin !== "ai"))
   );
+}
+
+export function approveTakeoffBatch(q: Quote, items: TakeoffItem[]): Quote {
+  const approved = items.map((item) => approveTakeoff(item));
+  const next = {
+    ...q,
+    takeoff: q.takeoff.map(
+      (item) => approved.find((a) => a.id === item.id) ?? item,
+    ),
+  };
+  approved.forEach((item) => assertScope(next, item));
+  return next;
 }

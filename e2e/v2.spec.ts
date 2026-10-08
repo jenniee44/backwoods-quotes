@@ -142,6 +142,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await page.getByLabel("Takeoff description").fill("Reviewed deck boards");
   await page.getByLabel("Takeoff quantity").fill("12");
   await page.getByLabel("Takeoff unit").fill("board");
+  await page.getByText("Evidence & editing details", { exact: true }).click();
   await page
     .getByLabel("Source document")
     .selectOption({ label: "engineer-plans.pdf" });

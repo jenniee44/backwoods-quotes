@@ -1,3 +1,10 @@
+import { assertScope, validScope } from "./takeoffScope";
+import type { ContractorScope } from "./takeoffScope";
+import {
+  calculateMaterial,
+  validCalculation,
+} from "../shared/materialCalculators";
+import type { MaterialCalculation } from "../shared/materialCalculators";
 import { requiresScopeVerification } from "../shared/takeoff";
 import {
   validConstructionEvidence,
@@ -26,17 +33,18 @@ export type Line = {
   scopeGroup?: string;
   takeoffId?: string;
   pricingRequired?: boolean;
-  takeoffSource?: ConstructionEvidence & {
-    classification?: TakeoffItem["classification"];
-    assumptions?: string[];
-    warnings?: string[];
-    documentName: string;
-    page: number | null;
-    quantity: number;
-    unit: string;
-    notes: string;
-    confidence: TakeoffItem["confidence"];
-  };
+  takeoffSource?: ConstructionEvidence &
+    ContractorScope & {
+      classification?: TakeoffItem["classification"];
+      assumptions?: string[];
+      warnings?: string[];
+      documentName: string;
+      page: number | null;
+      quantity: number;
+      unit: string;
+      notes: string;
+      confidence: TakeoffItem["confidence"];
+    };
   inheritCost?: boolean;
   inheritRate?: boolean;
   inheritMarkup?: boolean;
@@ -160,6 +168,7 @@ export type Quote = {
     };
     dimensions?: import("../shared/analysis").AnalysisSuggestion[];
     sourceObservations?: import("../shared/analysis").AnalysisSuggestion[];
+    duplicateEvidence?: import("../shared/analysis").AnalysisSuggestion[];
     assumptions: string[];
     warnings: string[];
   }[];
@@ -185,29 +194,31 @@ export type PlanDocument = {
   data: string;
   addedAt: string;
 };
-export type TakeoffItem = ConstructionEvidence & {
-  id: string;
-  description: string;
-  quantity: number | null;
-  unit: string;
-  documentId: string;
-  page: number | null;
-  notes: string;
-  status: "Proposed" | "Reviewed" | "Approved" | "Rejected";
-  confidence: "Unspecified" | "Low" | "Medium" | "High";
-  convertedLineId?: string;
-  origin?: "ai";
-  category?: string;
-  destination?: import("../shared/analysis").AnalysisSuggestion["destination"];
-  classification?: import("../shared/analysis").AnalysisSuggestion["classification"];
-  assumptions?: string[];
-  warnings?: string[];
-  analysisId?: string;
-  analysisSourceKey?: string;
-  scopeVerified?: boolean;
-  reviewAcknowledged?: boolean;
-  sourceDocumentName?: string;
-};
+export type TakeoffItem = ConstructionEvidence &
+  ContractorScope & {
+    calculation?: MaterialCalculation;
+    id: string;
+    description: string;
+    quantity: number | null;
+    unit: string;
+    documentId: string;
+    page: number | null;
+    notes: string;
+    status: "Proposed" | "Reviewed" | "Approved" | "Rejected";
+    confidence: "Unspecified" | "Low" | "Medium" | "High";
+    convertedLineId?: string;
+    origin?: "ai";
+    category?: string;
+    destination?: import("../shared/analysis").AnalysisSuggestion["destination"];
+    classification?: import("../shared/analysis").AnalysisSuggestion["classification"];
+    assumptions?: string[];
+    warnings?: string[];
+    analysisId?: string;
+    analysisSourceKey?: string;
+    scopeVerified?: boolean;
+    reviewAcknowledged?: boolean;
+    sourceDocumentName?: string;
+  };
 export type QuoteTemplate = {
   id: string;
   name: string;
@@ -857,6 +868,7 @@ function line(v: unknown) {
       (record(v.takeoffSource) &&
         strings(v.takeoffSource, ["documentName", "unit", "notes"]) &&
         validConstructionEvidence(v.takeoffSource) &&
+        validScope(v.takeoffSource) &&
         validPrivateEvidence(v.takeoffSource) &&
         numbers(v.takeoffSource, ["quantity"]) &&
         (v.takeoffSource.page === null ||
@@ -980,6 +992,18 @@ export function reviewWarnings(q: Quote): string[] {
   return warnings;
 }
 export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
+  assertScope(q, item);
+  if (item.calculation) {
+    const result = calculateMaterial(item.calculation);
+    if (
+      result.quantity === null ||
+      result.quantity !== item.quantity ||
+      result.unit !== item.unit
+    )
+      throw new Error(
+        "Recalculate and verify calculator inputs before conversion.",
+      );
+  }
   if (requiresScopeVerification(item) && !item.scopeVerified)
     throw new Error("Verify contract scope inclusion before conversion.");
   if (
@@ -1063,6 +1087,10 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       confidence: item.confidence,
       sourceDetailView: item.sourceDetailView,
       supportBasis: item.supportBasis,
+      workScope: item.workScope,
+      included: item.included,
+      alternativeGroup: item.alternativeGroup,
+      alternativeOption: item.alternativeOption,
       scopeGroup: item.scopeGroup,
       specification: item.specification,
       location: item.location,
@@ -1142,6 +1170,8 @@ function validExtensions(v: unknown) {
         record(t) &&
         strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
         validConstructionEvidence(t) &&
+        validScope(t) &&
+        (t.calculation === undefined || validCalculation(t.calculation)) &&
         (t.quantity === null || numbers(t, ["quantity"])) &&
         (t.page === null ||
           (typeof t.page === "number" &&
@@ -1248,6 +1278,23 @@ function validExtensions(v: unknown) {
                   (observation.page === null ||
                     (Number.isInteger(observation.page) &&
                       Number(observation.page) > 0)),
+              ))) &&
+          (report.duplicateEvidence === undefined ||
+            (Array.isArray(report.duplicateEvidence) &&
+              report.duplicateEvidence.length <= 150 &&
+              report.duplicateEvidence.every(
+                (d) =>
+                  record(d) &&
+                  strings(d, ["description", "documentId", "unit", "notes"]) &&
+                  validConstructionEvidence(d) &&
+                  ["Unspecified", "Low", "Medium", "High"].includes(
+                    String(d.confidence),
+                  ) &&
+                  (d.quantity === null || numbers(d, ["quantity"])) &&
+                  (d.page === null ||
+                    (typeof d.page === "number" &&
+                      Number.isInteger(d.page) &&
+                      d.page > 0)),
               ))) &&
           (report.dimensions === undefined ||
             (Array.isArray(report.dimensions) &&

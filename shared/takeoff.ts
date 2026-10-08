@@ -403,6 +403,11 @@ export function prepareConstructionAnalysis(
     if (existing) {
       reduced++;
       existing.sourceFacts = unique([
+        ...(item.sourceDetailView !== existing.sourceDetailView
+          ? [
+              `Additional source: ${item.documentId}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original PDF"}`,
+            ]
+          : []),
         ...(existing.sourceFacts ?? []),
         ...(item.sourceFacts ?? []),
         item.notes.slice(0, 1000),

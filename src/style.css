@@ -2030,3 +2030,136 @@ details[open] > summary {
 .quote-delete-actions .button {
   width: 100%;
 }
+
+.takeoff-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid #dce3dd;
+  border-radius: 8px;
+}
+.takeoff-table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.takeoff-table th {
+  text-align: left;
+  padding: 8px;
+  background: #eef3ee;
+}
+.takeoff-table td {
+  padding: 7px;
+  vertical-align: top;
+  border-bottom: 1px solid #dce3dd;
+}
+.takeoff-table tbody.line-card {
+  border: 0;
+  background: white;
+}
+.takeoff-table input:not([type="checkbox"]),
+.takeoff-table select {
+  width: 100%;
+  min-width: 70px;
+  padding: 7px;
+}
+.takeoff-table td:first-child {
+  min-width: 190px;
+}
+.takeoff-table td:nth-child(2) {
+  min-width: 140px;
+}
+.takeoff-table td:nth-child(3) {
+  width: 100px;
+}
+.takeoff-table .field > span {
+  font-size: 11px;
+}
+.takeoff-table .tiny {
+  margin: 5px 0;
+}
+.takeoff-table .takeoff-evidence {
+  margin: 0;
+}
+.takeoff-table .takeoff-evidence fieldset {
+  border: 0;
+  padding: 10px 0;
+  min-width: 0;
+}
+.takeoff-row-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  min-width: 160px;
+}
+.takeoff-row-actions .button {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.takeoff-row-actions select {
+  grid-column: span 2;
+}
+.takeoff-scope-check {
+  display: flex;
+  gap: 5px;
+  align-items: start;
+  font-size: 11px;
+  margin-top: 6px;
+}
+.material-calculator,
+.missing-information {
+  background: #f4f7f1;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+.missing-information li {
+  margin: 8px 0;
+  font-size: 13px;
+}
+.missing-information .button {
+  padding: 5px 8px;
+}
+@media (max-width: 700px) {
+  .takeoff-table-scroll {
+    overscroll-behavior-x: contain;
+  }
+  .takeoff-table .fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.takeoff-group {
+  min-width: 0;
+}
+.takeoff-table-scroll {
+  contain: inline-size;
+  width: 100%;
+  min-width: 0;
+}
+.missing-information .button {
+  white-space: normal;
+  text-align: left;
+}
+.takeoff-table-scroll {
+  container-type: inline-size;
+}
+.takeoff-table .takeoff-evidence {
+  width: calc(100cqw - 18px);
+  max-width: 100%;
+  position: sticky;
+  left: 0;
+}
+.takeoff-table .takeoff-evidence .fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.takeoff-scroll-hint {
+  display: none;
+}
+@media (max-width: 700px) {
+  .takeoff-scroll-hint {
+    display: block;
+  }
+  .takeoff-table .takeoff-evidence .fields {
+    grid-template-columns: 1fr;
+  }
+}
