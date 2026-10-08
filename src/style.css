@@ -2163,3 +2163,107 @@ details[open] > summary {
     grid-template-columns: 1fr;
   }
 }
+
+/* Review summaries fit the panel; expanded controls wrap rather than scroll. */
+.takeoff-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+.takeoff-table > thead {
+  display: none;
+}
+.takeoff-table-scroll {
+  overflow-x: hidden;
+}
+.takeoff-table .takeoff-summary-row td {
+  min-width: 0;
+  width: auto;
+}
+.takeoff-summary-row td {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 5px 12px;
+}
+.takeoff-summary-row span,
+.takeoff-summary-row strong {
+  overflow-wrap: anywhere;
+}
+.takeoff-table .takeoff-evidence {
+  position: static;
+  width: 100%;
+}
+.takeoff-edit-table,
+.takeoff-edit-table tbody {
+  display: block;
+  width: 100%;
+}
+.takeoff-edit-table tr {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.takeoff-table .takeoff-edit-table td {
+  display: block;
+  min-width: 0;
+  width: auto;
+  border: 0;
+  padding: 0;
+}
+.takeoff-edit-table td:last-child {
+  grid-column: 1 / -1;
+}
+.takeoff-row-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+.takeoff-row-actions select {
+  grid-column: auto;
+}
+.overlap-warning {
+  color: #914719;
+}
+.overlap-comparison {
+  border: 1px solid #b78349;
+  padding: 12px;
+  border-radius: 8px;
+}
+.overlap-comparison article {
+  border-top: 1px solid #dce3dd;
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+.overlap-comparison .button {
+  margin: 4px;
+}
+@container (max-width: 600px) {
+  .takeoff-edit-table tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .takeoff-summary-row td {
+    grid-template-columns: 1fr;
+  }
+  .takeoff-row-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.takeoff-table,
+.takeoff-table > tbody.line-card,
+.takeoff-table > tbody > tr {
+  display: block;
+  width: 100%;
+}
+.takeoff-table > tbody > tr > td {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.takeoff-table > tbody > .takeoff-summary-row > td {
+  display: grid;
+}
+.takeoff-edit-table td::before {
+  content: attr(data-label);
+  display: block;
+  font-weight: 600;
+  margin-bottom: 4px;
+}

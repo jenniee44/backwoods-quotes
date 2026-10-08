@@ -18,7 +18,6 @@ test("compact table calculates only from verified inputs, resets review on edits
   const row = page.locator(".takeoff-table tbody.line-card").first();
   await row.getByLabel("Takeoff description").fill("Deck joists");
   await row.getByLabel("Written specification").fill("2x8 PT, verified layout");
-  await row.getByText("Evidence & editing details", { exact: true }).click();
   await row.getByLabel("Suggested destination").selectOption("Materials");
   await row.getByLabel("Takeoff category").selectOption("Joists");
   await row.getByLabel("Material calculator").selectOption("joists");
@@ -84,7 +83,11 @@ test("compact table calculates only from verified inputs, resets review on edits
   expect(
     (await row.locator(".takeoff-evidence").boundingBox())!.width,
   ).toBeLessThanOrEqual(panelWidth);
-  await row.getByText("Evidence & editing details", { exact: true }).click();
+  await row
+    .getByText("Review material — specifications, evidence & calculations", {
+      exact: true,
+    })
+    .click();
   expect(
     (await row.locator(":scope > tr").first().boundingBox())!.height,
   ).toBeLessThan(260);
@@ -131,7 +134,7 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     await row
       .getByLabel("Written specification")
       .fill("Contractor verified foundation design");
-    await row.getByText("Evidence & editing details", { exact: true }).click();
+
     await row.getByLabel("Alternative assembly group").fill("Rear foundation");
     await row.getByLabel("Alternative construction method").fill(method);
     if (method === "Helical") {
@@ -174,7 +177,9 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     .click();
   await expect(rows.last().getByLabel("Review status")).toHaveValue("Approved");
   for (const summary of await page
-    .getByText("Evidence & editing details", { exact: true })
+    .getByText("Review material — specifications, evidence & calculations", {
+      exact: true,
+    })
     .all())
     await summary.click();
   await page.setViewportSize({ width: 1440, height: 960 });

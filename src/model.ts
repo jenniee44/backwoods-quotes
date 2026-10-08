@@ -196,6 +196,7 @@ export type PlanDocument = {
 };
 export type TakeoffItem = ConstructionEvidence &
   ContractorScope & {
+    overlapReviews?: string[];
     calculation?: MaterialCalculation;
     id: string;
     description: string;
@@ -1171,6 +1172,12 @@ function validExtensions(v: unknown) {
         strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
         validConstructionEvidence(t) &&
         validScope(t) &&
+        (t.overlapReviews === undefined ||
+          (Array.isArray(t.overlapReviews) &&
+            t.overlapReviews.length <= 200 &&
+            t.overlapReviews.every(
+              (s: unknown) => typeof s === "string" && s.length <= 200000,
+            ))) &&
         (t.calculation === undefined || validCalculation(t.calculation)) &&
         (t.quantity === null || numbers(t, ["quantity"])) &&
         (t.page === null ||

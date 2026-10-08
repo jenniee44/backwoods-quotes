@@ -1,3 +1,4 @@
+import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
 export type ContractorScope = {
   workScope?: "New work" | "Existing work" | "By others";
@@ -78,7 +79,13 @@ export function assertScope(q: Quote, item: TakeoffItem) {
     );
   const group = item.alternativeGroup?.trim().toLowerCase(),
     option = item.alternativeOption?.trim().toLowerCase();
-  if (!group) return;
+  if (!group) {
+    if (unresolvedOverlaps(q, item).length)
+      throw new Error(
+        "Compare potentially overlapping materials before approval or adding to the estimate. Confirm separate assemblies or consolidate matching items.",
+      );
+    return;
+  }
   const other = q.takeoff.some(
     (t) =>
       t.id !== item.id &&
@@ -95,5 +102,9 @@ export function assertScope(q: Quote, item: TakeoffItem) {
   if (other || priced)
     throw new Error(
       "Mutually exclusive construction methods cannot be approved or priced together for this assembly. Reject/exclude the other method first; remove its estimate line if already converted.",
+    );
+  if (unresolvedOverlaps(q, item).length)
+    throw new Error(
+      "Compare potentially overlapping materials before approval or adding to the estimate. Confirm separate assemblies or consolidate matching items.",
     );
 }

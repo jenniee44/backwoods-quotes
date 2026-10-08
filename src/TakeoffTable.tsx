@@ -1,4 +1,10 @@
-import { useState } from "react";
+import {
+  overlappingItems,
+  unresolvedOverlaps,
+  acknowledgeSeparate,
+  consolidateCompared,
+} from "./takeoffOverlap";
+import { useState, useEffect, useRef } from "react";
 import type { Quote, TakeoffItem, Kind } from "./model";
 import { categories, units, takeoffToLine } from "./model";
 import { reviewTakeoff, approveTakeoff, canConvert } from "./planAnalysis";
@@ -52,6 +58,15 @@ export default function TakeoffTable({
   setSelected: React.Dispatch<React.SetStateAction<string[]>>;
 }) {
   const [expanded, setExpanded] = useState<string[]>([]);
+  const seen = useRef(new Set<string>());
+  useEffect(() => {
+    const added = q.takeoff.filter(
+      (t) => !seen.current.has(t.id) && !t.origin && !t.description,
+    );
+    q.takeoff.forEach((t) => seen.current.add(t.id));
+    if (added.length)
+      setExpanded((ids) => [...new Set([...ids, ...added.map((t) => t.id)])]);
+  }, [q.takeoff]);
   const groupFor = (t: TakeoffItem) =>
     t.destination === "Materials" &&
     t.category &&
@@ -115,6 +130,11 @@ export default function TakeoffTable({
     q.takeoff.some((t) => /helical|screw pile/i.test(t.description));
   return (
     <>
+      <p className="info">
+        Review material → Verify specifications and measurements → Calculate
+        quantity → Approve → Add to estimate. Drawing facts are retained; verify
+        critical measurements before using calculated quantities.
+      </p>
       {potentialAlternatives && (
         <p className="info">
           Concrete footings and helical piles appear in this takeoff. If they
@@ -124,7 +144,7 @@ export default function TakeoffTable({
         </p>
       )}
       {!!missing.length && (
-        <details className="missing-information" open>
+        <details className="missing-information">
           <summary>
             Missing information checklist ({missing.length} items)
           </summary>
@@ -176,8 +196,8 @@ export default function TakeoffTable({
             </span>
           </h3>
           <p className="tiny takeoff-scroll-hint">
-            Scroll the table sideways for all columns. Expand an item below for
-            its evidence, scope and calculator inputs.
+            Expand a material to verify drawing facts, measurements and
+            quantity, then approve and add to estimate.
           </p>
           <div className="takeoff-table-scroll">
             <table className="takeoff-table" aria-label={`${group} takeoff`}>
@@ -215,263 +235,24 @@ export default function TakeoffTable({
                       key={t.id}
                       id={`takeoff-${t.id}`}
                     >
-                      <tr>
-                        <td>
-                          <input
-                            aria-label="Takeoff description"
-                            disabled={disabled}
-                            value={t.description}
-                            onChange={(e) =>
-                              patch(t, { description: e.target.value })
-                            }
-                          />
-                          <p className="tiny">
-                            {t.classification ?? "Contractor entry"} ·{" "}
-                            {t.sourceDocumentName || "Manual source"}
-                            {t.page ? ` — Page ${t.page}` : ""}
-                            {t.sourceDetailView
-                              ? ` · Detail view ${t.sourceDetailView}`
-                              : ""}
-                          </p>
-                          {requiresScopeVerification(t) &&
-                            !t.convertedLineId && (
-                              <label className="takeoff-scope-check">
-                                <input
-                                  type="checkbox"
-                                  disabled={locked}
-                                  checked={!!t.scopeVerified}
-                                  onChange={(e) =>
-                                    patch(t, {
-                                      scopeVerified: e.target.checked,
-                                    })
-                                  }
-                                />
-                                I verified existing/new/by-others status and
-                                this item is included in our contract scope.
-                              </label>
-                            )}
-                        </td>
-                        <td>
-                          <input
-                            aria-label="Written specification"
-                            disabled={disabled}
-                            value={t.specification ?? ""}
-                            placeholder="Requires contractor input"
-                            onChange={(e) =>
-                              patch(t, { specification: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <Field label="Takeoff quantity">
-                            <NumberInput
-                              value={t.quantity}
-                              nullable
-                              disabled={disabled}
-                              placeholder="Requires contractor input"
-                              onChange={(n) =>
-                                patch(t, {
-                                  quantity: Number.isNaN(n) ? null : n,
-                                  classification: Number.isNaN(n)
-                                    ? "Contractor input required"
-                                    : "Estimating suggestion",
-                                  quantityMethod: "Unknown",
-                                  calculationBasis: "",
-                                  calculation: undefined,
-                                })
-                              }
-                            />
-                          </Field>
-                          {t.quantity === null && (
-                            <small>
-                              Requires contractor input —{" "}
-                              {t.destination === "Labour"
-                                ? "enter verified labour hours; no hours were invented."
-                                : "verify quantity; no quantity was invented."}
-                            </small>
+                      <tr className="takeoff-summary-row">
+                        <td colSpan={7}>
+                          <strong>{t.description || "New material"}</strong>
+                          <span>
+                            {t.specification || "Specification requires input"}
+                          </span>
+                          <span>
+                            {t.quantity === null
+                              ? "Quantity requires input"
+                              : `${t.quantity} ${t.unit}`}{" "}
+                            · {t.confidence} confidence · {t.status}
+                          </span>
+                          <span>{t.classification ?? "Contractor entry"}</span>
+                          {!!unresolvedOverlaps(q, t).length && (
+                            <strong className="overlap-warning">
+                              Potential overlap — compare before approval
+                            </strong>
                           )}
-                        </td>
-                        <td>
-                          <input
-                            aria-label="Takeoff unit"
-                            list="takeoff-units"
-                            disabled={disabled}
-                            value={t.unit}
-                            onChange={(e) =>
-                              patch(t, {
-                                unit: e.target.value,
-                                classification: "Estimating suggestion",
-                                quantityMethod: "Unknown",
-                                calculationBasis: "",
-                                calculation: undefined,
-                              })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <select
-                            aria-label="Confidence"
-                            disabled={disabled}
-                            value={t.confidence}
-                            onChange={(e) =>
-                              patch(t, {
-                                confidence: e.target
-                                  .value as TakeoffItem["confidence"],
-                              })
-                            }
-                          >
-                            {["Unspecified", "Low", "Medium", "High"].map(
-                              (value) => (
-                                <option key={value}>{value}</option>
-                              ),
-                            )}
-                          </select>
-                        </td>
-                        <td>
-                          <select
-                            aria-label="Review status"
-                            disabled={disabled}
-                            value={t.status}
-                            onChange={(e) =>
-                              updateItem(t, (item) =>
-                                e.target.value === "Reviewed"
-                                  ? reviewTakeoff(item)
-                                  : e.target.value === "Approved"
-                                    ? approveTakeoff(item)
-                                    : {
-                                        ...item,
-                                        status: e.target
-                                          .value as TakeoffItem["status"],
-                                        reviewAcknowledged: false,
-                                      },
-                              )
-                            }
-                          >
-                            <option>Proposed</option>
-                            <option value="Reviewed">
-                              {t.origin === "ai"
-                                ? "Reviewed — awaiting approval"
-                                : "Approved"}
-                            </option>
-                            <option>Approved</option>
-                            <option>Rejected</option>
-                          </select>
-                          {!t.convertedLineId && (
-                            <label className="takeoff-scope-check">
-                              <input
-                                type="checkbox"
-                                disabled={locked}
-                                checked={selected.includes(t.id)}
-                                onChange={(e) =>
-                                  setSelected((ids) =>
-                                    e.target.checked
-                                      ? [...ids, t.id]
-                                      : ids.filter((id) => id !== t.id),
-                                  )
-                                }
-                              />
-                              Select for approval
-                            </label>
-                          )}
-                        </td>
-                        <td>
-                          <div className="takeoff-row-actions">
-                            {!t.convertedLineId ? (
-                              <>
-                                <button
-                                  disabled={locked}
-                                  className="button secondary"
-                                  aria-label="Mark reviewed — I verified this item"
-                                  onClick={() => updateItem(t, reviewTakeoff)}
-                                >
-                                  Review
-                                </button>
-                                <button
-                                  disabled={
-                                    locked ||
-                                    t.status !== "Reviewed" ||
-                                    !t.reviewAcknowledged
-                                  }
-                                  className="button"
-                                  aria-label="Approve item"
-                                  onClick={() => updateItem(t, approveTakeoff)}
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  disabled={locked}
-                                  className="button secondary"
-                                  aria-label="Reject item"
-                                  onClick={() =>
-                                    updateItem(t, (item) => ({
-                                      ...item,
-                                      status: "Rejected",
-                                      reviewAcknowledged: false,
-                                    }))
-                                  }
-                                >
-                                  Reject
-                                </button>
-                                <select
-                                  aria-label="Convert reviewed item to estimate"
-                                  value=""
-                                  disabled={
-                                    locked ||
-                                    !canConvert(t) ||
-                                    !t.description.trim()
-                                  }
-                                  onChange={(e) => {
-                                    try {
-                                      onChange(
-                                        takeoffToLine(
-                                          q,
-                                          t,
-                                          e.target.value as Kind,
-                                        ),
-                                      );
-                                    } catch (error) {
-                                      onError((error as Error).message);
-                                    }
-                                  }}
-                                >
-                                  <option value="">Convert to…</option>
-                                  {(t.origin === "ai"
-                                    ? [
-                                        t.destination === "Subcontractor"
-                                          ? "Other Costs"
-                                          : t.destination,
-                                      ].filter(
-                                        (kind) =>
-                                          kind && kind !== "Informational",
-                                      )
-                                    : ["Materials", "Labour", "Other Costs"]
-                                  ).map((kind) => (
-                                    <option key={kind}>{kind}</option>
-                                  ))}
-                                </select>
-                                <button
-                                  disabled={locked}
-                                  className="button secondary danger"
-                                  aria-label={`Remove takeoff ${t.description || "item"}`}
-                                  onClick={() =>
-                                    onChange({
-                                      ...q,
-                                      takeoff: q.takeoff.filter(
-                                        (item) => item.id !== t.id,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  Remove
-                                </button>
-                              </>
-                            ) : (
-                              <span className="tiny">
-                                Converted to an estimate line. Review that line
-                                separately.
-                              </span>
-                            )}
-                          </div>
                         </td>
                       </tr>
                       <tr>
@@ -488,8 +269,274 @@ export default function TakeoffTable({
                               );
                             }}
                           >
-                            <summary>Evidence & editing details</summary>
+                            <summary>
+                              Review material — specifications, evidence &
+                              calculations
+                            </summary>
                             <fieldset disabled={disabled}>
+                              <p className="tiny">
+                                <b>1. Drawing facts & specifications</b> —
+                                Existing extracted information is shown below;
+                                do not re-enter it. Verify it against the
+                                source.
+                              </p>
+                              <table className="takeoff-edit-table">
+                                <tbody>
+                                  {" "}
+                                  <tr>
+                                    <td data-label="Material description">
+                                      <input
+                                        aria-label="Takeoff description"
+                                        disabled={disabled}
+                                        value={t.description}
+                                        onChange={(e) =>
+                                          patch(t, {
+                                            description: e.target.value,
+                                          })
+                                        }
+                                      />
+                                      <p className="tiny">
+                                        {t.classification ?? "Contractor entry"}{" "}
+                                        ·{" "}
+                                        {t.sourceDocumentName ||
+                                          "Manual source"}
+                                        {t.page ? ` — Page ${t.page}` : ""}
+                                        {t.sourceDetailView
+                                          ? ` · Detail view ${t.sourceDetailView}`
+                                          : ""}
+                                      </p>
+                                      {requiresScopeVerification(t) &&
+                                        !t.convertedLineId && (
+                                          <label className="takeoff-scope-check">
+                                            <input
+                                              type="checkbox"
+                                              disabled={locked}
+                                              checked={!!t.scopeVerified}
+                                              onChange={(e) =>
+                                                patch(t, {
+                                                  scopeVerified:
+                                                    e.target.checked,
+                                                })
+                                              }
+                                            />
+                                            I verified existing/new/by-others
+                                            status and this item is included in
+                                            our contract scope.
+                                          </label>
+                                        )}
+                                    </td>
+                                    <td data-label="Written specification">
+                                      <input
+                                        aria-label="Written specification"
+                                        disabled={disabled}
+                                        value={t.specification ?? ""}
+                                        placeholder="Requires contractor input"
+                                        onChange={(e) =>
+                                          patch(t, {
+                                            specification: e.target.value,
+                                          })
+                                        }
+                                      />
+                                    </td>
+                                    <td data-label="Verified quantity">
+                                      <Field label="Takeoff quantity">
+                                        <NumberInput
+                                          value={t.quantity}
+                                          nullable
+                                          disabled={disabled}
+                                          placeholder="Requires contractor input"
+                                          onChange={(n) =>
+                                            patch(t, {
+                                              quantity: Number.isNaN(n)
+                                                ? null
+                                                : n,
+                                              classification: Number.isNaN(n)
+                                                ? "Contractor input required"
+                                                : "Estimating suggestion",
+                                              quantityMethod: "Unknown",
+                                              calculationBasis: "",
+                                              calculation: undefined,
+                                            })
+                                          }
+                                        />
+                                      </Field>
+                                      {t.quantity === null && (
+                                        <small>
+                                          Requires contractor input —{" "}
+                                          {t.destination === "Labour"
+                                            ? "enter verified labour hours; no hours were invented."
+                                            : "verify quantity; no quantity was invented."}
+                                        </small>
+                                      )}
+                                    </td>
+                                    <td data-label="Quantity unit">
+                                      <input
+                                        aria-label="Takeoff unit"
+                                        list="takeoff-units"
+                                        disabled={disabled}
+                                        value={t.unit}
+                                        onChange={(e) =>
+                                          patch(t, {
+                                            unit: e.target.value,
+                                            classification:
+                                              "Estimating suggestion",
+                                            quantityMethod: "Unknown",
+                                            calculationBasis: "",
+                                            calculation: undefined,
+                                          })
+                                        }
+                                      />
+                                    </td>
+                                    <td data-label="Confidence">
+                                      <select
+                                        aria-label="Confidence"
+                                        disabled={disabled}
+                                        value={t.confidence}
+                                        onChange={(e) =>
+                                          patch(t, {
+                                            confidence: e.target
+                                              .value as TakeoffItem["confidence"],
+                                          })
+                                        }
+                                      >
+                                        {[
+                                          "Unspecified",
+                                          "Low",
+                                          "Medium",
+                                          "High",
+                                        ].map((value) => (
+                                          <option key={value}>{value}</option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td data-label="Review status">
+                                      <select
+                                        aria-label="Review status"
+                                        disabled={disabled}
+                                        value={t.status}
+                                        onChange={(e) =>
+                                          updateItem(t, (item) =>
+                                            e.target.value === "Reviewed"
+                                              ? reviewTakeoff(item)
+                                              : e.target.value === "Approved"
+                                                ? approveTakeoff(item)
+                                                : {
+                                                    ...item,
+                                                    status: e.target
+                                                      .value as TakeoffItem["status"],
+                                                    reviewAcknowledged: false,
+                                                  },
+                                          )
+                                        }
+                                      >
+                                        <option>Proposed</option>
+                                        <option value="Reviewed">
+                                          {t.origin === "ai"
+                                            ? "Reviewed — awaiting approval"
+                                            : "Approved"}
+                                        </option>
+                                        <option>Approved</option>
+                                        <option>Rejected</option>
+                                      </select>
+                                      {!t.convertedLineId && (
+                                        <label className="takeoff-scope-check">
+                                          <input
+                                            type="checkbox"
+                                            disabled={locked}
+                                            checked={selected.includes(t.id)}
+                                            onChange={(e) =>
+                                              setSelected((ids) =>
+                                                e.target.checked
+                                                  ? [...ids, t.id]
+                                                  : ids.filter(
+                                                      (id) => id !== t.id,
+                                                    ),
+                                              )
+                                            }
+                                          />
+                                          Select for approval
+                                        </label>
+                                      )}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                              {!!overlappingItems(q, t).length && (
+                                <section className="overlap-comparison">
+                                  <h4>
+                                    Compare potentially overlapping materials
+                                  </h4>
+                                  <p>
+                                    Compare specifications, locations,
+                                    quantities, methods and source evidence.
+                                    Different assemblies and work by others must
+                                    remain separate. No quantities are added
+                                    together.
+                                  </p>
+                                  {overlappingItems(q, t).map((peer) => (
+                                    <article key={peer.id}>
+                                      <b>{peer.description}</b>
+                                      <p>
+                                        {peer.specification ||
+                                          "Specification unknown"}{" "}
+                                        · {peer.location || "Location unknown"}{" "}
+                                        · {peer.quantity ?? "Unknown"}{" "}
+                                        {peer.unit} · {workScope(peer)} ·{" "}
+                                        {peer.alternativeOption ||
+                                          "Method unspecified"}
+                                      </p>
+                                      <p>
+                                        Source: {peer.documentId || "manual"},
+                                        page {peer.page ?? "unknown"};{" "}
+                                        {peer.sourceFacts?.join("; ")}{" "}
+                                        {peer.notes}
+                                      </p>
+                                      <button
+                                        className="button secondary"
+                                        disabled={locked || !!t.convertedLineId}
+                                        onClick={() => {
+                                          if (
+                                            window.confirm(
+                                              "I verified these represent separate assemblies, locations or work scopes. Keep both records?",
+                                            )
+                                          )
+                                            onChange(
+                                              acknowledgeSeparate(q, t, peer),
+                                            );
+                                        }}
+                                      >
+                                        Confirm separate items
+                                      </button>
+                                      <button
+                                        className="button secondary"
+                                        disabled={
+                                          locked ||
+                                          !!t.convertedLineId ||
+                                          !!peer.convertedLineId
+                                        }
+                                        onClick={() => {
+                                          if (
+                                            window.confirm(
+                                              "Consolidate this matching material without adding quantities? The other item is retained as rejected source evidence. Review and approve the retained item again.",
+                                            )
+                                          ) {
+                                            try {
+                                              onChange(
+                                                consolidateCompared(q, t, peer),
+                                              );
+                                            } catch (error) {
+                                              onError((error as Error).message);
+                                            }
+                                          }
+                                        }}
+                                      >
+                                        Consolidate matching material
+                                      </button>
+                                    </article>
+                                  ))}
+                                </section>
+                              )}
+
                               <p className="tiny">
                                 {t.confidence} confidence · {t.classification} ·
                                 Support basis:{" "}
@@ -500,7 +547,10 @@ export default function TakeoffTable({
                                 <p>Written specification: {t.specification}</p>
                               )}
                               {!!t.sourceFacts?.length && (
-                                <p>Source facts: {t.sourceFacts.join("; ")}</p>
+                                <p>
+                                  <b>Extracted drawing facts:</b>{" "}
+                                  {t.sourceFacts.join("; ")}
+                                </p>
                               )}
                               {!!t.warnings?.length && (
                                 <p>
@@ -595,6 +645,16 @@ export default function TakeoffTable({
                                 </Field>
                               </div>
                               <div className="material-calculator">
+                                <h4>
+                                  2. Verified measurements & calculated quantity
+                                </h4>
+                                <p className="tiny">
+                                  Extracted specifications and source facts
+                                  remain above. Calculator fields require
+                                  verified values; missing dimensions, stock
+                                  choices and waste stay contractor input
+                                  required.
+                                </p>
                                 <Field label="Material calculator">
                                   <select
                                     value={recipe?.kind ?? ""}
@@ -833,6 +893,140 @@ export default function TakeoffTable({
                                   />
                                 </Field>
                               </div>
+                              {missingFor(t).length > 0 && (
+                                <section className="info">
+                                  <h4>Contractor input still required</h4>
+                                  <p>{missingFor(t).join(" · ")}</p>
+                                </section>
+                              )}
+                              <h4>
+                                3. Verify review, approve & add to estimate
+                              </h4>
+                              <table className="takeoff-edit-table">
+                                <tbody>
+                                  <tr>
+                                    <td data-label="3. Review, approve & add to estimate">
+                                      <div className="takeoff-row-actions">
+                                        {!t.convertedLineId ? (
+                                          <>
+                                            <button
+                                              disabled={locked}
+                                              className="button secondary"
+                                              aria-label="Mark reviewed — I verified this item"
+                                              onClick={() =>
+                                                updateItem(t, reviewTakeoff)
+                                              }
+                                            >
+                                              Review
+                                            </button>
+                                            <button
+                                              disabled={
+                                                locked ||
+                                                t.status !== "Reviewed" ||
+                                                !t.reviewAcknowledged ||
+                                                !!unresolvedOverlaps(q, t)
+                                                  .length
+                                              }
+                                              className="button"
+                                              aria-label="Approve item"
+                                              onClick={() =>
+                                                updateItem(t, approveTakeoff)
+                                              }
+                                            >
+                                              Approve
+                                            </button>
+                                            <button
+                                              disabled={locked}
+                                              className="button secondary"
+                                              aria-label="Reject item"
+                                              onClick={() =>
+                                                updateItem(t, (item) => ({
+                                                  ...item,
+                                                  status: "Rejected",
+                                                  reviewAcknowledged: false,
+                                                }))
+                                              }
+                                            >
+                                              Reject
+                                            </button>
+                                            <select
+                                              aria-label="Convert reviewed item to estimate"
+                                              value=""
+                                              disabled={
+                                                locked ||
+                                                !canConvert(t) ||
+                                                !!unresolvedOverlaps(q, t)
+                                                  .length ||
+                                                !t.description.trim()
+                                              }
+                                              onChange={(e) => {
+                                                try {
+                                                  onChange(
+                                                    takeoffToLine(
+                                                      q,
+                                                      t,
+                                                      e.target.value as Kind,
+                                                    ),
+                                                  );
+                                                } catch (error) {
+                                                  onError(
+                                                    (error as Error).message,
+                                                  );
+                                                }
+                                              }}
+                                            >
+                                              <option value="">
+                                                Add to estimate…
+                                              </option>
+                                              {(t.origin === "ai"
+                                                ? [
+                                                    t.destination ===
+                                                    "Subcontractor"
+                                                      ? "Other Costs"
+                                                      : t.destination,
+                                                  ].filter(
+                                                    (kind) =>
+                                                      kind &&
+                                                      kind !== "Informational",
+                                                  )
+                                                : [
+                                                    "Materials",
+                                                    "Labour",
+                                                    "Other Costs",
+                                                  ]
+                                              ).map((kind) => (
+                                                <option key={kind}>
+                                                  {kind}
+                                                </option>
+                                              ))}
+                                            </select>
+                                            <button
+                                              disabled={locked}
+                                              className="button secondary danger"
+                                              aria-label={`Remove takeoff ${t.description || "item"}`}
+                                              onClick={() =>
+                                                onChange({
+                                                  ...q,
+                                                  takeoff: q.takeoff.filter(
+                                                    (item) => item.id !== t.id,
+                                                  ),
+                                                })
+                                              }
+                                            >
+                                              Remove
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <span className="tiny">
+                                            Converted to an estimate line.
+                                            Review that line separately.
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
                             </fieldset>
                           </details>
                         </td>

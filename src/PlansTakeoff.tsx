@@ -905,7 +905,9 @@ export default function PlansTakeoff({
         className="button secondary"
         disabled={locked || busy || !q.takeoff.length}
         onClick={() =>
-          onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
+          window.confirm(
+            "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
+          ) && onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
         }
       >
         Consolidate exact unreviewed duplicates

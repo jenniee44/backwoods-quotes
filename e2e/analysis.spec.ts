@@ -59,6 +59,8 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
   const labour = cards.nth(0);
   await labour.screenshot({ path: "/tmp/backwoods-ai-review-card.png" });
   const materials = cards.nth(1);
+  await labour.locator("summary").click();
+  await materials.locator("summary").click();
   await expect(labour.getByLabel("Takeoff quantity")).toHaveValue("");
   await expect(labour.getByText(/Requires contractor input —/)).toBeVisible();
   await expect(
@@ -291,16 +293,17 @@ test("construction scope, summary-only observations, calculation evidence and sa
     }),
   ).toBeVisible();
   const joists = cards.filter({ has: page.locator('input[value="Joists"]') });
+  await expect(joists.getByLabel("Calculation basis")).not.toBeVisible();
+  await joists.locator("summary").click();
   await expect(joists.getByLabel("Takeoff quantity")).toHaveValue("11");
   await expect(joists.getByLabel("Written specification")).toHaveValue(
     '2x8 PT @ 16" O/C',
   );
   await joists.screenshot({ path: "/tmp/backwoods-compact-takeoff-card.png" });
-  await expect(joists.getByLabel("Calculation basis")).not.toBeVisible();
   await expect(
     joists.getByRole("button", { name: "Approve item", exact: true }),
   ).toBeDisabled();
-  await joists.getByText("Evidence & editing details", { exact: true }).click();
+
   await expect(joists.getByLabel("Calculation basis")).toHaveValue(
     "160 / 16 + 1 = 11; verify edge layout",
   );
@@ -325,9 +328,10 @@ test("construction scope, summary-only observations, calculation evidence and sa
   const stairs = cards.filter({
     has: page.locator('input[value="Deck stairs assembly"]'),
   });
+  await stairs.locator("summary").click();
   await expect(stairs.getByLabel("Takeoff quantity")).toHaveValue("");
   await expect(stairs.getByText(/enter verified labour hours/)).toBeVisible();
-  await stairs.getByText("Evidence & editing details", { exact: true }).click();
+
   await expect(stairs.getByLabel("Suggested destination")).toHaveValue(
     "Labour",
   );
@@ -434,6 +438,8 @@ test("useful deck observations become specific estimate candidates while unknown
   const hardware = card("Simpson LUS26 joist hangers");
   const footing = card("Apparent new footing/pier assemblies");
   const labour = card("Deck framing labour");
+  for (const item of [posts, beam, joists, hardware, footing, labour])
+    await item.locator("summary").click();
   await expect(posts.getByLabel("Takeoff quantity")).toHaveValue("3");
   await expect(beam.getByLabel("Takeoff quantity")).toHaveValue("4");
   await expect(beam.getByLabel("Takeoff unit")).toHaveValue("runs");
