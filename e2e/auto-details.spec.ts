@@ -30,7 +30,7 @@ test("automatic 250 DPI suggestions are inspected, editable, deduplicated, priva
     page.getByRole("button", { name: "Analyze Plans", exact: true }),
   ).toBeDisabled();
   await views.first().locator("summary").click();
-  await expect(views.getByRole("img")).toBeVisible();
+  await expect(views.locator(".detail-image-scroll img")).toBeVisible();
   await views.getByLabel("Detail name").fill("Foundation notes close-up");
   await views.getByLabel("Detail preview zoom (%)").fill("50");
   await views.getByLabel("Left edge (%)").fill("1");

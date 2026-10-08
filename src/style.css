@@ -2276,6 +2276,8 @@ details[open] > summary {
   overflow-wrap: anywhere;
 }
 .detail-image-scroll {
+  contain: inline-size;
+  width: 100%;
   overflow: auto;
   max-height: 420px;
   max-width: 100%;
@@ -2287,4 +2289,63 @@ details[open] > summary {
 }
 .detail-inspector .fields {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.detail-view-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid #dce3dd;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.detail-thumbnail-button {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  background: #f4f7f1;
+  border: 1px solid #bbcabb;
+  border-radius: 6px;
+  cursor: zoom-in;
+  text-align: center;
+}
+.detail-thumbnail {
+  display: block;
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+  background: white;
+}
+.detail-source-map {
+  contain: inline-size;
+  width: 100%;
+  position: relative;
+  max-width: 500px;
+  margin: 12px auto;
+}
+.detail-source-map canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.detail-source-map svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.detail-image-scroll {
+  contain: inline-size;
+  width: 100%;
+  cursor: grab;
+}
+.detail-image-scroll:active {
+  cursor: grabbing;
+}
+.detail-image-scroll img {
+  user-select: none;
+  -webkit-user-select: none;
 }

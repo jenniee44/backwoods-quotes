@@ -112,6 +112,10 @@ export default function PlansTakeoff({
       ),
     [detailViews, q.documents],
   );
+  const [previewReady, setPreviewReady] = useState<Record<string, string>>({});
+  const allPreviewsReady = validDetails
+    .filter((v) => v.automatic && !excludedDocuments.includes(v.documentId))
+    .every((v) => previewReady[v.id] === v.region.data);
   const [detailsInspected, setDetailsInspected] = useState(false);
   const selectedDocuments = useMemo(
     () =>
@@ -189,7 +193,7 @@ export default function PlansTakeoff({
       (validDetails.some(
         (v) => v.automatic && !excludedDocuments.includes(v.documentId),
       ) &&
-        !detailsInspected) ||
+        (!detailsInspected || !allPreviewsReady)) ||
       request.current ||
       locked ||
       detailProcessing ||
@@ -475,7 +479,7 @@ export default function PlansTakeoff({
             (validDetails.some(
               (v) => v.automatic && !excludedDocuments.includes(v.documentId),
             ) &&
-              !detailsInspected) ||
+              (!detailsInspected || !allPreviewsReady)) ||
             locked ||
             busy ||
             detailProcessing ||
@@ -925,8 +929,8 @@ export default function PlansTakeoff({
             <label className="check-options">
               <input
                 type="checkbox"
-                disabled={busy || detailProcessing}
-                checked={detailsInspected}
+                disabled={busy || detailProcessing || !allPreviewsReady}
+                checked={detailsInspected && allPreviewsReady}
                 onChange={(e) => setDetailsInspected(e.target.checked)}
               />
               I inspected all selected automatic detail views and their source
@@ -940,6 +944,16 @@ export default function PlansTakeoff({
                 region={view.region}
                 disabled={locked || busy || detailProcessing}
                 onBusy={setDetailRendering}
+                onPreviewReady={(ready) =>
+                  setPreviewReady((previous) => {
+                    if (ready && previous[view.id] === view.region.data)
+                      return previous;
+                    const next = { ...previous };
+                    if (ready) next[view.id] = view.region.data;
+                    else delete next[view.id];
+                    return next;
+                  })
+                }
                 onChange={(region) => {
                   setDetailsInspected(false);
                   setDetailViews((previous) =>
