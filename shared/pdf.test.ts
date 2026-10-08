@@ -104,8 +104,8 @@ it.each([
 );
 it("limits detail count and aggregate bytes without touching the original", () => {
   expect(() =>
-    validateDocuments([{ ...pdf, detailRegions: Array(5).fill(region) }]),
-  ).toThrow("four");
+    validateDocuments([{ ...pdf, detailRegions: Array(25).fill(region) }]),
+  ).toThrow("24");
   const large = region.data + "A".repeat(2_600_000);
   expect(() =>
     validateDocuments([
@@ -167,4 +167,23 @@ it("wraps left/right quarter turns", () => {
   expect(normalizeRotation(-90)).toBe(270);
   expect(normalizeRotation(360)).toBe(0);
   expect(normalizeRotation(450)).toBe(90);
+});
+
+it("accepts 20 bounded detailed views and safe names while projecting away arbitrary metadata", () => {
+  const validated = validateDocuments([
+    {
+      ...pdf,
+      detailRegions: Array.from({ length: 20 }, () => ({
+        ...region,
+        label: "Foundation notes",
+        privateGuess: "Never sent",
+      })),
+    },
+  ]);
+  expect(validated[0].detailRegions).toHaveLength(20);
+  expect(validated[0].detailRegions![0].label).toBe("Foundation notes");
+  expect(validated[0].detailRegions![0]).not.toHaveProperty("privateGuess");
+  expect(() =>
+    validatePdfRegion({ ...region, label: "x".repeat(121) }),
+  ).toThrow();
 });

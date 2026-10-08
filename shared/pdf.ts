@@ -7,7 +7,7 @@ export function normalizeRotation(degrees: number): PdfRotation {
 export const detailDpi = 250;
 export const maxDetailPixels = 8_000_000;
 export const maxDetailSide = 4096;
-export const maxDetailRegions = 4;
+export const maxDetailRegions = 24;
 export const maxPdfTextChars = 60_000;
 export const maxAnalysisTextChars = 120_000;
 export type PdfTextPage = {
@@ -23,6 +23,7 @@ export type PdfTextLayer = {
   truncated: boolean;
 };
 export type PdfDetailRegion = {
+  label?: string;
   // Absolute clockwise PDF.js viewport orientation, including intrinsic /Rotate.
   rotation?: PdfRotation;
   page: number;
@@ -101,6 +102,8 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
   };
   if (
     !record(value) ||
+    (value.label !== undefined &&
+      (typeof value.label !== "string" || value.label.length > 120)) ||
     !pageNumber(value.page) ||
     (value.rotation !== undefined &&
       ![0, 90, 180, 270].includes(Number(value.rotation))) ||
@@ -190,6 +193,7 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     ...(value.rotation !== undefined
       ? { rotation: value.rotation as PdfRotation }
       : {}),
+    ...(value.label !== undefined ? { label: value.label as string } : {}),
     page: Number(value.page),
     x: Number(value.x),
     y: Number(value.y),

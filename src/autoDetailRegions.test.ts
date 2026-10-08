@@ -1,0 +1,67 @@
+import { it, expect } from "vitest";
+import {
+  suggestPageRegions,
+  selectDetailRegions,
+  overlap,
+} from "./autoDetailRegions";
+it("prioritizes real small construction text, bounds crops and avoids heavy overlap without interpreting quantities", () => {
+  const marks = [
+    { text: "FOOTING: VERIFY DEPTH", x: 20, y: 40, width: 180, height: 6 },
+    { text: "BEAM 3-PLY 2x10", x: 30, y: 55, width: 130, height: 6 },
+    { text: "STAIR LANDING", x: 1400, y: 900, width: 90, height: 7 },
+  ];
+  const selected = selectDetailRegions(
+    suggestPageRegions(1, 2592, 1728, marks),
+  );
+  expect(selected).toHaveLength(2);
+  expect(selected[0].label).toBe("Foundations & footings");
+  expect(overlap(selected[0], selected[1])).toBe(0);
+  for (const r of selected) {
+    expect(r.x + r.width).toBeLessThanOrEqual(2592);
+    expect(r.y + r.height).toBeLessThanOrEqual(1728);
+    expect(r).not.toHaveProperty("quantity");
+  }
+  expect(
+    selectDetailRegions(suggestPageRegions(1, 2592, 1728, marks), 20, selected),
+  ).toHaveLength(0);
+});
+it("scans use honest coverage suggestions; caps at 20 and respects remaining capacity and physical pages", () => {
+  const candidates = [
+    ...suggestPageRegions(1, 2592, 1728, []),
+    ...suggestPageRegions(2, 2592, 1728, []),
+  ];
+  expect(selectDetailRegions(candidates)).toHaveLength(20);
+  expect(selectDetailRegions(candidates, 2)).toHaveLength(2);
+  expect(candidates[0].label).toContain("inspect manually");
+});
+it("different page orientations are not treated as the same crop", () => {
+  const r = suggestPageRegions(1, 600, 600, [])[0];
+  expect(overlap({ ...r, rotation: 90 }, r)).toBe(0);
+});
+
+it("suppresses the same original source region across viewer rotations", () => {
+  const a = {
+    page: 1,
+    x: 50,
+    y: 60,
+    width: 100,
+    height: 150,
+    pageWidth: 600,
+    pageHeight: 800,
+    rotation: 0,
+    label: "manual",
+    score: 1,
+  };
+  const b = {
+    ...a,
+    x: 800 - 60 - 150,
+    y: 50,
+    width: 150,
+    height: 100,
+    pageWidth: 800,
+    pageHeight: 600,
+    rotation: 90,
+  };
+  expect(overlap(a, b)).toBe(1);
+  expect(selectDetailRegions([b], 20, [a])).toHaveLength(0);
+});

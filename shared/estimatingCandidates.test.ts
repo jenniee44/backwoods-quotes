@@ -131,7 +131,7 @@ it("detail provenance must refer to an actual supplied crop on the same page", (
       ],
     ),
   ).toThrow();
-  for (const bad of [0, 5, "1"]) {
+  for (const bad of [0, 25, "1"]) {
     Object.assign(data.sourceObservations![0], { sourceDetailView: bad });
     expect(() => validateAnalysis(data, ["plan"])).toThrow();
   }

@@ -107,7 +107,11 @@ export const materialCategories = [
   "Stairs / stringers",
 ];
 const evidenceProperties = {
-  sourceDetailView: { type: ["integer", "null"], minimum: 1, maximum: 4 },
+  sourceDetailView: {
+    type: ["integer", "null"],
+    minimum: 1,
+    maximum: maxDetailRegions,
+  },
   supportBasis: {
     type: "string",
     enum: [
@@ -154,7 +158,7 @@ export function validConstructionEvidence(v: Record<string, unknown>): boolean {
         (typeof value === "number" &&
           Number.isInteger(value) &&
           value >= 1 &&
-          value <= 4)
+          value <= maxDetailRegions)
       );
     if ("enum" in schema) return schema.enum.includes(value as never);
     if (key === "sourceFacts") return texts(value, 20);
@@ -468,7 +472,7 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
         regionCount++;
         total += atob(region.data.split(",")[1]).length;
         if (regionCount > maxDetailRegions)
-          throw new Error("Include up to four PDF detail views per analysis.");
+          throw new Error("Include up to 24 PDF detail views per analysis.");
         if (total > maxAnalysisBytes)
           throw new Error(
             "Original files and detail views must fit within 8 MB. Remove a detail or select fewer files; originals are never reduced.",

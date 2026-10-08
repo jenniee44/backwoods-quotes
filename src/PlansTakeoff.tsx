@@ -1,3 +1,6 @@
+import { analysisBatches, analyzeBatches } from "./analysisBatches";
+import AutoDetailSelection from "./AutoDetailSelection";
+import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
 import { assertScope } from "./takeoffScope";
 import { consolidateTakeoff } from "./consolidateTakeoff";
@@ -18,7 +21,6 @@ import {
   editTakeoff,
   approveTakeoffBatch,
 } from "./planAnalysis";
-import { validateDocuments } from "../shared/analysis";
 import { validatePlanFile } from "./validatePlanFile";
 import PdfPreview from "./PdfPreview";
 import { useEffect, useState, useRef, useMemo } from "react";
@@ -98,6 +100,7 @@ export default function PlansTakeoff({
       documentId: string;
       originalData: string;
       region: PdfDetailRegion;
+      automatic?: boolean;
     }[]
   >([]);
   const validDetails = useMemo(
@@ -109,6 +112,7 @@ export default function PlansTakeoff({
       ),
     [detailViews, q.documents],
   );
+  const [detailsInspected, setDetailsInspected] = useState(false);
   const selectedDocuments = useMemo(
     () =>
       q.documents
@@ -134,13 +138,12 @@ export default function PlansTakeoff({
     const controller = new AbortController();
     void optimizeAnalysisPackage(selectedDocuments, controller.signal)
       .then((documents) => {
-        if (documents.length && !packageProblem(documents))
-          validateDocuments(documents);
+        if (documents.length) analysisBatches(documents);
         if (!controller.signal.aborted)
           setAnalysisPackage({
             sources: selectedDocuments,
             documents,
-            error: packageProblem(documents),
+            error: "",
           });
       })
       .catch((error) => {
@@ -148,7 +151,8 @@ export default function PlansTakeoff({
           setAnalysisPackage({
             sources: selectedDocuments,
             documents: selectedDocuments,
-            error: (error as Error).message,
+            error:
+              packageProblem(selectedDocuments) || (error as Error).message,
           });
       });
     return () => controller.abort();
@@ -166,6 +170,8 @@ export default function PlansTakeoff({
   const [reviewError, setReviewError] = useState("");
   const [inputNotes, setInputNotes] = useState<string[]>([]);
   const [detailRendering, setDetailRendering] = useState(false);
+  const [automaticRendering, setAutomaticRendering] = useState(false);
+  const detailProcessing = detailRendering || automaticRendering;
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
   const busy =
@@ -180,9 +186,13 @@ export default function PlansTakeoff({
   );
   async function analyze() {
     if (
+      (validDetails.some(
+        (v) => v.automatic && !excludedDocuments.includes(v.documentId),
+      ) &&
+        !detailsInspected) ||
       request.current ||
       locked ||
-      detailRendering ||
+      detailProcessing ||
       !packageReady ||
       analysisPackage.error
     )
@@ -195,7 +205,7 @@ export default function PlansTakeoff({
     setAnalysisState("Uploading/preparing");
     try {
       const documents = structuredClone(analysisPackage.documents);
-      validateDocuments(documents);
+      analysisBatches(documents);
       const fingerprint = await documentFingerprint(documents);
       if (
         latest.current.analysisReports?.some(
@@ -205,7 +215,23 @@ export default function PlansTakeoff({
         throw new Error(
           "These plans have already been analyzed. Review the existing proposed items.",
         );
-      const prepared = await preparePlanAnalysis(documents, controller.signal);
+      const originalText = await preparePlanAnalysis(
+        documents.map((d) => {
+          const copy = { ...d };
+          delete copy.detailRegions;
+          return copy;
+        }),
+        controller.signal,
+      );
+      const prepared = originalText.map((d) => ({
+        ...d,
+        ...(documents.find((s) => s.id === d.id)?.detailRegions
+          ? {
+              detailRegions: documents.find((s) => s.id === d.id)!
+                .detailRegions,
+            }
+          : {}),
+      }));
       controller.signal.throwIfAborted();
       setInputNotes(
         prepared
@@ -231,9 +257,15 @@ export default function PlansTakeoff({
           }),
       );
       setAnalysisState("Analyzing plans");
-      const result = await planAnalysisService.analyze(
+      const result = await analyzeBatches(
         prepared,
         controller.signal,
+        (docs, signal) => planAnalysisService.analyze(docs, signal),
+        (number, total) =>
+          setInputNotes((notes) => [
+            ...notes.filter((n) => !n.startsWith("Analyzing batch")),
+            `Analyzing batch ${number} of ${total}. Original PDFs accompany every batch; nothing is added until all succeed.`,
+          ]),
       );
       if (controller.signal.aborted) return;
       if (
@@ -419,13 +451,34 @@ export default function PlansTakeoff({
           Extracted results stay private to your estimate.
         </p>
       </div>
+      {validDetails.some((v) => v.automatic) && !detailsInspected && (
+        <p className="info">
+          Inspect the generated images below, then confirm the detail-view
+          review before analysis.
+        </p>
+      )}
+      {packageReady &&
+        !analysisPackage.error &&
+        packageSize.total > 8_000_000 && (
+          <p className="info">
+            This package will use{" "}
+            {analysisBatches(analysisPackage.documents).length} bounded
+            requests. Every request includes all selected originals. This
+            increases AI cost and uses the existing rate limit; a failure or
+            cancellation adds no partial takeoff.
+          </p>
+        )}
       <div className="heading-actions">
         <button
           className="button"
           disabled={
+            (validDetails.some(
+              (v) => v.automatic && !excludedDocuments.includes(v.documentId),
+            ) &&
+              !detailsInspected) ||
             locked ||
             busy ||
-            detailRendering ||
+            detailProcessing ||
             uploading ||
             !packageReady ||
             !!analysisPackage?.error ||
@@ -793,11 +846,12 @@ export default function PlansTakeoff({
             locked ||
             busy ||
             uploading ||
+            detailProcessing ||
             validDetails.length >= maxDetailRegions
           }
           onDetail={(region) => {
             if (validDetails.length >= maxDetailRegions) {
-              onError("Include up to four detail views per analysis.");
+              onError("Include up to 24 detail views per analysis.");
               return;
             }
             if (
@@ -827,17 +881,74 @@ export default function PlansTakeoff({
           }}
         />
       )}
+      {current?.type === "application/pdf" && (
+        <AutoDetailSelection
+          source={current}
+          existing={validDetails
+            .filter((v) => v.documentId === current.id)
+            .map((v) => v.region)}
+          remainingCapacity={maxDetailRegions - validDetails.length}
+          remainingAutomatic={Math.max(
+            0,
+            20 - validDetails.filter((v) => v.automatic).length,
+          )}
+          disabled={locked || busy || uploading || detailProcessing}
+          onBusy={setAutomaticRendering}
+          onAdd={(regions) => {
+            setDetailsInspected(false);
+            setExcludedDocuments((ids) =>
+              ids.filter((id) => id !== current.id),
+            );
+            setDetailViews((previous) => [
+              ...previous,
+              ...regions.map((region) => ({
+                id: id(),
+                documentId: current.id,
+                originalData: current.data,
+                region,
+                automatic: true,
+              })),
+            ]);
+          }}
+        />
+      )}
       {!!validDetails.length && (
         <div className="pdf-detail-list">
           <h3>Detail views included in analysis</h3>
           <p className="tiny">
             Temporary 250 DPI views rendered directly from the original PDF. Up
-            to four; original files + optimized details must fit within 8 MB.
-            Re-add views after leaving this tab. Only views from selected source
-            files are sent.
+            to 20 automatic / 24 total; each analysis request must fit 8 MB.
+            Larger detail packages use bounded batches. Re-add views after
+            leaving this tab. Only views from selected source files are sent.
           </p>
+          {validDetails.some((v) => v.automatic) && (
+            <label className="check-options">
+              <input
+                type="checkbox"
+                disabled={busy || detailProcessing}
+                checked={detailsInspected}
+                onChange={(e) => setDetailsInspected(e.target.checked)}
+              />
+              I inspected all selected automatic detail views and their source
+              regions.
+            </label>
+          )}
           {validDetails.map((view) => (
             <div key={view.id}>
+              <DetailViewEditor
+                source={q.documents.find((d) => d.id === view.documentId)!}
+                region={view.region}
+                disabled={locked || busy || detailProcessing}
+                onBusy={setDetailRendering}
+                onChange={(region) => {
+                  setDetailsInspected(false);
+                  setDetailViews((previous) =>
+                    previous.map((v) =>
+                      v.id === view.id ? { ...v, region } : v,
+                    ),
+                  );
+                }}
+              />
               <span>
                 {q.documents.find((d) => d.id === view.documentId)?.name} · Page{" "}
                 {view.region.page} · {view.region.pixelWidth} ×{" "}

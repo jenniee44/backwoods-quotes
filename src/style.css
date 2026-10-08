@@ -2267,3 +2267,24 @@ details[open] > summary {
   font-weight: 600;
   margin-bottom: 4px;
 }
+.detail-inspector {
+  width: 100%;
+  min-width: 0;
+  margin: 8px 0;
+}
+.detail-inspector summary {
+  overflow-wrap: anywhere;
+}
+.detail-image-scroll {
+  overflow: auto;
+  max-height: 420px;
+  max-width: 100%;
+  border: 1px solid #dce3dd;
+}
+.pdf-detail-list > div {
+  display: block;
+  min-width: 0;
+}
+.detail-inspector .fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
