@@ -120,6 +120,9 @@ export default function PlansTakeoff({
       validDetails.map((v) => v.region.reviewGroup || "Manual details"),
     ),
   ];
+  const attentionDetails = validDetails.filter(
+    (v) => v.region.orientationUncertain || v.region.cropNeedsReview,
+  );
   const [excludedDetails, setExcludedDetails] = useState<string[]>([]);
   const [originalOnlyConfirmed, setOriginalOnlyConfirmed] = useState(false);
   const selectedDetails = validDetails.filter(
@@ -1056,18 +1059,26 @@ export default function PlansTakeoff({
               <select
                 aria-label="Detail review group"
                 value={
-                  detailGroups.includes(detailGroup)
+                  detailGroups.includes(detailGroup) ||
+                  detailGroup === "Needs attention"
                     ? detailGroup
                     : "All details"
                 }
                 onChange={(e) => setDetailGroup(e.target.value)}
               >
                 <option>All details</option>
+                <option value="Needs attention">
+                  Needs rotation / crop review ({attentionDetails.length})
+                </option>
                 {detailGroups.map((group) => (
                   <option key={group}>{group}</option>
                 ))}
               </select>
             </label>
+            <p role="status">
+              {attentionDetails.length} views need rotation or crop attention.
+              Selecting a review group never changes which images are submitted.
+            </p>
             <span>
               {validDetails.length} views · choose a group to compare related
               details. Exclude anything unnecessary.
@@ -1078,8 +1089,14 @@ export default function PlansTakeoff({
               <div
                 className="detail-review-item"
                 hidden={
-                  detailGroups.includes(detailGroup) &&
-                  detailGroup !== (view.region.reviewGroup || "Manual details")
+                  detailGroup === "Needs attention"
+                    ? !(
+                        view.region.orientationUncertain ||
+                        view.region.cropNeedsReview
+                      )
+                    : detailGroups.includes(detailGroup) &&
+                      detailGroup !==
+                        (view.region.reviewGroup || "Manual details")
                 }
                 key={view.id}
               >

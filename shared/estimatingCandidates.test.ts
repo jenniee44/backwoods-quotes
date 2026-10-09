@@ -348,3 +348,38 @@ it("a trade suggestion mentioning a subcontractor does not establish explicit by
     subcontractorBasis: "Not established",
   });
 });
+
+it("repeated detail observations of the same new footings retain sources without additive quantities", () => {
+  const source = deckTakeoffFixture();
+  const footing = source.sourceObservations!.find((s) =>
+    /footing|pier/i.test(s.description),
+  )!;
+  expect(footing).toBeDefined();
+  source.sourceObservations = [
+    {
+      ...footing,
+      quantity: 7,
+      sourceDetailView: 1,
+      supportBasis: "Apparent new work",
+      location: "Rear deck",
+    },
+    {
+      ...footing,
+      quantity: 7,
+      sourceDetailView: 2,
+      supportBasis: "Apparent new work",
+      location: "Rear deck",
+    },
+  ];
+  source.suggestions = [];
+  const result = prepareConstructionAnalysis(source);
+  const candidates = result.suggestions.filter(
+    (s) => s.category === "Footings / concrete",
+  );
+  expect(candidates).toHaveLength(1);
+  expect(candidates[0].quantity).toBe(7);
+  expect(result.sourceObservations).toHaveLength(2);
+  expect(result.sourceObservations?.map((s) => s.sourceDetailView)).toEqual([
+    1, 2,
+  ]);
+});

@@ -1,4 +1,7 @@
-import { administrativeText } from "./detailReadability";
+import {
+  administrativeText,
+  criticalDrawingWarning,
+} from "./detailReadability";
 // Region suggestions locate source content; they never infer site measurements.
 export type TextMark = {
   text: string;
@@ -22,9 +25,13 @@ export type DetailSuggestion = {
 };
 const topics: [string, RegExp][] = [
   ["Foundations & footings", /foundation|footing|pier|pile/i],
-  ["Framing & connections", /fram|beam|joist|post|ledger|connection|hanger/i],
+  [
+    "Framing & connections",
+    /fram|beam|joist|post|ledger|connection|hanger|\d+\s*[- ]?ply|\d+\s*[x×]\s*\d+\s*(?:PT|SPF|LVL)\b/i,
+  ],
   ["Stairs & landings", /stair|landing|tread|riser/i],
   ["Guards & railings", /guard|railing|baluster/i],
+  ["Safety & construction status", criticalDrawingWarning],
   ["Specifications & schedules", /spec|note|schedule|material|callout/i],
   ["Elevations & sections", /elevation|section|detail/i],
   ["Written dimensions", /\d+\s*(?:ft|in\b|mm|cm|["′″'])/i],
@@ -103,6 +110,7 @@ export function suggestPageRegions(
     .flatMap((m) => {
       if (
         administrativeText.test(m.text) &&
+        !criticalDrawingWarning.test(m.text) &&
         !/footing|beam|joist|connection|spacing|material|concrete/i.test(m.text)
       )
         return [];
@@ -113,7 +121,8 @@ export function suggestPageRegions(
               m.x + Math.min(m.width, 300) / 2,
               m.y,
               topic?.[0] ?? "Small selectable text",
-              (topic ? 10 : 2) + (m.height <= 10 ? 4 : 0),
+              (topic ? (/Foundations|Framing/.test(topic[0]) ? 16 : 10) : 2) +
+                (m.height <= 10 ? 4 : 0),
             ),
           ]
         : [];

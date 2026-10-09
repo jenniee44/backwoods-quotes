@@ -129,3 +129,55 @@ it("oblique construction text still counts against confidence instead of being s
     reliable: false,
   });
 });
+
+it("mostly clipped text from outside a detail cannot reverse its readable local annotation", () => {
+  const region = {
+    x: 100,
+    y: 100,
+    width: 200,
+    height: 200,
+    rotation: 0 as PdfRotation,
+    label: "Framing",
+  };
+  const local = text(0, 140, 620, "BEAM SPECIFICATION PT LUMBER");
+  const outside = text(
+    180,
+    410,
+    620,
+    "FOOTING NOTES CONNECTION SPECIFICATIONS",
+  );
+  outside.width = 120;
+  expect(orientDetail(page, region, [local, outside]).rotation).toBe(0);
+});
+it("member annotations take priority over perpendicular dimension strings without a universal rotation", () => {
+  expect(
+    chooseDetailOrientation(180, [
+      text(0, 100, 100, "JOISTS PT MEMBER SPECIFICATION"),
+      text(90, 100, 100, "16 IN"),
+      text(90, 100, 100, "20 FT"),
+    ]),
+  ).toMatchObject({ rotation: 0, reliable: true });
+});
+it("text geometry respects the font's real vertical axis for sheared annotations", () => {
+  const item = text(0);
+  item.transform[2] = 3;
+  const b = textBounds(item, page.getViewport({ scale: 1, rotation: 0 }));
+  expect(b.width).toBeCloseTo(120 + (6 * 3) / Math.sqrt(45));
+});
+
+it("readable safety/status warnings can establish their own upright orientation", () => {
+  expect(
+    chooseDetailOrientation(180, [
+      text(0, 100, 150, "REVISION 3 - NOT FOR CONSTRUCTION"),
+    ]),
+  ).toMatchObject({ rotation: 0, reliable: true });
+});
+
+it("a supported local majority suggests an upright view while remaining explicitly uncertain", () => {
+  const result = chooseDetailOrientation(180, [text(0), text(0), text(90)]);
+  expect(result).toMatchObject({
+    rotation: 0,
+    reliable: false,
+    suggested: true,
+  });
+});

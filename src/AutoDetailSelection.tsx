@@ -134,6 +134,8 @@ export default function AutoDetailSelection({
             ...capture,
             label: region.label,
             reviewGroup: oriented.reviewGroup,
+            orientationUncertain: oriented.orientationUncertain,
+            cropNeedsReview: !!region.inspectionNote,
             inspectionNote: [oriented.inspectionNote, region.inspectionNote]
               .filter(Boolean)
               .join(" "),

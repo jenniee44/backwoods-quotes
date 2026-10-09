@@ -78,3 +78,20 @@ it("suppresses the same original source region across viewer rotations", () => {
   expect(overlap(a, b)).toBe(1);
   expect(selectDetailRegions([b], 20, [a])).toHaveLength(0);
 });
+
+it("structural member labels keep their construction group when they also contain verification warnings", () => {
+  const [candidate] = suggestPageRegions(1, 1800, 1200, [
+    {
+      text: "BEAM 2PLY 2X8 PT VERIFY ON SITE",
+      x: 500,
+      y: 400,
+      width: 200,
+      height: 6,
+    },
+  ]);
+  expect(candidate.label).toBe("Framing & connections");
+  const [notation] = suggestPageRegions(1, 1800, 1200, [
+    { text: "4PLY 2X12 SYP", x: 500, y: 400, width: 90, height: 6 },
+  ]);
+  expect(notation.label).toBe("Framing & connections");
+});

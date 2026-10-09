@@ -5,10 +5,16 @@ import type { TextDirection } from "./pdfOrientation";
 export type PreparedDetail = PdfDetailRegion & {
   inspectionNote?: string;
   reviewGroup?: string;
+  orientationUncertain?: boolean;
+  cropNeedsReview?: boolean;
 };
 export type PositionedText = TextDirection & { width: number; height: number };
 export const constructionText =
   /footing|foundation|beam|joist|post|framing|connection|hanger|ledger|stair|guard|railing|specification|construction|notes?|spacing|lumber|concrete|schedule|\d+\s*(?:ft|in\b|mm|cm|["′″'])/i;
+export const criticalDrawingWarning =
+  /do not scale|verify.*(?:site|field)|not for construction|preliminary|superseded|revision\s+(?:\d+|[A-Z]\b)|engineer.*verify|contractor.*verify|existing conditions|by others|not in contract|hold for|construction status/i;
+export const memberAnnotation =
+  /joist|beam|post|footing|foundation|ledger|hanger|connection|ply|plies|pressure treated|\bPT\b|specification/i;
 export const administrativeText =
   /drawn by|checked by|copyright|revision|project address|sheet\s*(?:no|number|\d)|drawing\s*(?:no|number)|scale\s*[:\d]|do not scale|\bdate\b/i;
 export function textBounds(
@@ -18,6 +24,9 @@ export function textBounds(
   const length = Math.hypot(item.transform[0], item.transform[1]) || 1;
   const dx = item.transform[0] / length,
     dy = item.transform[1] / length;
+  const vertical = Math.hypot(item.transform[2], item.transform[3]) || length;
+  const vx = item.transform[2] / vertical,
+    vy = item.transform[3] / vertical;
   const corners = [
     [0, 0],
     [item.width, 0],
@@ -25,8 +34,8 @@ export function textBounds(
     [item.width, item.height],
   ].map(([a, b]) =>
     viewport.convertToViewportPoint(
-      item.transform[4] + a * dx - b * dy,
-      item.transform[5] + a * dy + b * dx,
+      item.transform[4] + a * dx + b * vx,
+      item.transform[5] + a * dy + b * vy,
     ),
   );
   const x = Math.min(...corners.map((c) => c[0])),
@@ -51,7 +60,7 @@ export function intersects(
 }
 export function chooseDetailOrientation(
   fallback: PdfRotation,
-  items: PositionedText[],
+  items: (PositionedText & { coverage?: number })[],
 ) {
   const scores = [0, 90, 180, 270].map((rotation) => ({
     rotation: rotation as PdfRotation,
@@ -60,7 +69,12 @@ export function chooseDetailOrientation(
   let unsupported = false;
   let total = 0;
   for (const item of items) {
-    if (!item.str.trim() || administrativeText.test(item.str)) continue;
+    if (
+      !item.str.trim() ||
+      (administrativeText.test(item.str) &&
+        !criticalDrawingWarning.test(item.str))
+    )
+      continue;
     // Reflected or degenerate text cannot be made reliably upright by a quarter turn.
     if (
       item.transform[0] * item.transform[3] -
@@ -74,7 +88,12 @@ export function chooseDetailOrientation(
       (Math.atan2(item.transform[1], item.transform[0]) * 180) / Math.PI;
     const weight =
       Math.min(120, item.str.replace(/\s/g, "").length) *
-      (constructionText.test(item.str) ? 4 : 1) *
+      (memberAnnotation.test(item.str)
+        ? 8
+        : constructionText.test(item.str)
+          ? 2
+          : 1) *
+      (item.coverage ?? 1) *
       (item.height <= 10 ? 1.5 : 1);
     total += weight;
     for (const score of scores) {
@@ -85,9 +104,19 @@ export function chooseDetailOrientation(
   const ranked = [...scores].sort((a, b) => b.weight - a.weight);
   const reliable =
     !unsupported && total >= 12 && ranked[0].weight / total >= 0.75;
+  const matched = scores.reduce((sum, score) => sum + score.weight, 0);
+  // A supported majority may offer a useful view without being claimed reliable.
+  // Ties, scans, reflections and oblique text keep the source orientation.
+  const suggested =
+    !unsupported &&
+    total >= 12 &&
+    matched / total >= 0.9 &&
+    ranked[0].weight / total >= 0.55 &&
+    ranked[0].weight > ranked[1].weight;
   return {
-    rotation: reliable ? ranked[0].rotation : fallback,
+    rotation: reliable || suggested ? ranked[0].rotation : fallback,
     reliable,
+    suggested: suggested && !reliable,
     scores,
   };
 }
@@ -97,9 +126,23 @@ export function orientDetail<
   },
 >(page: Pick<PDFPageProxy, "getViewport">, region: T, items: PositionedText[]) {
   const old = page.getViewport({ scale: 1, rotation: region.rotation ?? 0 });
-  const local = items.filter((item) =>
-    intersects(region, textBounds(item, old)),
-  );
+  const local = items.flatMap((item) => {
+    const bounds = textBounds(item, old);
+    const area =
+      Math.max(
+        0,
+        Math.min(region.x + region.width, bounds.x + bounds.width) -
+          Math.max(region.x, bounds.x),
+      ) *
+      Math.max(
+        0,
+        Math.min(region.y + region.height, bounds.y + bounds.height) -
+          Math.max(region.y, bounds.y),
+      );
+    const coverage = area / Math.max(1, bounds.width * bounds.height);
+    // A clipped annotation outside this crop must not decide its reading direction.
+    return coverage >= 0.6 ? [{ ...item, coverage }] : [];
+  });
   const choice = chooseDetailOrientation(
     normalizeRotation(region.rotation ?? 0),
     local,
@@ -129,9 +172,12 @@ export function orientDetail<
     pageWidth: next.width,
     pageHeight: next.height,
     rotation: choice.rotation,
+    orientationUncertain: !choice.reliable,
     inspectionNote: choice.reliable
       ? "Text direction checked for this detail. Verify legibility before analysis."
-      : "Orientation uncertain — inspect and rotate this detail manually. No OCR guesses.",
+      : choice.suggested
+        ? "Mixed text directions — suggested orientation needs manual inspection. Rotate if necessary."
+        : "Orientation uncertain — inspect and rotate this detail manually. No OCR guesses.",
     reviewGroup: region.label || "Manual details",
   };
 }

@@ -1,6 +1,7 @@
 import {
   administrativeText,
   constructionText,
+  criticalDrawingWarning,
   intersects,
 } from "./detailReadability";
 import { detailRenderSize } from "../shared/pdf";
@@ -65,6 +66,60 @@ export function regionInk(
       count += survey.ink[y * survey.width + x];
   return count;
 }
+// Connected linework can extend beyond a note-centred seed. Keep the whole
+// associated diagram/leader when it fits; never reduce resolution to fit it.
+export function connectedInkBounds(survey: DrawingSurvey) {
+  const seen = new Uint8Array(survey.ink.length),
+    queue = new Int32Array(survey.ink.length);
+  const result: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    pixels: number;
+  }[] = [];
+  for (let start = 0; start < survey.ink.length; start++) {
+    if (seen[start] || !survey.ink[start]) continue;
+    let head = 0,
+      tail = 1,
+      left = survey.width,
+      top = survey.height,
+      right = 0,
+      bottom = 0;
+    queue[0] = start;
+    seen[start] = 1;
+    while (head < tail) {
+      const index = queue[head++],
+        x = index % survey.width,
+        y = Math.floor(index / survey.width);
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx,
+            yy = y + dy;
+          if (xx < 0 || xx >= survey.width || yy < 0 || yy >= survey.height)
+            continue;
+          const next = yy * survey.width + xx;
+          if (!seen[next] && survey.ink[next]) {
+            seen[next] = 1;
+            queue[tail++] = next;
+          }
+        }
+    }
+    if (tail >= 16 && (right - left >= 12 || bottom - top >= 12))
+      result.push({
+        x: left,
+        y: top,
+        width: right - left + 1,
+        height: bottom - top + 1,
+        pixels: tail,
+      });
+  }
+  return result;
+}
 export function contentRegions(
   page: number,
   width: number,
@@ -73,6 +128,12 @@ export function contentRegions(
   survey: DrawingSurvey,
 ): DetailSuggestion[] {
   const text = suggestPageRegions(page, width, height, marks);
+  const linework = connectedInkBounds(survey).map((c) => ({
+    x: (c.x / survey.width) * width,
+    y: (c.y / survey.height) * height,
+    width: (c.width / survey.width) * width,
+    height: (c.height / survey.height) * height,
+  }));
   const occupied: TextMark[] = [];
   // Only occupied blocks propose crops; there is no blank-sheet coverage grid.
   const stepX = Math.max(12, Math.round((280 / width) * survey.width));
@@ -108,7 +169,11 @@ export function contentRegions(
     const local = marks.filter((m) => intersects(r, m));
     if (
       local.length &&
-      local.every((m) => administrativeText.test(m.text)) &&
+      local.every(
+        (m) =>
+          administrativeText.test(m.text) &&
+          !criticalDrawingWarning.test(m.text),
+      ) &&
       !local.some(
         (m) =>
           constructionText.test(m.text) && !administrativeText.test(m.text),
@@ -172,7 +237,31 @@ export function contentRegions(
       ),
     };
     let clipped = false;
-    for (const mark of local.filter((m) => !administrativeText.test(m.text))) {
+    for (const diagram of linework.filter((d) => intersects(r, d))) {
+      const x = Math.max(0, Math.min(cropped.x, diagram.x - 24)),
+        y = Math.max(0, Math.min(cropped.y, diagram.y - 24));
+      const right = Math.min(
+          width,
+          Math.max(cropped.x + cropped.width, diagram.x + diagram.width + 24),
+        ),
+        bottom = Math.min(
+          height,
+          Math.max(cropped.y + cropped.height, diagram.y + diagram.height + 24),
+        );
+      try {
+        detailRenderSize(right - x, bottom - y);
+        cropped = { ...cropped, x, y, width: right - x, height: bottom - y };
+      } catch {
+        clipped = true;
+      }
+    }
+    for (const mark of marks
+      .filter((m) => intersects(cropped, m))
+      .filter(
+        (m) =>
+          !administrativeText.test(m.text) ||
+          criticalDrawingWarning.test(m.text),
+      )) {
       const x = Math.max(0, Math.min(cropped.x, mark.x - 18)),
         y = Math.max(0, Math.min(cropped.y, mark.y - 18));
       const right = Math.min(
@@ -198,7 +287,7 @@ export function contentRegions(
       {
         ...cropped,
         inspectionNote: clipped
-          ? "A label crosses the safe crop limit — inspect the original sheet or add a smaller supporting view."
+          ? "Associated linework or a label crosses the safe crop limit — inspect the original sheet or add a smaller supporting view."
           : density < 0.005
             ? "Sparse linework / small print — inspect and zoom before including."
             : undefined,

@@ -438,7 +438,7 @@ test("mixed-orientation details fit comfortably, support reading and manual rota
   await expect(
     page.getByLabel("I inspected all selected automatic detail views"),
   ).toBeEnabled();
-  await page.getByLabel("Detail review group").selectOption({ index: 1 });
+  await page.getByLabel("Detail review group").selectOption({ index: 2 });
   expect(await cards.filter({ visible: true }).count()).toBeLessThan(4);
   await expect(page.getByLabel("Analysis package")).toContainText(
     "4 detail views selected",
@@ -511,4 +511,38 @@ test("mixed-orientation details fit comfortably, support reading and manual rota
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
   expect(sent).toBe(3);
+});
+
+test("scanned orientation is flagged and the attention filter never silently excludes selected views", async ({
+  page,
+}) => {
+  await attach(page, { notes: [], drawing: true, rotation: 180 });
+  const count = await page.locator(".detail-thumbnail").count();
+  expect(count).toBeGreaterThan(0);
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "views need rotation or crop attention" }),
+  ).toContainText(`${count} views`);
+  await page.getByLabel("Detail review group").selectOption("Needs attention");
+  await expect(page.locator(".detail-review-item:visible")).toHaveCount(count);
+  await expect(page.getByLabel("Analysis package")).toContainText(
+    `${count} detail views selected`,
+  );
+  await page.locator(".detail-thumbnail-button").first().click();
+  await page
+    .locator(".detail-inspector[open]")
+    .getByRole("button", { name: "Rotate detail right", exact: true })
+    .click();
+  await expect(page.locator(".detail-review-item:visible")).toHaveCount(
+    count - 1,
+  );
+  await expect(page.getByLabel("Analysis package")).toContainText(
+    `${count} detail views selected`,
+  );
+  await page.getByLabel("Detail review group").selectOption("All details");
+  await expect(page.locator(".detail-thumbnail")).toHaveCount(count);
+  await expect(
+    page.getByLabel("I inspected all selected automatic detail views"),
+  ).toBeEnabled();
 });

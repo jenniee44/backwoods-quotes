@@ -167,3 +167,39 @@ it("isolated small construction notes are not forced into a tall mostly blank mi
   expect(crops[0].height).toBeLessThan(70);
   expect(crops[0].width).toBeGreaterThanOrEqual(120);
 });
+
+it("a connected leader extending beyond a note seed remains in the final crop", () => {
+  const data = pixels();
+  for (let x = 100; x < 250; x++) {
+    const i = (80 * 300 + x) * 4;
+    data[i] = data[i + 1] = data[i + 2] = 0;
+  }
+  const crops = selectDetailRegions(
+    contentRegions(
+      1,
+      1800,
+      1200,
+      [{ text: "BEAM CONNECTION", x: 600, y: 480, width: 100, height: 6 }],
+      surveyPixels(300, 200, data),
+    ),
+  );
+  expect(crops).toHaveLength(1);
+  expect(crops[0].x + crops[0].width).toBeGreaterThanOrEqual(1500);
+});
+it("construction-status and safety warnings survive administrative filtering and crop tightening", () => {
+  const marks = [
+    {
+      text: "DO NOT SCALE - REVISION 4 NOT FOR CONSTRUCTION",
+      x: 600,
+      y: 420,
+      width: 360,
+      height: 6,
+    },
+  ];
+  const crops = selectDetailRegions(
+    contentRegions(1, 1800, 1200, marks, surveyPixels(300, 200, pixels(true))),
+  );
+  expect(crops.length).toBeGreaterThan(0);
+  expect(crops[0].label).toBe("Safety & construction status");
+  expect(crops[0].x + crops[0].width).toBeGreaterThanOrEqual(960);
+});

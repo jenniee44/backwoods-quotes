@@ -121,6 +121,8 @@ export default function DetailViewEditor({
           ...capture,
           label: candidate.label,
           reviewGroup: region.reviewGroup,
+          orientationUncertain: false,
+          cropNeedsReview: false,
           inspectionNote:
             "Manually adjusted orientation / crop — verify legibility before analysis.",
         });

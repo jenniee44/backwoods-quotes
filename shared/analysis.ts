@@ -123,14 +123,24 @@ const evidenceProperties = {
     ],
   },
   scopeGroup: { type: "string", maxLength: 100 },
-  specification: { type: "string", maxLength: 1000 },
+  specification: {
+    type: "string",
+    maxLength: 1000,
+    description:
+      "Exact readable construction notation, retaining ply count, nominal member size, material and spacing as written. Empty if unreadable; never complete a missing specification.",
+  },
   location: { type: "string", maxLength: 200 },
   sourceFacts: {
     type: "array",
     items: { type: "string", maxLength: 1000 },
     maxItems: 20,
   },
-  calculationBasis: { type: "string", maxLength: 2000 },
+  calculationBasis: {
+    type: "string",
+    maxLength: 2000,
+    description:
+      "For calculated quantities, reproducible equation with every supported input, units, source page, layout/edge assumptions and scope basis. Never derive quantities from pixel scale or repeated detail views.",
+  },
   quantityMethod: {
     type: "string",
     enum: ["Written", "Counted", "Calculated", "Unknown", "Scaled"],
@@ -182,7 +192,12 @@ export function validContractorSummary(v: unknown): boolean {
 const itemProperties = {
   ...evidenceProperties,
   description: { type: "string", maxLength: 500 },
-  quantity: { type: ["number", "null"], minimum: 0 },
+  quantity: {
+    type: ["number", "null"],
+    minimum: 0,
+    description:
+      "Supported written, uniquely counted or reproducibly calculated quantity only. Null if inputs, component identity, scope or source legibility are uncertain. Never model-estimated labour hours.",
+  },
   unit: { type: "string", maxLength: 60 },
   documentId: { type: "string", maxLength: 100 },
   page: { type: ["integer", "null"], minimum: 1 },
