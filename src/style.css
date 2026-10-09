@@ -2349,3 +2349,14 @@ details[open] > summary {
   user-select: none;
   -webkit-user-select: none;
 }
+
+.detail-source-map {
+  touch-action: none;
+  cursor: crosshair;
+}
+.detail-inspector > p {
+  margin: 8px 0;
+}
+.advanced-crop {
+  margin: 12px 0;
+}

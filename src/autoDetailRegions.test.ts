@@ -25,17 +25,30 @@ it("prioritizes real small construction text, bounds crops and avoids heavy over
     selectDetailRegions(suggestPageRegions(1, 2592, 1728, marks), 20, selected),
   ).toHaveLength(0);
 });
-it("scans use honest coverage suggestions; caps at 20 and respects remaining capacity and physical pages", () => {
-  const candidates = [
-    ...suggestPageRegions(1, 2592, 1728, []),
-    ...suggestPageRegions(2, 2592, 1728, []),
-  ];
+it("blank pages do not receive invented grid crops; caps useful candidates at 20", () => {
+  expect(suggestPageRegions(1, 2592, 1728, [])).toEqual([]);
+  const candidates = Array.from({ length: 30 }, (_, i) => ({
+    page: i + 1,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    label: "Drawing content",
+    score: 1,
+  }));
   expect(selectDetailRegions(candidates)).toHaveLength(20);
   expect(selectDetailRegions(candidates, 2)).toHaveLength(2);
-  expect(candidates[0].label).toContain("inspect manually");
 });
 it("different page orientations are not treated as the same crop", () => {
-  const r = suggestPageRegions(1, 600, 600, [])[0];
+  const r = {
+    page: 1,
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    label: "Manual",
+    score: 1,
+  };
   expect(overlap({ ...r, rotation: 90 }, r)).toBe(0);
 });
 

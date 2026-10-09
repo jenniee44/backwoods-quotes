@@ -121,3 +121,45 @@ it("comparison decisions survive storage privately and retain long source eviden
     /overlapReviews|Synthetic source|sourceFacts/,
   );
 });
+
+it("blocks duplicate physical concrete footing counts until contractor comparison; consolidation preserves both observations without summing", () => {
+  const q = seed().quotes[0];
+  q.status = "Draft";
+  q.takeoff = [
+    item("footing-a", {
+      description: "Concrete footings",
+      specification: "12 inch concrete footings",
+      quantity: 12,
+      location: "Rear deck",
+      page: 1,
+    }),
+    item("footing-b", {
+      description: "Concrete pier footing assemblies",
+      specification: "12 inch concrete footings",
+      quantity: 12,
+      location: "Rear deck",
+      page: 2,
+    }),
+  ];
+  expect(unresolvedOverlaps(q, q.takeoff[0])).toHaveLength(1);
+  expect(() => assertScope(q, q.takeoff[0])).toThrow("Compare");
+  expect(() =>
+    takeoffToLine(
+      q,
+      { ...q.takeoff[0], status: "Approved", reviewAcknowledged: true },
+      "Materials",
+    ),
+  ).toThrow("Compare");
+  const consolidated = consolidateCompared(q, q.takeoff[0], q.takeoff[1]);
+  expect(
+    consolidated.takeoff.filter((t) => t.status !== "Rejected"),
+  ).toHaveLength(1);
+  expect(consolidated.takeoff[0].quantity).toBe(12);
+  expect(consolidated.takeoff[1].page).toBe(2);
+  expect(consolidated.takeoff[0].sourceFacts?.join()).toContain("page 2");
+  const separate = acknowledgeSeparate(q, q.takeoff[0], {
+    ...q.takeoff[1],
+    location: "Front deck",
+  });
+  expect(separate.takeoff).toHaveLength(2);
+});

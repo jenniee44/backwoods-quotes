@@ -15,12 +15,16 @@ export function constructionPdf({
   pages = 1,
   rotation = 0,
   notes = constructionNotes,
+  drawing = true,
+  textRotation = 0,
 }: {
   width?: number;
   height?: number;
   pages?: number;
   rotation?: 0 | 90 | 180 | 270;
   notes?: string[];
+  drawing?: boolean;
+  textRotation?: 0 | 90 | 180 | 270;
 } = {}) {
   const escape = (s: string) =>
     s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -30,7 +34,7 @@ export function constructionPdf({
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
   for (let page = 0; page < pages; page++) {
-    const stream = `0.35 w 30 30 ${width - 60} ${height - 60} re S\n30 ${height - 200} 420 150 re S\nBT /F1 6 Tf 40 ${height - 45} Td 12 TL\n${notes.map((note) => `(${escape(note)}) Tj T*`).join("\n")}\nET`;
+    const stream = `${drawing ? `0.35 w 30 30 ${width - 60} ${height - 60} re S\n30 ${height - 200} 420 150 re S\n` : ""}BT /F1 6 Tf ${textRotation === 90 ? "0 1 -1 0 45 40 Tm" : textRotation === 180 ? `-1 0 0 -1 ${width - 40} 45 Tm` : textRotation === 270 ? `0 -1 1 0 ${width - 45} ${height - 40} Tm` : `40 ${height - 45} Td`} 12 TL\n${notes.map((note) => `(${escape(note)}) Tj T*`).join("\n")}\nET`;
     objects.push(
       `<< /Type /Page /Parent 2 0 R /Rotate ${rotation} /MediaBox [0 0 ${width} ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
     );

@@ -111,16 +111,6 @@ export function suggestPageRegions(
           ]
         : [];
     });
-  if (!marks.some((m) => m.text.trim())) {
-    // Scans have no selectable text: geometric coverage suggestions, not semantic detection/OCR.
-    for (let y = 0; y < height; y += 380)
-      for (let x = 0; x < width; x += 560) {
-        if (candidates.length >= 100) break;
-        candidates.push(
-          crop(x + 280, y + 190, "Scan region — inspect manually", 1),
-        );
-      }
-  }
   return candidates;
 }
 export function selectDetailRegions(

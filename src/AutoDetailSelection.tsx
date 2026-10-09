@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { loadPdfSource, renderPdfDetail } from "./pdfSource";
-import { suggestPageRegions, selectDetailRegions } from "./autoDetailRegions";
+import { selectDetailRegions } from "./autoDetailRegions";
 import type { DetailSuggestion, TextMark } from "./autoDetailRegions";
 import type { PlanDocument } from "./model";
-import { normalizeRotation } from "../shared/pdf";
+import { readableRotation } from "./pdfOrientation";
+import { contentRegions, surveyPixels } from "./drawingContent";
 import type { PdfDetailRegion } from "../shared/pdf";
 export default function AutoDetailSelection({
   source,
@@ -46,32 +47,75 @@ export default function AutoDetailSelection({
         );
       const candidates: DetailSuggestion[] = [];
       let scans = 0;
+      let corrected = 0;
       for (let page = 1; page <= Math.min(pdf.numPages, 50); page++) {
         abort.signal.throwIfAborted();
         setMessage(`Inspecting page ${page} of ${pdf.numPages}…`);
         const p = await pdf.getPage(page);
-        const v = p.getViewport({ scale: 1 });
         const content = await p.getTextContent().catch(() => ({ items: [] }));
+        const orientation = readableRotation(
+          p.rotate,
+          content.items.flatMap((i) => ("str" in i ? [i] : [])),
+        );
+        if (orientation.rotation !== p.rotate) corrected++;
+        const v = p.getViewport({ scale: 1, rotation: orientation.rotation });
         const marks: TextMark[] = content.items.flatMap((item) => {
           if (!("str" in item)) return [];
-          const [x, y] = v.convertToViewportPoint(
-            item.transform[4],
-            item.transform[5],
+          const length = Math.hypot(item.transform[0], item.transform[1]) || 1;
+          const dx = item.transform[0] / length,
+            dy = item.transform[1] / length;
+          const corners = [
+            [0, 0],
+            [item.width, 0],
+            [0, item.height],
+            [item.width, item.height],
+          ].map(([along, up]) =>
+            v.convertToViewportPoint(
+              item.transform[4] + along * dx - up * dy,
+              item.transform[5] + along * dy + up * dx,
+            ),
           );
+          const x = Math.min(...corners.map((c) => c[0])),
+            y = Math.min(...corners.map((c) => c[1]));
           return [
             { text: item.str, x, y, width: item.width, height: item.height },
           ];
         });
         if (!marks.some((m) => m.text.trim())) scans++;
-        candidates.push(
-          ...suggestPageRegions(page, v.width, v.height, marks).map((r) => ({
-            ...r,
-            rotation: normalizeRotation(p.rotate),
-            pageWidth: v.width,
-            pageHeight: v.height,
-          })),
-        );
-        p.cleanup();
+        const canvas = document.createElement("canvas");
+        const viewport = p.getViewport({
+          scale: Math.min(1600 / v.width, 1600 / v.height),
+          rotation: orientation.rotation,
+        });
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context)
+          throw new Error(
+            "Drawing-content detection unavailable. Use manual detail selection.",
+          );
+        try {
+          await p.render({ canvas, canvasContext: context, viewport }).promise;
+          const survey = surveyPixels(
+            canvas.width,
+            canvas.height,
+            context.getImageData(0, 0, canvas.width, canvas.height).data,
+          );
+          candidates.push(
+            ...contentRegions(page, v.width, v.height, marks, survey).map(
+              (r) => ({
+                ...r,
+                rotation: orientation.rotation,
+                pageWidth: v.width,
+                pageHeight: v.height,
+              }),
+            ),
+          );
+        } finally {
+          canvas.width = 0;
+          canvas.height = 0;
+          p.cleanup();
+        }
       }
       // Compare only matching absolute page orientations; never replace manual captures.
       const prior = existing.map((r) => ({
@@ -94,12 +138,16 @@ export default function AutoDetailSelection({
         const p = await pdf.getPage(region.page);
         try {
           views.push({
-            ...(await renderPdfDetail(p, {
-              x: region.x,
-              y: region.y,
-              width: region.width,
-              height: region.height,
-            })),
+            ...(await renderPdfDetail(
+              p,
+              {
+                x: region.x,
+                y: region.y,
+                width: region.width,
+                height: region.height,
+              },
+              region.rotation as import("../shared/pdf").PdfRotation,
+            )),
             label: region.label,
           });
         } catch (e) {
@@ -112,7 +160,7 @@ export default function AutoDetailSelection({
       rendered = views.length;
       onAdd(views);
       setMessage(
-        `${rendered} suggested views generated. Inspect every view before analysis. ${scans ? `${scans} scanned page(s): geometric regions only, not detected drawing content. ` : ""}${errors.length ? `${errors.length} regions could not be rendered within safe limits. ` : ""}Up to 20 automatic views / 24 total, 50 pages; suggestions may miss details. Original PDF remains included. Each analysis request must fit 8 MB; larger detail sets use bounded batches with the originals in each.`,
+        `${rendered} suggested views generated. Inspect every view before analysis. ${scans ? `${scans} scanned page(s): visible-content suggestions, not OCR; orientation needs contractor verification. ` : ""}${corrected ? `${corrected} page orientation(s) corrected using selectable text. ` : ""}${!rendered ? "No additional readable content regions found. Use manual selection if needed. " : ""}${errors.length ? `${errors.length} regions could not be rendered within safe limits. ` : ""}Up to 20 automatic views / 24 total, 50 pages; suggestions may miss details. Original PDF remains included. Each analysis request must fit 8 MB; larger detail sets use bounded batches with the originals in each.`,
       );
     } catch (e) {
       if (!abort.signal.aborted) setMessage((e as Error).message);
@@ -149,8 +197,9 @@ export default function AutoDetailSelection({
       )}
       <p className="tiny">
         Find selectable construction notes, dimensions and details. Small text
-        is prioritized; scanned sheets receive coverage suggestions. No OCR or
-        measurement guesses. Review and adjust all suggestions.
+        is prioritized; empty regions are filtered using a content survey.
+        Scanned text orientation must be checked manually. No OCR or measurement
+        guesses. Review and adjust all suggestions.
       </p>
       {message && <p role="status">{message}</p>}
     </section>

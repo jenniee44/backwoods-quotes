@@ -1,3 +1,4 @@
+import { assertDetailInclusion } from "./detailPackage";
 import { analysisBatches, analyzeBatches } from "./analysisBatches";
 import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
@@ -112,9 +113,25 @@ export default function PlansTakeoff({
       ),
     [detailViews, q.documents],
   );
+  const [excludedDetails, setExcludedDetails] = useState<string[]>([]);
+  const [originalOnlyConfirmed, setOriginalOnlyConfirmed] = useState(false);
+  const selectedDetails = validDetails.filter(
+    (v) =>
+      !excludedDocuments.includes(v.documentId) &&
+      !excludedDetails.includes(v.id),
+  );
+  const emptyDetailPackage =
+    validDetails.length > 0 &&
+    selectedDetails.length === 0 &&
+    !originalOnlyConfirmed;
   const [previewReady, setPreviewReady] = useState<Record<string, string>>({});
   const allPreviewsReady = validDetails
-    .filter((v) => v.automatic && !excludedDocuments.includes(v.documentId))
+    .filter(
+      (v) =>
+        v.automatic &&
+        !excludedDocuments.includes(v.documentId) &&
+        !excludedDetails.includes(v.id),
+    )
     .every((v) => previewReady[v.id] === v.region.data);
   const [detailsInspected, setDetailsInspected] = useState(false);
   const selectedDocuments = useMemo(
@@ -123,15 +140,20 @@ export default function PlansTakeoff({
         .filter((d) => !excludedDocuments.includes(d.id))
         .map((d) => ({
           ...d,
-          ...(validDetails.some((v) => v.documentId === d.id)
+          ...(validDetails.some(
+            (v) => v.documentId === d.id && !excludedDetails.includes(v.id),
+          )
             ? {
                 detailRegions: validDetails
-                  .filter((v) => v.documentId === d.id)
+                  .filter(
+                    (v) =>
+                      v.documentId === d.id && !excludedDetails.includes(v.id),
+                  )
                   .map((v) => v.region),
               }
             : {}),
         })),
-    [q.documents, excludedDocuments, validDetails],
+    [q.documents, excludedDocuments, validDetails, excludedDetails],
   );
   const [analysisPackage, setAnalysisPackage] = useState<{
     sources: AnalysisDocument[];
@@ -142,6 +164,7 @@ export default function PlansTakeoff({
     const controller = new AbortController();
     void optimizeAnalysisPackage(selectedDocuments, controller.signal)
       .then((documents) => {
+        assertDetailInclusion(selectedDocuments, documents);
         if (documents.length) analysisBatches(documents);
         if (!controller.signal.aborted)
           setAnalysisPackage({
@@ -191,9 +214,13 @@ export default function PlansTakeoff({
   async function analyze() {
     if (
       (validDetails.some(
-        (v) => v.automatic && !excludedDocuments.includes(v.documentId),
+        (v) =>
+          v.automatic &&
+          !excludedDocuments.includes(v.documentId) &&
+          !excludedDetails.includes(v.id),
       ) &&
         (!detailsInspected || !allPreviewsReady)) ||
+      emptyDetailPackage ||
       request.current ||
       locked ||
       detailProcessing ||
@@ -209,6 +236,7 @@ export default function PlansTakeoff({
     setAnalysisState("Uploading/preparing");
     try {
       const documents = structuredClone(analysisPackage.documents);
+      assertDetailInclusion(selectedDocuments, documents);
       analysisBatches(documents);
       const fingerprint = await documentFingerprint(documents);
       if (
@@ -236,6 +264,7 @@ export default function PlansTakeoff({
             }
           : {}),
       }));
+      assertDetailInclusion(documents, prepared);
       controller.signal.throwIfAborted();
       setInputNotes(
         prepared
@@ -261,10 +290,19 @@ export default function PlansTakeoff({
           }),
       );
       setAnalysisState("Analyzing plans");
+      let submittedDetails = 0;
       const result = await analyzeBatches(
         prepared,
         controller.signal,
-        (docs, signal) => planAnalysisService.analyze(docs, signal),
+        async (docs, signal) => {
+          const result = await planAnalysisService.analyze(docs, signal);
+          submittedDetails += analysisPackageSize(docs).detailCount;
+          setInputNotes((notes) => [
+            ...notes.filter((n) => !n.startsWith("Submitted detail views:")),
+            `Submitted detail views: ${submittedDetails} of ${analysisPackageSize(prepared).detailCount}. Original files included in every request.`,
+          ]);
+          return result;
+        },
         (number, total) =>
           setInputNotes((notes) => [
             ...notes.filter((n) => !n.startsWith("Analyzing batch")),
@@ -477,9 +515,13 @@ export default function PlansTakeoff({
           className="button"
           disabled={
             (validDetails.some(
-              (v) => v.automatic && !excludedDocuments.includes(v.documentId),
+              (v) =>
+                v.automatic &&
+                !excludedDocuments.includes(v.documentId) &&
+                !excludedDetails.includes(v.id),
             ) &&
               (!detailsInspected || !allPreviewsReady)) ||
+            emptyDetailPackage ||
             locked ||
             busy ||
             detailProcessing ||
@@ -512,6 +554,48 @@ export default function PlansTakeoff({
         aria-live="polite"
       >
         <b>Analysis package</b>
+        <p>
+          <strong>
+            {selectedDetails.length} detail views selected for analysis
+          </strong>{" "}
+          · {validDetails.length} available previews ·{" "}
+          {packageReady
+            ? `${packageSize.detailCount} prepared for submission`
+            : "preparing…"}
+        </p>
+        {emptyDetailPackage && (
+          <div role="alert" className="error">
+            No detail views will be sent, although previews exist. Their source
+            files or views are excluded. Restore selection before analysis, or
+            explicitly choose original-only analysis.
+            <button
+              className="button secondary"
+              onClick={() => {
+                setExcludedDetails([]);
+                setExcludedDocuments((ids) =>
+                  ids.filter(
+                    (id) => !validDetails.some((v) => v.documentId === id),
+                  ),
+                );
+                setDetailsInspected(false);
+              }}
+            >
+              Restore detail selection
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => setOriginalOnlyConfirmed(true)}
+            >
+              Use selected originals only
+            </button>
+          </div>
+        )}
+        {originalOnlyConfirmed && selectedDetails.length === 0 && (
+          <p>
+            Original-only analysis explicitly selected. No detail images will be
+            submitted.
+          </p>
+        )}
         <p className="tiny">
           Original files: {(packageSize.originals / 1_000_000).toFixed(2)} MB ·
           Detail views: {(packageSize.details / 1_000_000).toFixed(2)} MB (
@@ -549,6 +633,13 @@ export default function PlansTakeoff({
         {packageReady && analysisPackage.error && (
           <p className="error" role="alert">
             {analysisPackage.error} Analysis is blocked before any API request.
+            <button
+              className="button secondary"
+              disabled={busy || detailProcessing}
+              onClick={() => setExcludedDetails((ids) => [...ids])}
+            >
+              Rebuild analysis package
+            </button>
             Selected sources: {selectedDocuments.map((d) => d.name).join(", ")}.
             Selected details:{" "}
             {selectedDocuments
@@ -566,6 +657,13 @@ export default function PlansTakeoff({
         {uploading ? "Uploading/preparing" : analysisState}
       </p>
       {busy && <progress aria-label="Plan analysis progress" />}
+      {inputNotes
+        .filter((n) => n.startsWith("Submitted detail views:"))
+        .map((n) => (
+          <p role="status" key={n}>
+            Last analysis run: {n}
+          </p>
+        ))}
       {!!inputNotes.length && (
         <details className="analysis-report">
           <summary>Analysis source quality</summary>
@@ -771,13 +869,15 @@ export default function PlansTakeoff({
                 type="checkbox"
                 disabled={busy || locked}
                 checked={!excludedDocuments.includes(d.id)}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setDetailsInspected(false);
+                  setOriginalOnlyConfirmed(false);
                   setExcludedDocuments(
                     e.target.checked
                       ? excludedDocuments.filter((id) => id !== d.id)
                       : [...excludedDocuments, d.id],
-                  )
-                }
+                  );
+                }}
               />
               Include in analysis
             </label>
@@ -873,6 +973,11 @@ export default function PlansTakeoff({
               onError("This PDF detail view is already included.");
               return;
             }
+            setDetailsInspected(false);
+            setOriginalOnlyConfirmed(false);
+            setExcludedDocuments((ids) =>
+              ids.filter((id) => id !== current.id),
+            );
             setDetailViews([
               ...validDetails,
               {
@@ -900,6 +1005,7 @@ export default function PlansTakeoff({
           onBusy={setAutomaticRendering}
           onAdd={(regions) => {
             setDetailsInspected(false);
+            setOriginalOnlyConfirmed(false);
             setExcludedDocuments((ids) =>
               ids.filter((id) => id !== current.id),
             );
@@ -939,6 +1045,31 @@ export default function PlansTakeoff({
           )}
           {validDetails.map((view) => (
             <div key={view.id}>
+              <label className="check-options">
+                <input
+                  type="checkbox"
+                  aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
+                  checked={
+                    !excludedDetails.includes(view.id) &&
+                    !excludedDocuments.includes(view.documentId)
+                  }
+                  disabled={locked || busy || detailProcessing}
+                  onChange={(e) => {
+                    setDetailsInspected(false);
+                    setOriginalOnlyConfirmed(false);
+                    setExcludedDetails((ids) =>
+                      e.target.checked
+                        ? ids.filter((id) => id !== view.id)
+                        : [...ids, view.id],
+                    );
+                    if (e.target.checked)
+                      setExcludedDocuments((ids) =>
+                        ids.filter((id) => id !== view.documentId),
+                      );
+                  }}
+                />
+                Include this detail in analysis
+              </label>
               <DetailViewEditor
                 source={q.documents.find((d) => d.id === view.documentId)!}
                 region={view.region}

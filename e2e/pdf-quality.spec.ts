@@ -391,7 +391,7 @@ test("quarter-turn rotation preserves page state, fit/zoom/panning and exact ori
   ).toBe(true);
 });
 
-test("intrinsically rotated PDF combines viewer turns and resets orientation/details when replaced", async ({
+test("misleading intrinsic rotation is corrected from text before viewer turns and resets orientation/details when replaced", async ({
   page,
 }) => {
   const original = Buffer.from(constructionPdf({ rotation: 90 }), "ascii");
@@ -405,17 +405,17 @@ test("intrinsically rotated PDF combines viewer turns and resets orientation/det
   await expect(
     page.getByRole("button", { name: "Rotate right", exact: true }),
   ).toBeEnabled();
-  await expect(page.locator(".pdf-page-surface")).toHaveCSS("width", "7776px");
+  await expect(page.locator(".pdf-page-surface")).toHaveCSS("width", "5184px");
   await page
     .getByRole("button", {
       name: "Include this view in analysis (250 DPI)",
       exact: true,
     })
     .click();
-  await expect(page.locator(".pdf-detail-list")).toContainText("180°");
+  await expect(page.locator(".pdf-detail-list")).toContainText("90°");
   await page.route("**/api/plan-analysis", async (route) => {
     const source = route.request().postDataJSON().documents[0];
-    expect(source.detailRegions[0].rotation).toBe(180);
+    expect(source.detailRegions[0].rotation).toBe(90);
     expect(Buffer.from(source.data.split(",")[1], "base64")).toEqual(original);
     await route.fulfill({ json: analysisFixture(source.id) });
   });
@@ -425,13 +425,11 @@ test("intrinsically rotated PDF combines viewer turns and resets orientation/det
   await expect(
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
-  await page
-    .getByLabel("Replace crisp-36x24-sheet.pdf")
-    .setInputFiles({
-      name: "replacement.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from(constructionPdf(), "ascii"),
-    });
+  await page.getByLabel("Replace crisp-36x24-sheet.pdf").setInputFiles({
+    name: "replacement.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from(constructionPdf(), "ascii"),
+  });
   await expect(page.getByLabel("Viewer rotation")).toHaveText("0°");
   await expect(page.locator(".pdf-detail-list")).toHaveCount(0);
 });

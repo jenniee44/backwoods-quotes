@@ -163,6 +163,12 @@ test("unmodified wheel pans natively and page scrolling continues outside and at
   await page.getByLabel("Zoom drawing").selectOption("2");
   await ready(page);
   const viewport = page.locator(".pdf-scroll-viewport");
+  // Wait for the zoom layout, not the ready label left over from the previous render.
+  await expect.poll(async () => (await view(page)).scale).toBe(2);
+  await viewport.evaluate((node) => node.scrollTo(100, 100));
+  await expect.poll(async () => (await view(page)).top).toBe(100);
+  await expect.poll(async () => (await view(page)).left).toBe(100);
+  await ready(page);
   await viewport.scrollIntoViewIfNeeded();
   const bounds = (await viewport.boundingBox())!;
   await page.mouse.move(bounds.x + 100, bounds.y + 100);

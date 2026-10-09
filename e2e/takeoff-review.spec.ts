@@ -135,3 +135,98 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
     ),
   ).toBe(true);
 });
+
+test("two observations of twelve concrete footings require comparison and retain source evidence without duplicate billable quantities", async ({
+  page,
+}) => {
+  const store = seed();
+  const q = store.quotes[0];
+  q.status = "Draft";
+  q.name = "Synthetic footing comparison";
+  const footing = (
+    id: string,
+    description: string,
+    pageNumber: number,
+  ): TakeoffItem => ({
+    id,
+    description,
+    category: "Footings / concrete",
+    specification: "12 inch concrete footing assemblies",
+    location: "Rear deck",
+    quantity: 12,
+    unit: "each",
+    documentId: "",
+    page: pageNumber,
+    notes: `Synthetic footing observation page ${pageNumber}`,
+    sourceFacts: [`Concrete footing note on page ${pageNumber}`],
+    confidence: "High",
+    status: "Proposed",
+    origin: "ai",
+    destination: "Materials",
+  });
+  q.takeoff = [
+    footing("f1", "Concrete footings", 1),
+    footing("f2", "Concrete pier footing assemblies", 2),
+  ];
+  await page.goto("/");
+  await page.evaluate(
+    ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
+    { store, key: storageKey },
+  );
+  await page.reload();
+  await page
+    .getByRole("button", { name: /Synthetic footing comparison/ })
+    .click();
+  await page
+    .getByRole("button", { name: "Plans & Takeoff", exact: true })
+    .click();
+  const rows = page.locator(".takeoff-table > tbody.line-card");
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator(".overlap-warning")).toHaveCount(2);
+  await rows.first().locator("summary").click();
+  await expect(
+    rows.first().getByRole("button", { name: "Approve item", exact: true }),
+  ).toBeDisabled();
+  page.once("dialog", (d) => d.accept());
+  await rows
+    .first()
+    .getByRole("button", { name: "Consolidate matching material", exact: true })
+    .click();
+  await expect(rows.nth(1).getByLabel("Review status")).toHaveValue("Rejected");
+  await expect(rows.first().getByLabel("Takeoff quantity")).toHaveValue("12");
+  await expect(rows.first()).toContainText(
+    "Synthetic footing observation page 2",
+  );
+  await expect(rows.first().getByLabel("Review status")).toHaveValue(
+    "Proposed",
+  );
+  await expect
+    .poll(async () =>
+      page.evaluate((key) => {
+        const stored = JSON.parse(localStorage.getItem(key)!);
+        return stored.quotes
+          .find(
+            (q: { name: string }) => q.name === "Synthetic footing comparison",
+          )
+          .takeoff.filter((t: { status: string }) => t.status !== "Rejected")
+          .length;
+      }, storageKey),
+    )
+    .toBe(1);
+  const saved = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!),
+    storageKey,
+  );
+  const record = saved.quotes.find(
+    (r: { name: string }) => r.name === "Synthetic footing comparison",
+  );
+  expect(
+    record.takeoff.filter((t: { status: string }) => t.status !== "Rejected"),
+  ).toHaveLength(1);
+  expect(
+    record.lines.some(
+      (l: { takeoffId?: string }) =>
+        l.takeoffId === "f1" || l.takeoffId === "f2",
+    ),
+  ).toBe(false);
+});

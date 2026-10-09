@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PlanDocument } from "./model";
 import type { PdfDetailRegion } from "../shared/pdf";
 import { loadPdfSource, renderPdfDetail } from "./pdfSource";
+import { rotateDetailBounds } from "./pdfOrientation";
 import NumberInput from "./NumberInput";
 export default function DetailViewEditor({
   source,
@@ -24,13 +25,33 @@ export default function DetailViewEditor({
     [running, setRunning] = useState(false);
   const [open, setOpen] = useState(false);
   const active = useRef(true);
+  const previousSource = useRef({ region, data: source.data });
+  const cropStart = useRef<{ x: number; y: number } | null>(null);
   const inspector = useRef<HTMLDetailsElement>(null);
   const overview = useRef<HTMLCanvasElement>(null);
   const [overviewError, setOverviewError] = useState("");
   const [previewError, setPreviewError] = useState(false);
   useEffect(() => {
     active.current = true;
-    setDraft(region);
+    const previous = previousSource.current;
+    const changed =
+      previous.data !== source.data ||
+      (
+        [
+          "data",
+          "page",
+          "rotation",
+          "x",
+          "y",
+          "width",
+          "height",
+          "pageWidth",
+          "pageHeight",
+        ] as const
+      ).some((key) => previous.region[key] !== region[key]);
+    // Renaming a view must not discard a crop the contractor is still adjusting.
+    setDraft((draft) => (changed ? region : { ...draft, label: region.label }));
+    previousSource.current = { region, data: source.data };
     return () => {
       active.current = false;
     };
@@ -75,7 +96,7 @@ export default function DetailViewEditor({
       void task?.destroy();
     };
   }, [open, source.data, region.page, region.rotation]);
-  async function apply() {
+  async function apply(candidate = draft) {
     setRunning(true);
     onBusy(true);
     setError("");
@@ -86,10 +107,15 @@ export default function DetailViewEditor({
       const page = await pdf.getPage(region.page);
       const capture = await renderPdfDetail(
         page,
-        { x: draft.x, y: draft.y, width: draft.width, height: draft.height },
-        region.rotation,
+        {
+          x: candidate.x,
+          y: candidate.y,
+          width: candidate.width,
+          height: candidate.height,
+        },
+        candidate.rotation,
       );
-      if (active.current) onChange({ ...capture, label: draft.label });
+      if (active.current) onChange({ ...capture, label: candidate.label });
     } catch (e) {
       if (active.current) setError((e as Error).message);
     } finally {
@@ -146,13 +172,31 @@ export default function DetailViewEditor({
         }}
       >
         <summary>
-          {region.label || "Manual detail"} — Page {region.page} · region{" "}
-          {region.x.toFixed(0)}, {region.y.toFixed(0)} (
-          {region.width.toFixed(0)} × {region.height.toFixed(0)} PDF points)
+          {region.label || "Manual detail"} — Page {region.page}
         </summary>
         <p>
           <b>Source:</b> {source.name} · Page {region.page} ·{" "}
           {region.rotation ?? 0}°
+        </p>
+        <div className="heading-actions">
+          <button
+            className="button secondary"
+            disabled={disabled || running}
+            onClick={() => void apply(rotateDetailBounds(draft, -90))}
+          >
+            Rotate detail left
+          </button>
+          <button
+            className="button secondary"
+            disabled={disabled || running}
+            onClick={() => void apply(rotateDetailBounds(draft, 90))}
+          >
+            Rotate detail right
+          </button>
+        </div>
+        <p className="tiny">
+          Drag a box on the sheet below to adjust the crop, then apply. Use
+          Advanced region controls for keyboard adjustment.
         </p>
         <p className="tiny">
           Scroll or drag the enlarged image to pan. The highlighted rectangle
@@ -161,6 +205,66 @@ export default function DetailViewEditor({
         <div
           className="detail-source-map"
           style={{ aspectRatio: `${region.pageWidth} / ${region.pageHeight}` }}
+          aria-label="Select detail crop on original sheet"
+          onPointerDown={(e) => {
+            if (disabled || running || e.button !== 0) return;
+            e.preventDefault();
+            const box = e.currentTarget.getBoundingClientRect();
+            cropStart.current = {
+              x: Math.max(
+                0,
+                Math.min(
+                  region.pageWidth,
+                  ((e.clientX - box.left) / box.width) * region.pageWidth,
+                ),
+              ),
+              y: Math.max(
+                0,
+                Math.min(
+                  region.pageHeight,
+                  ((e.clientY - box.top) / box.height) * region.pageHeight,
+                ),
+              ),
+            };
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (
+              !cropStart.current ||
+              !e.currentTarget.hasPointerCapture(e.pointerId)
+            )
+              return;
+            const box = e.currentTarget.getBoundingClientRect();
+            const x = Math.max(
+                0,
+                Math.min(
+                  region.pageWidth,
+                  ((e.clientX - box.left) / box.width) * region.pageWidth,
+                ),
+              ),
+              y = Math.max(
+                0,
+                Math.min(
+                  region.pageHeight,
+                  ((e.clientY - box.top) / box.height) * region.pageHeight,
+                ),
+              );
+            setDraft({
+              ...region,
+              x: Math.min(x, cropStart.current.x),
+              y: Math.min(y, cropStart.current.y),
+              width: Math.max(0.1, Math.abs(x - cropStart.current.x)),
+              height: Math.max(0.1, Math.abs(y - cropStart.current.y)),
+            });
+          }}
+          onPointerUp={(e) => {
+            cropStart.current = null;
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
+          onPointerCancel={() => {
+            cropStart.current = null;
+          }}
         >
           <canvas
             ref={overview}
@@ -243,46 +347,55 @@ export default function DetailViewEditor({
           measurements. Apply renders again from the original PDF at 250 DPI.{" "}
           {region.rotation ?? 0}° orientation.
         </p>
-        <div className="fields compact">
-          {(["x", "y", "width", "height"] as const).map((key) => (
-            <label className="field" key={key}>
-              <span>
-                {
+        <details className="advanced-crop">
+          <summary>Advanced region controls</summary>
+          <div className="fields compact">
+            {(["x", "y", "width", "height"] as const).map((key) => (
+              <label className="field" key={key}>
+                <span>
                   {
-                    x: "Left edge (%)",
-                    y: "Top edge (%)",
-                    width: "Region width (%)",
-                    height: "Region height (%)",
-                  }[key]
-                }
-              </span>
-              <NumberInput
-                value={
-                  (draft[key] /
-                    (key === "x" || key === "width"
-                      ? region.pageWidth
-                      : region.pageHeight)) *
-                  100
-                }
-                disabled={disabled || running}
-                onChange={(value) =>
-                  setDraft({
-                    ...draft,
-                    [key]:
-                      (value / 100) *
-                      (key === "x" || key === "width"
-                        ? region.pageWidth
-                        : region.pageHeight),
-                  })
-                }
-              />
-            </label>
-          ))}
-        </div>
+                    {
+                      x: "Left edge (%)",
+                      y: "Top edge (%)",
+                      width: "Region width (%)",
+                      height: "Region height (%)",
+                    }[key]
+                  }
+                </span>
+                <NumberInput
+                  value={
+                    Math.round(
+                      (draft[key] /
+                        (key === "x" || key === "width"
+                          ? region.pageWidth
+                          : region.pageHeight)) *
+                        10000,
+                    ) / 100
+                  }
+                  disabled={disabled || running}
+                  onChange={(value) =>
+                    setDraft({
+                      ...draft,
+                      [key]:
+                        (value / 100) *
+                        (key === "x" || key === "width"
+                          ? region.pageWidth
+                          : region.pageHeight),
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <p className="tiny">
+            Selected region: {draft.x.toFixed(0)}, {draft.y.toFixed(0)} ·{" "}
+            {draft.width.toFixed(0)} × {draft.height.toFixed(0)} PDF points
+          </p>
+        </details>
         <button
           className="button secondary"
           disabled={disabled || running}
-          onClick={() => void apply()}
+          onClick={() => void apply(draft)}
         >
           Apply region adjustment
         </button>

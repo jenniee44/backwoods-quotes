@@ -9,6 +9,8 @@ function family(t: TakeoffItem) {
   const s = t.description;
   if (/hanger|connector|bracket|hardware/i.test(s)) return "";
   for (const [key, pattern] of Object.entries({
+    footings:
+      /footing|foundation.*(?:concrete|pier)|concrete.*(?:foundation|pier|pads?)/i,
     beams: /beam/i,
     posts: /\bposts?\b/i,
     joists: /joist/i,

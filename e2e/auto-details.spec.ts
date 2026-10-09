@@ -29,13 +29,14 @@ test("automatic 250 DPI suggestions are inspected, editable, deduplicated, priva
   await expect(
     page.getByRole("button", { name: "Analyze Plans", exact: true }),
   ).toBeDisabled();
-  await views.first().locator("summary").click();
+  await views.first().locator(":scope > summary").click();
   await expect(views.locator(".detail-image-scroll img")).toBeVisible();
   await views.getByLabel("Detail name").fill("Foundation notes close-up");
   await views.getByLabel("Detail preview zoom (%)").fill("50");
+  await views.getByText("Advanced region controls", { exact: true }).click();
   await views.getByLabel("Left edge (%)").fill("1");
   await views.getByRole("button", { name: "Apply region adjustment" }).click();
-  await expect(views.first().locator("summary")).toContainText("region 26");
+  await expect(views.first()).toContainText("Selected region: 26");
   await page
     .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
     .click();
@@ -93,13 +94,13 @@ test("scanned drawings receive honest coverage suggestions; deleting views prese
     .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
     .click();
   await expect(
-    page.getByRole("status").filter({ hasText: /geometric regions only/ }),
+    page.getByRole("status").filter({ hasText: /visible-content suggestions/ }),
   ).toBeVisible();
   const count = await page.locator(".detail-inspector").count();
   expect(count).toBeGreaterThan(0);
   expect(count).toBeLessThanOrEqual(20);
   await expect(
-    page.locator(".detail-inspector").first().locator("summary"),
+    page.locator(".detail-inspector").first().locator(":scope > summary"),
   ).toContainText("inspect manually");
   await page
     .getByRole("button", { name: "Remove detail view 1", exact: true })

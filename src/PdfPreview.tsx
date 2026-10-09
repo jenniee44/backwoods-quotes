@@ -3,6 +3,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { normalizeRotation, previewRenderSize } from "../shared/pdf";
 import type { PdfDetailRegion, PdfRotation } from "../shared/pdf";
+import { readableRotation } from "./pdfOrientation";
 import { renderPdfDetail } from "./pdfSource";
 export default function PdfPreview({
   url,
@@ -19,6 +20,9 @@ export default function PdfPreview({
   detailsDisabled?: boolean;
   onDetailBusy?: (busy: boolean) => void;
 }) {
+  const baseRotations = useRef(
+    new WeakMap<PDFDocumentProxy, Map<number, number>>(),
+  );
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
   const rotation = rotations[page] ?? 0;
@@ -83,9 +87,24 @@ export default function PdfPreview({
     let canceled = false;
     void document
       .getPage(page)
-      .then((p) => {
+      .then(async (p) => {
         if (canceled) return;
-        const orientation = normalizeRotation(p.rotate + rotation);
+        let cache = baseRotations.current.get(document);
+        if (!cache) {
+          cache = new Map();
+          baseRotations.current.set(document, cache);
+        }
+        let base = cache.get(page);
+        if (base === undefined) {
+          const content = await p.getTextContent().catch(() => ({ items: [] }));
+          base = readableRotation(
+            p.rotate,
+            content.items.flatMap((i) => ("str" in i ? [i] : [])),
+          ).rotation;
+          cache.set(page, base);
+        }
+        if (canceled) return;
+        const orientation = normalizeRotation(base + rotation);
         const viewport = p.getViewport({ scale: 1, rotation: orientation });
         setPageSize({
           page,
@@ -428,7 +447,7 @@ export default function PdfPreview({
           <div className="pdf-page-controls">
             <button
               className="button secondary"
-              disabled={page <= 1 || capturing}
+              disabled={page <= 1 || capturing || !pageReady}
               onClick={() => setPage(page - 1)}
             >
               Previous
@@ -438,7 +457,7 @@ export default function PdfPreview({
             </span>
             <button
               className="button secondary"
-              disabled={page >= document.numPages || capturing}
+              disabled={page >= document.numPages || capturing || !pageReady}
               onClick={() => setPage(page + 1)}
             >
               Next
@@ -466,7 +485,7 @@ export default function PdfPreview({
               <span>Zoom drawing</span>
               <select
                 value={zoom ?? "fit"}
-                disabled={capturing}
+                disabled={capturing || !pageReady}
                 onChange={(e) =>
                   changeZoom(
                     e.target.value === "fit" ? null : Number(e.target.value),
@@ -486,7 +505,7 @@ export default function PdfPreview({
             </label>
             <button
               className="button secondary"
-              disabled={capturing || scale >= 4}
+              disabled={capturing || !pageReady || scale >= 4}
               onClick={() =>
                 changeZoom(
                   [0.25, 0.5, 1, 2, 3, 4].find((z) => z > scale + 0.001) ?? 4,
@@ -540,9 +559,11 @@ export default function PdfPreview({
       </div>
       {document && (
         <p className="tiny" role="status">
-          {rendering
-            ? "Rendering original PDF detail…"
-            : "Original PDF view ready"}{" "}
+          {!pageReady
+            ? "Preparing original PDF orientation…"
+            : rendering
+              ? "Rendering original PDF detail…"
+              : "Original PDF view ready"}{" "}
           · display raster approximately{" "}
           {Math.round(72 * scale * pixels.density)} DPI
         </p>
