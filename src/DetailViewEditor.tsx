@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { PlanDocument } from "./model";
-import type { PdfDetailRegion } from "../shared/pdf";
 import { loadPdfSource, renderPdfDetail } from "./pdfSource";
 import { rotateDetailBounds } from "./pdfOrientation";
+import type { PreparedDetail } from "./detailReadability";
 import NumberInput from "./NumberInput";
 export default function DetailViewEditor({
   source,
@@ -13,16 +13,17 @@ export default function DetailViewEditor({
   onPreviewReady,
 }: {
   source: PlanDocument;
-  region: PdfDetailRegion;
+  region: PreparedDetail;
   disabled: boolean;
   onBusy: (b: boolean) => void;
-  onChange: (r: PdfDetailRegion) => void;
+  onChange: (r: PreparedDetail) => void;
   onPreviewReady: (ready: boolean) => void;
 }) {
   const [draft, setDraft] = useState(region),
     [zoom, setZoom] = useState(25),
     [error, setError] = useState(""),
     [running, setRunning] = useState(false);
+  const [fit, setFit] = useState(true);
   const [open, setOpen] = useState(false);
   const active = useRef(true);
   const previousSource = useRef({ region, data: source.data });
@@ -115,7 +116,14 @@ export default function DetailViewEditor({
         },
         candidate.rotation,
       );
-      if (active.current) onChange({ ...capture, label: candidate.label });
+      if (active.current)
+        onChange({
+          ...capture,
+          label: candidate.label,
+          reviewGroup: region.reviewGroup,
+          inspectionNote:
+            "Manually adjusted orientation / crop — verify legibility before analysis.",
+        });
     } catch (e) {
       if (active.current) setError((e as Error).message);
     } finally {
@@ -149,8 +157,16 @@ export default function DetailViewEditor({
             onPreviewReady(false);
           }}
         />
-        <span>Inspect / zoom / adjust</span>
+        <span>
+          {region.label || "Manual detail"} · Page {region.page} ·{" "}
+          {region.rotation ?? 0}°
+        </span>
+        <span>Open to read / crop / rotate</span>
       </button>
+      <p className="detail-readability-note">
+        {region.inspectionNote ||
+          "Manual view — inspect small print and orientation before analysis."}
+      </p>
       {previewError && (
         <p className="error" role="alert">
           This preview could not be loaded. Regenerate or remove this view
@@ -193,6 +209,74 @@ export default function DetailViewEditor({
           >
             Rotate detail right
           </button>
+        </div>
+        <div className="heading-actions">
+          <button className="button secondary" onClick={() => setFit(true)}>
+            Fit detail
+          </button>
+          <button
+            className="button secondary"
+            onClick={() => {
+              setFit(false);
+              setZoom(100);
+            }}
+          >
+            Read small text (100%)
+          </button>
+        </div>
+        <label className="field">
+          <span>
+            Detail preview zoom (%){" "}
+            {fit ? "— fitted to available space" : "— full-resolution scale"}
+          </span>
+          <input
+            type="range"
+            min={10}
+            max={150}
+            value={zoom}
+            onChange={(e) => {
+              setFit(false);
+              setZoom(Number(e.target.value));
+            }}
+          />
+        </label>
+        <div
+          className="detail-image-scroll"
+          tabIndex={0}
+          aria-label="Enlarged detail — scroll or drag to pan"
+          onPointerDown={(e) => {
+            if (e.pointerType === "touch" || e.button !== 0) return;
+            const node = e.currentTarget;
+            node.setPointerCapture(e.pointerId);
+            node.dataset.dragX = String(e.clientX);
+            node.dataset.dragY = String(e.clientY);
+          }}
+          onPointerMove={(e) => {
+            const node = e.currentTarget;
+            if (!node.hasPointerCapture(e.pointerId)) return;
+            node.scrollLeft -= e.clientX - Number(node.dataset.dragX);
+            node.scrollTop -= e.clientY - Number(node.dataset.dragY);
+            node.dataset.dragX = String(e.clientX);
+            node.dataset.dragY = String(e.clientY);
+          }}
+          onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              e.currentTarget.releasePointerCapture(e.pointerId);
+          }}
+        >
+          {open && (
+            <img
+              draggable={false}
+              src={region.data}
+              alt={`${region.label || "Detail"} from ${source.name}, page ${region.page}`}
+              style={{
+                width: fit ? "auto" : (region.pixelWidth * zoom) / 100,
+                maxWidth: fit ? "100%" : "none",
+                maxHeight: fit ? 420 : "none",
+                height: "auto",
+              }}
+            />
+          )}
         </div>
         <p className="tiny">
           Drag a box on the sheet below to adjust the crop, then apply. Use
@@ -296,52 +380,6 @@ export default function DetailViewEditor({
             onChange={(e) => onChange({ ...region, label: e.target.value })}
           />
         </label>
-        <label className="field">
-          <span>Detail preview zoom (%)</span>
-          <input
-            type="range"
-            min={10}
-            max={150}
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
-          />
-        </label>
-        <div
-          className="detail-image-scroll"
-          tabIndex={0}
-          aria-label="Enlarged detail — scroll or drag to pan"
-          onPointerDown={(e) => {
-            if (e.pointerType === "touch" || e.button !== 0) return;
-            const node = e.currentTarget;
-            node.setPointerCapture(e.pointerId);
-            node.dataset.dragX = String(e.clientX);
-            node.dataset.dragY = String(e.clientY);
-          }}
-          onPointerMove={(e) => {
-            const node = e.currentTarget;
-            if (!node.hasPointerCapture(e.pointerId)) return;
-            node.scrollLeft -= e.clientX - Number(node.dataset.dragX);
-            node.scrollTop -= e.clientY - Number(node.dataset.dragY);
-            node.dataset.dragX = String(e.clientX);
-            node.dataset.dragY = String(e.clientY);
-          }}
-          onPointerUp={(e) => {
-            if (e.currentTarget.hasPointerCapture(e.pointerId))
-              e.currentTarget.releasePointerCapture(e.pointerId);
-          }}
-        >
-          {open && (
-            <img
-              draggable={false}
-              src={region.data}
-              alt={`${region.label || "Detail"} from ${source.name}, page ${region.page}`}
-              style={{
-                width: (region.pixelWidth * zoom) / 100,
-                maxWidth: "none",
-              }}
-            />
-          )}
-        </div>
         <p className="tiny">
           Adjust the region as a percentage of the sheet, not construction
           measurements. Apply renders again from the original PDF at 250 DPI.{" "}

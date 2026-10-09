@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { loadPdfSource, renderPdfDetail } from "./pdfSource";
 import { selectDetailRegions } from "./autoDetailRegions";
+import { orientDetail, textBounds } from "./detailReadability";
+import type { PreparedDetail } from "./detailReadability";
 import type { DetailSuggestion, TextMark } from "./autoDetailRegions";
 import type { PlanDocument } from "./model";
 import { readableRotation } from "./pdfOrientation";
@@ -21,7 +23,7 @@ export default function AutoDetailSelection({
   remainingCapacity: number;
   disabled: boolean;
   onBusy: (b: boolean) => void;
-  onAdd: (r: PdfDetailRegion[]) => void;
+  onAdd: (r: PreparedDetail[]) => void;
 }) {
   const [running, setRunning] = useState(false),
     [message, setMessage] = useState("");
@@ -48,6 +50,7 @@ export default function AutoDetailSelection({
       const candidates: DetailSuggestion[] = [];
       let scans = 0;
       let corrected = 0;
+      let detailCorrected = 0;
       for (let page = 1; page <= Math.min(pdf.numPages, 50); page++) {
         abort.signal.throwIfAborted();
         setMessage(`Inspecting page ${page} of ${pdf.numPages}…`);
@@ -61,25 +64,7 @@ export default function AutoDetailSelection({
         const v = p.getViewport({ scale: 1, rotation: orientation.rotation });
         const marks: TextMark[] = content.items.flatMap((item) => {
           if (!("str" in item)) return [];
-          const length = Math.hypot(item.transform[0], item.transform[1]) || 1;
-          const dx = item.transform[0] / length,
-            dy = item.transform[1] / length;
-          const corners = [
-            [0, 0],
-            [item.width, 0],
-            [0, item.height],
-            [item.width, item.height],
-          ].map(([along, up]) =>
-            v.convertToViewportPoint(
-              item.transform[4] + along * dx - up * dy,
-              item.transform[5] + along * dy + up * dx,
-            ),
-          );
-          const x = Math.min(...corners.map((c) => c[0])),
-            y = Math.min(...corners.map((c) => c[1]));
-          return [
-            { text: item.str, x, y, width: item.width, height: item.height },
-          ];
+          return [{ text: item.str, ...textBounds(item, v) }];
         });
         if (!marks.some((m) => m.text.trim())) scans++;
         const canvas = document.createElement("canvas");
@@ -128,7 +113,7 @@ export default function AutoDetailSelection({
         Math.min(remainingAutomatic, remainingCapacity),
         prior,
       );
-      const views: PdfDetailRegion[] = [];
+      const views: PreparedDetail[] = [];
       const errors: string[] = [];
       for (const region of selected) {
         abort.signal.throwIfAborted();
@@ -137,18 +122,21 @@ export default function AutoDetailSelection({
         );
         const p = await pdf.getPage(region.page);
         try {
+          const content = await p.getTextContent().catch(() => ({ items: [] }));
+          const oriented = orientDetail(
+            p,
+            region,
+            content.items.flatMap((i) => ("str" in i ? [i] : [])),
+          );
+          const capture = await renderPdfDetail(p, oriented, oriented.rotation);
+          if (oriented.rotation !== region.rotation) detailCorrected++;
           views.push({
-            ...(await renderPdfDetail(
-              p,
-              {
-                x: region.x,
-                y: region.y,
-                width: region.width,
-                height: region.height,
-              },
-              region.rotation as import("../shared/pdf").PdfRotation,
-            )),
+            ...capture,
             label: region.label,
+            reviewGroup: oriented.reviewGroup,
+            inspectionNote: [oriented.inspectionNote, region.inspectionNote]
+              .filter(Boolean)
+              .join(" "),
           });
         } catch (e) {
           errors.push((e as Error).message);
@@ -160,7 +148,7 @@ export default function AutoDetailSelection({
       rendered = views.length;
       onAdd(views);
       setMessage(
-        `${rendered} suggested views generated. Inspect every view before analysis. ${scans ? `${scans} scanned page(s): visible-content suggestions, not OCR; orientation needs contractor verification. ` : ""}${corrected ? `${corrected} page orientation(s) corrected using selectable text. ` : ""}${!rendered ? "No additional readable content regions found. Use manual selection if needed. " : ""}${errors.length ? `${errors.length} regions could not be rendered within safe limits. ` : ""}Up to 20 automatic views / 24 total, 50 pages; suggestions may miss details. Original PDF remains included. Each analysis request must fit 8 MB; larger detail sets use bounded batches with the originals in each.`,
+        `${rendered} suggested views generated. Inspect every view before analysis. ${scans ? `${scans} scanned page(s): visible-content suggestions, not OCR; orientation needs contractor verification. ` : ""}${corrected ? `${corrected} page orientation(s) corrected using selectable text. ` : ""}${detailCorrected ? `${detailCorrected} detail orientation(s) corrected independently using local text. ` : ""}${!rendered ? "No additional readable content regions found. Use manual selection if needed. " : ""}${errors.length ? `${errors.length} regions could not be rendered within safe limits. ` : ""}Up to 20 automatic views / 24 total, 50 pages; suggestions may miss details. Original PDF remains included. Each analysis request must fit 8 MB; larger detail sets use bounded batches with the originals in each.`,
       );
     } catch (e) {
       if (!abort.signal.aborted) setMessage((e as Error).message);

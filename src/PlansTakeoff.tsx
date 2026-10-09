@@ -1,3 +1,4 @@
+import type { PreparedDetail } from "./detailReadability";
 import { assertDetailInclusion } from "./detailPackage";
 import { analysisBatches, analyzeBatches } from "./analysisBatches";
 import AutoDetailSelection from "./AutoDetailSelection";
@@ -100,7 +101,7 @@ export default function PlansTakeoff({
       id: string;
       documentId: string;
       originalData: string;
-      region: PdfDetailRegion;
+      region: PreparedDetail;
       automatic?: boolean;
     }[]
   >([]);
@@ -113,6 +114,12 @@ export default function PlansTakeoff({
       ),
     [detailViews, q.documents],
   );
+  const [detailGroup, setDetailGroup] = useState("All details");
+  const detailGroups = [
+    ...new Set(
+      validDetails.map((v) => v.region.reviewGroup || "Manual details"),
+    ),
+  ];
   const [excludedDetails, setExcludedDetails] = useState<string[]>([]);
   const [originalOnlyConfirmed, setOriginalOnlyConfirmed] = useState(false);
   const selectedDetails = validDetails.filter(
@@ -1043,75 +1050,107 @@ export default function PlansTakeoff({
               regions.
             </label>
           )}
-          {validDetails.map((view) => (
-            <div key={view.id}>
-              <label className="check-options">
-                <input
-                  type="checkbox"
-                  aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
-                  checked={
-                    !excludedDetails.includes(view.id) &&
-                    !excludedDocuments.includes(view.documentId)
-                  }
-                  disabled={locked || busy || detailProcessing}
-                  onChange={(e) => {
-                    setDetailsInspected(false);
-                    setOriginalOnlyConfirmed(false);
-                    setExcludedDetails((ids) =>
-                      e.target.checked
-                        ? ids.filter((id) => id !== view.id)
-                        : [...ids, view.id],
-                    );
-                    if (e.target.checked)
-                      setExcludedDocuments((ids) =>
-                        ids.filter((id) => id !== view.documentId),
+          <div className="detail-gallery-controls">
+            <label className="field">
+              <span>Review drawing details</span>
+              <select
+                aria-label="Detail review group"
+                value={
+                  detailGroups.includes(detailGroup)
+                    ? detailGroup
+                    : "All details"
+                }
+                onChange={(e) => setDetailGroup(e.target.value)}
+              >
+                <option>All details</option>
+                {detailGroups.map((group) => (
+                  <option key={group}>{group}</option>
+                ))}
+              </select>
+            </label>
+            <span>
+              {validDetails.length} views · choose a group to compare related
+              details. Exclude anything unnecessary.
+            </span>
+          </div>
+          <div className="detail-gallery">
+            {validDetails.map((view) => (
+              <div
+                className="detail-review-item"
+                hidden={
+                  detailGroups.includes(detailGroup) &&
+                  detailGroup !== (view.region.reviewGroup || "Manual details")
+                }
+                key={view.id}
+              >
+                <label className="check-options">
+                  <input
+                    type="checkbox"
+                    aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
+                    checked={
+                      !excludedDetails.includes(view.id) &&
+                      !excludedDocuments.includes(view.documentId)
+                    }
+                    disabled={locked || busy || detailProcessing}
+                    onChange={(e) => {
+                      setDetailsInspected(false);
+                      setOriginalOnlyConfirmed(false);
+                      setExcludedDetails((ids) =>
+                        e.target.checked
+                          ? ids.filter((id) => id !== view.id)
+                          : [...ids, view.id],
                       );
+                      if (e.target.checked)
+                        setExcludedDocuments((ids) =>
+                          ids.filter((id) => id !== view.documentId),
+                        );
+                    }}
+                  />
+                  Include this detail in analysis
+                </label>
+                <DetailViewEditor
+                  source={q.documents.find((d) => d.id === view.documentId)!}
+                  region={view.region}
+                  disabled={locked || busy || detailProcessing}
+                  onBusy={setDetailRendering}
+                  onPreviewReady={(ready) =>
+                    setPreviewReady((previous) => {
+                      if (ready && previous[view.id] === view.region.data)
+                        return previous;
+                      const next = { ...previous };
+                      if (ready) next[view.id] = view.region.data;
+                      else delete next[view.id];
+                      return next;
+                    })
+                  }
+                  onChange={(region) => {
+                    setDetailsInspected(false);
+                    setDetailViews((previous) =>
+                      previous.map((v) =>
+                        v.id === view.id ? { ...v, region } : v,
+                      ),
+                    );
                   }}
                 />
-                Include this detail in analysis
-              </label>
-              <DetailViewEditor
-                source={q.documents.find((d) => d.id === view.documentId)!}
-                region={view.region}
-                disabled={locked || busy || detailProcessing}
-                onBusy={setDetailRendering}
-                onPreviewReady={(ready) =>
-                  setPreviewReady((previous) => {
-                    if (ready && previous[view.id] === view.region.data)
-                      return previous;
-                    const next = { ...previous };
-                    if (ready) next[view.id] = view.region.data;
-                    else delete next[view.id];
-                    return next;
-                  })
-                }
-                onChange={(region) => {
-                  setDetailsInspected(false);
-                  setDetailViews((previous) =>
-                    previous.map((v) =>
-                      v.id === view.id ? { ...v, region } : v,
-                    ),
-                  );
-                }}
-              />
-              <span>
-                {q.documents.find((d) => d.id === view.documentId)?.name} · Page{" "}
-                {view.region.page} · {view.region.pixelWidth} ×{" "}
-                {view.region.pixelHeight} px · 250 DPI ·{" "}
-                {view.region.rotation ?? 0}°
-              </span>
-              <button
-                className="icon danger"
-                disabled={locked || busy}
-                aria-label={`Remove detail view ${view.region.page}`}
-                onClick={() =>
-                  setDetailViews(detailViews.filter((v) => v.id !== view.id))
-                }
-              >
-                <Trash2 size={17} />
-              </button>
-            </div>
-          ))}
+                <span>
+                  {q.documents.find((d) => d.id === view.documentId)?.name} ·
+                  Page {view.region.page} · {view.region.pixelWidth} ×{" "}
+                  {view.region.pixelHeight} px · 250 DPI ·{" "}
+                  {view.region.rotation ?? 0}°
+                </span>
+                <button
+                  className="icon danger"
+                  disabled={locked || busy}
+                  aria-label={`Remove detail view ${view.region.page}`}
+                  onClick={() =>
+                    setDetailViews(detailViews.filter((v) => v.id !== view.id))
+                  }
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <p className="tiny">

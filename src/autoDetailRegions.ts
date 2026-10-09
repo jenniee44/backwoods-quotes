@@ -1,3 +1,4 @@
+import { administrativeText } from "./detailReadability";
 // Region suggestions locate source content; they never infer site measurements.
 export type TextMark = {
   text: string;
@@ -7,6 +8,7 @@ export type TextMark = {
   height: number;
 };
 export type DetailSuggestion = {
+  inspectionNote?: string;
   rotation?: number;
   pageWidth?: number;
   pageHeight?: number;
@@ -99,6 +101,11 @@ export function suggestPageRegions(
       (m) => Number.isFinite(m.x) && Number.isFinite(m.y) && m.text.trim(),
     )
     .flatMap((m) => {
+      if (
+        administrativeText.test(m.text) &&
+        !/footing|beam|joist|connection|spacing|material|concrete/i.test(m.text)
+      )
+        return [];
       const topic = topics.find(([, pattern]) => pattern.test(m.text));
       return topic || m.height <= 10
         ? [

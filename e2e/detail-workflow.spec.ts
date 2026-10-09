@@ -347,13 +347,11 @@ test("slow orientation preparation never reports ready or allows ignored zoom co
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
-  await page
-    .getByLabel("Attach plans", { exact: true })
-    .setInputFiles({
-      name: "synthetic-delayed-orientation.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from(constructionPdf({ rotation: 180 })),
-    });
+  await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
+    name: "synthetic-delayed-orientation.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from(constructionPdf({ rotation: 180 })),
+  });
   await expect(
     page.getByText(/Preparing original PDF orientation/),
   ).toBeVisible();
@@ -369,4 +367,148 @@ test("slow orientation preparation never reports ready or allows ignored zoom co
     "1",
   );
   await expect(page.locator(".pdf-page-surface")).toHaveCSS("width", "2592px");
+});
+
+test("mixed-orientation details fit comfortably, support reading and manual rotation, and submit only included preview images", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const original = await attach(page, {
+    notes: [],
+    drawing: false,
+    mixedNotes: true,
+    rotation: 180,
+  });
+  const thumbs = page.locator(".detail-thumbnail");
+  await expect(thumbs).toHaveCount(4);
+  await expect(page.getByLabel("Analysis package")).toContainText(
+    "4 prepared for submission",
+  );
+  const cards = page.locator(".detail-review-item");
+  const previewData = await thumbs.evaluateAll((images) =>
+    images.map((image) => (image as HTMLImageElement).src),
+  );
+  for (const angle of [0, 90, 180, 270])
+    await expect(
+      cards.filter({ hasText: `Page 1 · ${angle}°` }).first(),
+    ).toBeVisible();
+  await page.locator(".detail-thumbnail-button").first().click();
+  const editor = page.locator(".detail-inspector[open]");
+  const image = editor.locator(".detail-image-scroll img");
+  await expect(image).toBeVisible();
+  expect(
+    await image.evaluate((el) => el.getBoundingClientRect().top),
+  ).toBeLessThan(
+    await editor
+      .getByLabel("Select detail crop on original sheet")
+      .evaluate((el) => el.getBoundingClientRect().top),
+  );
+  expect(
+    await image.evaluate((el) => el.getBoundingClientRect().height),
+  ).toBeLessThanOrEqual(421);
+  await editor
+    .getByRole("button", { name: "Read small text (100%)", exact: true })
+    .click();
+  await expect(editor.getByLabel(/Detail preview zoom/)).toHaveValue("100");
+  await editor.getByLabel(/Detail preview zoom/).fill("150");
+  const pan = editor.locator(".detail-image-scroll");
+  await pan.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  const box = await pan.boundingBox();
+  expect(
+    await pan.evaluate(
+      (el) =>
+        el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight,
+    ),
+  ).toBe(true);
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box!.x + box!.width / 2 - 80,
+    box!.y + box!.height / 2 - 80,
+  );
+  await page.mouse.up();
+  expect(
+    await pan.evaluate((el) => el.scrollLeft + el.scrollTop),
+  ).toBeGreaterThan(0);
+  await editor.getByRole("button", { name: "Fit detail", exact: true }).click();
+  await expect(image).toBeVisible();
+  await editor
+    .getByRole("button", { name: "Rotate detail right", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("I inspected all selected automatic detail views"),
+  ).toBeEnabled();
+  await page.getByLabel("Detail review group").selectOption({ index: 1 });
+  expect(await cards.filter({ visible: true }).count()).toBeLessThan(4);
+  await expect(page.getByLabel("Analysis package")).toContainText(
+    "4 detail views selected",
+  );
+  await page.getByLabel("Detail review group").selectOption("All details");
+  await page
+    .getByRole("checkbox", { name: /Include detail .* in analysis/ })
+    .last()
+    .uncheck();
+  const included = await thumbs.evaluateAll((images) =>
+    images.slice(0, 3).map((image) => (image as HTMLImageElement).src),
+  );
+  expect(included.slice(1)).toEqual(previewData.slice(1, 3));
+  let sent = 0;
+  await page.route("**/api/plan-analysis", async (route) => {
+    const d = route.request().postDataJSON().documents[0];
+    expect(Buffer.from(d.data.split(",")[1], "base64")).toEqual(original);
+    expect(d.pdfText.pages[0].text).toContain("CONNECTION NOTES");
+    expect(d.detailRegions).toHaveLength(3);
+    expect(d.detailRegions.map((r: { data: string }) => r.data)).toEqual(
+      included,
+    );
+    const rotations = await cards.evaluateAll((elements) =>
+      elements
+        .slice(0, 3)
+        .map((el) =>
+          Number(
+            el
+              .querySelector(".detail-thumbnail-button")
+              ?.textContent?.match(/· (\d+)°/)?.[1],
+          ),
+        ),
+    );
+    expect(
+      d.detailRegions.map((r: { rotation: number }) => r.rotation),
+    ).toEqual(rotations);
+    const exactOriginalRender = await page.evaluate(
+      async ({ data, region }) => {
+        const path = "/src/pdfSource.ts";
+        const { loadPdfSource, renderPdfDetail } = await import(
+          /* @vite-ignore */ path
+        );
+        const task = await loadPdfSource(data);
+        try {
+          const pdf = await task.promise;
+          return (
+            await renderPdfDetail(
+              await pdf.getPage(region.page),
+              region,
+              region.rotation,
+            )
+          ).data;
+        } finally {
+          await task.destroy();
+        }
+      },
+      { data: d.data, region: d.detailRegions[0] },
+    );
+    expect(exactOriginalRender).toBe(d.detailRegions[0].data);
+    sent += d.detailRegions.length;
+    await route.fulfill({ json: analysisFixture(d.id) });
+  });
+  await page
+    .getByLabel("I inspected all selected automatic detail views")
+    .check();
+  await page
+    .getByRole("button", { name: "Analyze Plans", exact: true })
+    .click();
+  await expect(
+    page.getByText("Analysis complete — needs review", { exact: true }),
+  ).toBeVisible();
+  expect(sent).toBe(3);
 });

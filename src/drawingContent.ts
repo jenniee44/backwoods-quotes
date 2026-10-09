@@ -1,3 +1,9 @@
+import {
+  administrativeText,
+  constructionText,
+  intersects,
+} from "./detailReadability";
+import { detailRenderSize } from "../shared/pdf";
 import type { DetailSuggestion, TextMark } from "./autoDetailRegions";
 import { suggestPageRegions } from "./autoDetailRegions";
 export type DrawingSurvey = { width: number; height: number; ink: Uint8Array };
@@ -99,6 +105,16 @@ export function contentRegions(
   }));
   return [...text, ...visual].flatMap((r) => {
     if (regionInk(survey, r, width, height) < 8) return [];
+    const local = marks.filter((m) => intersects(r, m));
+    if (
+      local.length &&
+      local.every((m) => administrativeText.test(m.text)) &&
+      !local.some(
+        (m) =>
+          constructionText.test(m.text) && !administrativeText.test(m.text),
+      )
+    )
+      return [];
     let left = survey.width,
       top = survey.height,
       right = -1,
@@ -130,31 +146,62 @@ export function contentRegions(
     // Tighten sparse crops around observed pixels plus context, never enlarge a raster.
     const w = Math.min(
       r.width,
-      Math.max(140, ((right - left + 1) / survey.width) * width + 48),
+      Math.max(64, ((right - left + 1) / survey.width) * width + 48),
     );
     const h = Math.min(
       r.height,
-      Math.max(100, ((bottom - top + 1) / survey.height) * height + 48),
+      Math.max(48, ((bottom - top + 1) / survey.height) * height + 48),
     );
+    let cropped = {
+      ...r,
+      width: w,
+      height: h,
+      x: Math.max(
+        r.x,
+        Math.min(
+          r.x + r.width - w,
+          ((left + right + 1) / 2 / survey.width) * width - w / 2,
+        ),
+      ),
+      y: Math.max(
+        r.y,
+        Math.min(
+          r.y + r.height - h,
+          ((top + bottom + 1) / 2 / survey.height) * height - h / 2,
+        ),
+      ),
+    };
+    let clipped = false;
+    for (const mark of local.filter((m) => !administrativeText.test(m.text))) {
+      const x = Math.max(0, Math.min(cropped.x, mark.x - 18)),
+        y = Math.max(0, Math.min(cropped.y, mark.y - 18));
+      const right = Math.min(
+          width,
+          Math.max(cropped.x + cropped.width, mark.x + mark.width + 18),
+        ),
+        bottom = Math.min(
+          height,
+          Math.max(cropped.y + cropped.height, mark.y + mark.height + 18),
+        );
+      try {
+        detailRenderSize(right - x, bottom - y);
+        cropped = { ...cropped, x, y, width: right - x, height: bottom - y };
+      } catch {
+        clipped = true;
+      }
+    }
+    const density =
+      regionInk(survey, cropped, width, height) /
+      ((((cropped.width / width) * survey.width * cropped.height) / height) *
+        survey.height);
     return [
       {
-        ...r,
-        width: w,
-        height: h,
-        x: Math.max(
-          r.x,
-          Math.min(
-            r.x + r.width - w,
-            ((left + right + 1) / 2 / survey.width) * width - w / 2,
-          ),
-        ),
-        y: Math.max(
-          r.y,
-          Math.min(
-            r.y + r.height - h,
-            ((top + bottom + 1) / 2 / survey.height) * height - h / 2,
-          ),
-        ),
+        ...cropped,
+        inspectionNote: clipped
+          ? "A label crosses the safe crop limit — inspect the original sheet or add a smaller supporting view."
+          : density < 0.005
+            ? "Sparse linework / small print — inspect and zoom before including."
+            : undefined,
       },
     ];
   });
