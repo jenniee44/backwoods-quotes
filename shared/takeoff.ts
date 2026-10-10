@@ -1,3 +1,4 @@
+import { equivalentComponentKey } from "./componentIdentity";
 import type {
   AnalysisSuggestion,
   PlanAnalysisResult,
@@ -416,23 +417,38 @@ export function prepareConstructionAnalysis(
     summary.siteVerification.push(...item.warnings);
     const existing = retained.find(
       (candidate) =>
-        semanticItemKey(candidate) === semanticItemKey(item) &&
+        (semanticItemKey(candidate) === semanticItemKey(item) ||
+          (!!equivalentComponentKey(item, materialCategoryFor(item)) &&
+            equivalentComponentKey(
+              candidate,
+              materialCategoryFor(candidate),
+            ) === equivalentComponentKey(item, materialCategoryFor(item)))) &&
         ![...(candidate.warnings ?? []), ...(item.warnings ?? [])].some(
           (warning) => warning.startsWith("Conflicting quantities"),
         ),
     );
-    if (existing) {
+    const mergeFacts = existing
+      ? unique([
+          `Source: ${existing.documentId}, page ${existing.page ?? "unknown"}, detail ${existing.sourceDetailView ?? "original"}; specification ${existing.specification ?? "unknown"}; ${existing.quantityMethod ?? "Unknown"}.`,
+          `Source: ${item.documentId}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original"}; specification ${item.specification ?? "unknown"}; ${item.quantityMethod ?? "Unknown"}.`,
+          ...(existing.sourceFacts ?? []),
+          ...(item.sourceFacts ?? []),
+          item.notes,
+          ...(item.calculationBasis &&
+          item.calculationBasis !== existing.calculationBasis
+            ? [`Source calculation: ${item.calculationBasis}`]
+            : []),
+        ])
+      : [];
+    const canPreserve =
+      mergeFacts.length <= 20 &&
+      mergeFacts.every((fact) => fact.length <= 1000) &&
+      unique([...(existing?.warnings ?? []), ...item.warnings]).length <= 20 &&
+      unique([...(existing?.assumptions ?? []), ...(item.assumptions ?? [])])
+        .length <= 20;
+    if (existing && canPreserve) {
       reduced++;
-      existing.sourceFacts = unique([
-        ...(item.sourceDetailView !== existing.sourceDetailView
-          ? [
-              `Additional source: ${item.documentId}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original PDF"}`,
-            ]
-          : []),
-        ...(existing.sourceFacts ?? []),
-        ...(item.sourceFacts ?? []),
-        item.notes.slice(0, 1000),
-      ]).slice(0, 20);
+      existing.sourceFacts = mergeFacts;
       existing.assumptions = unique([
         ...(existing.assumptions ?? []),
         ...(item.assumptions ?? []),
@@ -448,40 +464,15 @@ export function prepareConstructionAnalysis(
         : [existing.confidence, item.confidence].includes("Medium")
           ? "Medium"
           : "High";
-      // Preserve differing calculation evidence for the same quantity.
-      if (
-        item.calculationBasis &&
-        item.calculationBasis !== existing.calculationBasis
-      )
-        existing.sourceFacts = unique([
-          ...(existing.sourceFacts ?? []),
-          `Additional basis: ${item.calculationBasis}`.slice(0, 1000),
-        ]).slice(0, 20);
     } else retained.push(item);
   }
   // Compare cross-page observations of the same known physical component without merging them.
   const originalCounts = new Map(retained.map((item) => [item, item.quantity]));
-  const physicalCountIdentity = (item: AnalysisSuggestion) => {
-    const category = materialCategoryFor(item);
-    if (
-      !item.location?.trim() ||
-      !item.specification?.trim() ||
-      !["Footings / concrete", "Posts", "Beams", "Joists"].includes(
-        category ?? "",
-      )
-    )
-      return "";
-    return JSON.stringify([
-      item.documentId,
-      item.destination,
-      category,
-      words(item.location),
-      words(scopeFor(item)),
-      words(item.specification),
-      words(item.unit),
-      item.supportBasis ?? "Not established",
-    ]);
-  };
+  const physicalCountIdentity = (item: AnalysisSuggestion) =>
+    equivalentComponentKey(
+      { ...item, quantity: null },
+      materialCategoryFor(item),
+    );
   // Keep conflicting quantities/specifications visible; do not silently select one.
   for (let i = 0; i < retained.length; i++) {
     for (let j = i + 1; j < retained.length; j++) {

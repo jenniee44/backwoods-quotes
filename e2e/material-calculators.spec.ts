@@ -139,7 +139,7 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     await row.getByLabel("Alternative construction method").fill(method);
     if (method === "Helical") {
       await expect(row.getByLabel("Work scope")).toBeVisible();
-      await row.getByLabel("Work scope").selectOption("By others");
+      await row.getByLabel("Work scope").selectOption("By others / excluded");
       await row
         .getByRole("button", {
           name: "Mark reviewed — I verified this item",

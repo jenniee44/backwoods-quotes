@@ -7,7 +7,7 @@ export function analysisFixture(documentId = "plan"): PlanAnalysisResult {
     unit: "hours",
     documentId,
     page: 1,
-    notes: "Verify quantities on site",
+    notes: "New construction; verify quantities on site",
     confidence: "Low",
     category: "Miscellaneous",
     destination: "Labour",

@@ -320,8 +320,14 @@ it("uncertain support inclusion cannot be reviewed, bulk-approved or forged into
   expect(() => takeoffToLine(q, forged, "Materials")).toThrow(
     "scope inclusion",
   );
-  const verified = editTakeoff(footing, { scopeVerified: true });
-  const approved = approveTakeoff(reviewTakeoff(verified));
+  const verified = editTakeoff(footing, {
+    workScope: "New work",
+    included: true,
+    scopeVerified: true,
+  });
+  const approved = approveTakeoff(
+    reviewTakeoff(editTakeoff(verified, { scopeVerified: true })),
+  );
   expect(canConvert(approved)).toBe(true);
   expect(editTakeoff(approved, { quantity: 8 })).toMatchObject({
     status: "Proposed",

@@ -7,7 +7,10 @@ const norm = (s?: string) =>
 function family(t: TakeoffItem) {
   if (t.destination !== "Materials") return "";
   const s = t.description;
-  if (/hanger|connector|bracket|hardware/i.test(s)) return "";
+  if (/hanger|connector|bracket|hardware/i.test(s)) return "hangers-connectors";
+  if (/ledger.*(?:screw|bolt)|(?:screw|bolt).*ledger/i.test(s))
+    return "ledger-fasteners";
+  if (/flashing/i.test(s)) return "flashing";
   for (const [key, pattern] of Object.entries({
     footings:
       /footing|foundation.*(?:concrete|pier)|concrete.*(?:foundation|pier|pads?)/i,

@@ -1,7 +1,15 @@
+import { evidenceScope } from "../shared/componentIdentity";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
 export type ContractorScope = {
-  workScope?: "New work" | "Existing work" | "By others";
+  workScope?:
+    | "New work"
+    | "Existing work"
+    | "By others"
+    | "Existing work to remain"
+    | "Existing work to remove or modify"
+    | "By others / excluded"
+    | "Requires scope confirmation";
   included?: boolean;
   alternativeGroup?: string;
   alternativeOption?: string;
@@ -9,6 +17,16 @@ export type ContractorScope = {
 export function workScope(
   item: TakeoffItem,
 ): NonNullable<ContractorScope["workScope"]> {
+  const inferred = evidenceScope(item);
+  if (
+    !item.workScope &&
+    [
+      "Existing work to remain",
+      "Existing work to remove or modify",
+      "By others / excluded",
+    ].includes(inferred)
+  )
+    return inferred;
   return (
     item.workScope ??
     (item.supportBasis === "By others" ||
@@ -21,6 +39,9 @@ export function workScope(
 }
 export function includedScope(item: TakeoffItem) {
   return (
+    !["Existing work to remain", "Requires scope confirmation"].includes(
+      workScope(item),
+    ) &&
     item.included !== false &&
     (workScope(item) === "New work" || item.scopeVerified === true)
   );
@@ -30,7 +51,15 @@ export function validScope(value: unknown) {
   const v = value as ContractorScope;
   return (
     (v.workScope === undefined ||
-      ["New work", "Existing work", "By others"].includes(v.workScope)) &&
+      [
+        "New work",
+        "Existing work",
+        "By others",
+        "Existing work to remain",
+        "Existing work to remove or modify",
+        "By others / excluded",
+        "Requires scope confirmation",
+      ].includes(v.workScope)) &&
     (v.included === undefined || typeof v.included === "boolean") &&
     [v.alternativeGroup, v.alternativeOption].every(
       (s) => s === undefined || (typeof s === "string" && s.length <= 200),
@@ -67,7 +96,7 @@ export function unresolvedFoundationAlternative(q: Quote, item: TakeoffItem) {
 export function assertScope(q: Quote, item: TakeoffItem) {
   if (!includedScope(item))
     throw new Error(
-      "Existing/by-others or excluded work must be explicitly included and verified before approval/conversion.",
+      "Confirm contract scope inclusion: existing/by-others or excluded work must be explicitly included and verified before approval/conversion.",
     );
   if (unresolvedFoundationAlternative(q, item))
     throw new Error(

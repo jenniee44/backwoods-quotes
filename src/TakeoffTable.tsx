@@ -1,3 +1,8 @@
+import { formatFeet, formatQuantity } from "../shared/measurementFormatting";
+import {
+  equivalentComponentKey,
+  purchaseQuantityProblem,
+} from "../shared/componentIdentity";
 import {
   overlappingItems,
   unresolvedOverlaps,
@@ -10,6 +15,7 @@ import { categories, units, takeoffToLine } from "./model";
 import { reviewTakeoff, approveTakeoff, canConvert } from "./planAnalysis";
 import {
   requiresScopeVerification,
+  materialCategoryFor,
   scopeFor,
   semanticItemKey,
 } from "../shared/takeoff";
@@ -245,10 +251,36 @@ export default function TakeoffTable({
                           <span>
                             {t.quantity === null
                               ? "Quantity requires input"
-                              : `${t.quantity} ${t.unit}`}{" "}
+                              : formatQuantity(t.quantity, t.unit)}{" "}
                             · {t.confidence} confidence · {t.status}
                           </span>
-                          <span>{t.classification ?? "Contractor entry"}</span>
+                          <span>
+                            {workScope(t)} ·{" "}
+                            {t.quantityMethod ?? "Contractor entry"} · Source
+                            page {t.page ?? "unknown"}, detail{" "}
+                            {t.sourceDetailView ?? "original"}
+                          </span>
+                          {!!purchaseQuantityProblem(t) && (
+                            <strong className="overlap-warning">
+                              {purchaseQuantityProblem(t)}
+                            </strong>
+                          )}
+                          {!!t.warnings?.some((warning) =>
+                            /conflicting/i.test(warning),
+                          ) && (
+                            <strong className="overlap-warning">
+                              Conflicting observations — reconcile before
+                              approval
+                            </strong>
+                          )}
+                          {!!missingFor(t).length && (
+                            <span>
+                              Missing: {missingFor(t).slice(0, 2).join(" · ")}
+                              {missingFor(t).length > 2
+                                ? ` · +${missingFor(t).length - 2} more`
+                                : ""}
+                            </span>
+                          )}
                           {!!unresolvedOverlaps(q, t).length && (
                             <strong className="overlap-warning">
                               Potential overlap — compare before approval
@@ -577,15 +609,10 @@ export default function TakeoffTable({
                                       (measurement, index) => (
                                         <li key={index}>
                                           <b>{measurement.written}</b> (
-                                          {Number(
-                                            (measurement.inches / 12).toFixed(
-                                              6,
-                                            ),
-                                          )}{" "}
-                                          ft) · {measurement.confidence}{" "}
-                                          confidence · source{" "}
-                                          {measurement.documentId}, page{" "}
-                                          {measurement.page ?? "unknown"},
+                                          {formatFeet(measurement.inches / 12)})
+                                          · {measurement.confidence} confidence
+                                          · source {measurement.documentId},
+                                          page {measurement.page ?? "unknown"},
                                           detail{" "}
                                           {measurement.detail ?? "original"}.
                                           <br />
@@ -619,7 +646,19 @@ export default function TakeoffTable({
                                 .filter(
                                   (evidence) =>
                                     semanticItemKey(evidence) ===
-                                    semanticItemKey(t),
+                                      semanticItemKey(t) ||
+                                    (!!equivalentComponentKey(
+                                      t,
+                                      materialCategoryFor(t),
+                                    ) &&
+                                      equivalentComponentKey(
+                                        evidence,
+                                        materialCategoryFor(evidence),
+                                      ) ===
+                                        equivalentComponentKey(
+                                          t,
+                                          materialCategoryFor(t),
+                                        )),
                                 )
                                 .map((evidence, index) => (
                                   <p key={index} className="tiny">
@@ -649,8 +688,14 @@ export default function TakeoffTable({
                                   >
                                     {[
                                       "New work",
-                                      "Existing work",
-                                      "By others",
+                                      "Existing work to remain",
+                                      "Existing work to remove or modify",
+                                      "By others / excluded",
+                                      "Requires scope confirmation",
+                                      ...(t.workScope === "Existing work" ||
+                                      t.workScope === "By others"
+                                        ? [t.workScope]
+                                        : []),
                                     ].map((value) => (
                                       <option key={value}>{value}</option>
                                     ))}
@@ -660,6 +705,10 @@ export default function TakeoffTable({
                                   <input
                                     type="checkbox"
                                     checked={includedScope(t)}
+                                    disabled={[
+                                      "Existing work to remain",
+                                      "Requires scope confirmation",
+                                    ].includes(workScope(t))}
                                     onChange={(e) =>
                                       patch(t, {
                                         included: e.target.checked,
@@ -695,6 +744,27 @@ export default function TakeoffTable({
                                   />
                                 </Field>
                               </div>
+                              {t.origin === "ai" &&
+                                t.destination === "Materials" &&
+                                (t.category === "Beams" ||
+                                  /\bbeams?\b/i.test(t.description)) &&
+                                !t.calculation && (
+                                  <label className="check-options">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!t.purchaseVerified}
+                                      onChange={(e) =>
+                                        patch(t, {
+                                          purchaseVerified: e.target.checked,
+                                        })
+                                      }
+                                    />
+                                    I verified beam purchase quantities,
+                                    lengths, plies, stock and approved
+                                    cut/splice layout. Run counts are not
+                                    purchase boards.
+                                  </label>
+                                )}
                               <div className="material-calculator">
                                 <h4>
                                   2. Verified measurements & calculated quantity
@@ -808,6 +878,15 @@ export default function TakeoffTable({
                                               />
                                             )}
                                           </Field>
+                                          {field.label.includes("(ft)") &&
+                                            recipe.inputs[field.key] !=
+                                              null && (
+                                              <p className="tiny">
+                                                {formatFeet(
+                                                  recipe.inputs[field.key]!,
+                                                )}
+                                              </p>
+                                            )}
                                           {/\((?:ft|in)\)/.test(field.label) &&
                                             !!drawingMeasurements(t).length && (
                                               <label className="field">

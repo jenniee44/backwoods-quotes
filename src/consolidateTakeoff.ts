@@ -1,13 +1,16 @@
 import type { TakeoffItem } from "./model";
+import { equivalentComponentKey } from "../shared/componentIdentity";
+import { materialCategoryFor } from "../shared/takeoff";
 import { semanticItemKey } from "../shared/takeoff";
 export function consolidateTakeoff(items: TakeoffItem[]) {
   const retained: TakeoffItem[] = [];
   const seen = new Map<string, TakeoffItem>();
   for (const item of items) {
-    // Reviewed/converted entries remain immutable. Different pages, assemblies,
-    // quantities, recipes, specifications and scope choices are never combined.
+    // Reviewed/converted entries remain immutable. Cross-page matches need known
+    // equivalent specifications/location/scope; distinct recipes/quantities stay separate.
     const key = JSON.stringify([
-      semanticItemKey(item),
+      equivalentComponentKey(item, materialCategoryFor(item)) ||
+        semanticItemKey(item),
       item.category,
       item.workScope,
       item.included,
@@ -32,10 +35,22 @@ export function consolidateTakeoff(items: TakeoffItem[]) {
     const facts = unique([
       ...(existing.sourceFacts ?? []),
       ...(item.sourceFacts ?? []),
-      `Source: ${item.documentId || "manual"}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original"}`,
+      `Source: ${existing.documentId || "manual"}, page ${existing.page ?? "unknown"}, detail ${existing.sourceDetailView ?? "original"}; ${existing.specification ?? ""}`,
+      `Source: ${item.documentId || "manual"}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original"}; ${item.specification ?? ""}`,
       item.notes,
+      ...(item.calculationBasis &&
+      item.calculationBasis !== existing.calculationBasis
+        ? [`Source calculation: ${item.calculationBasis}`]
+        : []),
     ]);
-    if (facts.length > 20 || facts.some((fact) => fact.length > 1000)) {
+    if (
+      facts.length > 20 ||
+      facts.some((fact) => fact.length > 1000) ||
+      unique([...(existing.warnings ?? []), ...(item.warnings ?? [])]).length >
+        20 ||
+      unique([...(existing.assumptions ?? []), ...(item.assumptions ?? [])])
+        .length > 20
+    ) {
       retained.push(structuredClone(item));
       continue;
     }

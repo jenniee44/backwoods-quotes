@@ -1,3 +1,8 @@
+import {
+  equivalentComponentKey,
+  evidenceScope,
+  purchaseQuantityProblem,
+} from "../shared/componentIdentity";
 import { includedScope, assertScope } from "./takeoffScope";
 import { calculateMaterial } from "../shared/materialCalculators";
 import { maxAnalysisBodyBytes } from "../shared/analysisPackage";
@@ -128,6 +133,8 @@ export function addAnalysisSuggestions(
       sourceDetailView: item.sourceDetailView,
       supportBasis: item.supportBasis,
       scopeVerified: false,
+      workScope: evidenceScope(item),
+      included: evidenceScope(item) === "New work",
       scopeGroup: item.scopeGroup,
       specification: item.specification,
       location: item.location,
@@ -170,7 +177,10 @@ export function addAnalysisSuggestions(
                 item.description,
               )
             : "Miscellaneous",
-      destination: item.destination ?? "Informational",
+      destination:
+        evidenceScope(item) === "By others / excluded"
+          ? ("Informational" as const)
+          : (item.destination ?? "Informational"),
       classification:
         item.quantity === null
           ? ("Contractor input required" as const)
@@ -182,13 +192,16 @@ export function addAnalysisSuggestions(
         .name,
     };
   });
+  const candidateKey = (
+    item: import("../shared/analysis").AnalysisSuggestion,
+  ) => equivalentComponentKey(item, item.category) || semanticItemKey(item);
   const semanticSeen = new Set(
-    q.takeoff.filter((item) => item.origin === "ai").map(semanticItemKey),
+    q.takeoff.filter((item) => item.origin === "ai").map(candidateKey),
   );
   const duplicateEvidence: AnalysisSuggestion[] = [];
   let duplicatesReduced = result.duplicatesReduced ?? 0;
   const adopted = suggestions.filter((item) => {
-    const key = semanticItemKey(item);
+    const key = candidateKey(item);
     if (semanticSeen.has(key)) {
       duplicateEvidence.push(structuredClone(item));
       duplicatesReduced++;
@@ -227,7 +240,10 @@ export function editTakeoff(
   delta: Partial<TakeoffItem>,
 ): TakeoffItem {
   const scopeOnly = Object.keys(delta).every(
-    (key) => key === "scopeVerified" || key === "included",
+    (key) =>
+      key === "scopeVerified" ||
+      key === "included" ||
+      key === "purchaseVerified",
   );
   const calculation =
     "calculation" in delta
@@ -238,6 +254,8 @@ export function editTakeoff(
   return {
     ...item,
     ...delta,
+    purchaseVerified:
+      delta.purchaseVerified ?? (scopeOnly ? item.purchaseVerified : false),
     calculation,
     ...(calculation && !calculation.verified ? { quantity: null } : {}),
     status: "Proposed",
@@ -248,9 +266,11 @@ export function editTakeoff(
   };
 }
 export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
+  if (purchaseQuantityProblem(item))
+    throw new Error(purchaseQuantityProblem(item));
   if (!includedScope(item))
     throw new Error(
-      "Explicitly include and verify existing/by-others work before review.",
+      "Explicitly include and verify existing/by-others work before review; confirm contract scope.",
     );
   if (item.calculation) {
     if (!item.specification?.trim())
@@ -284,6 +304,8 @@ export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
   return { ...item, status: "Reviewed", reviewAcknowledged: true };
 }
 export function approveTakeoff(item: TakeoffItem): TakeoffItem {
+  if (purchaseQuantityProblem(item))
+    throw new Error(purchaseQuantityProblem(item));
   if (!includedScope(item))
     throw new Error("Explicitly include excluded scope before approval.");
   if (
@@ -311,6 +333,7 @@ export function approveTakeoff(item: TakeoffItem): TakeoffItem {
 export function canConvert(item: TakeoffItem): boolean {
   return (
     includedScope(item) &&
+    !purchaseQuantityProblem(item) &&
     (!item.calculation ||
       (calculateMaterial(item.calculation).quantity === item.quantity &&
         item.quantity !== null)) &&

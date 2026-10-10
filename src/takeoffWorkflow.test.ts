@@ -244,3 +244,60 @@ it("keeps evidence-heavy duplicates separate instead of discarding facts or corr
     ]),
   ).toHaveLength(2);
 });
+
+it("existing-to-remain and unconfirmed scope cannot be forged into approval or pricing; by-others requires explicit inclusion", () => {
+  for (const workScope of [
+    "Existing work to remain",
+    "Requires scope confirmation",
+  ] as const) {
+    const t = item({
+      workScope,
+      included: true,
+      scopeVerified: true,
+      status: "Approved",
+      reviewAcknowledged: true,
+    });
+    expect(includedScope(t)).toBe(false);
+    expect(canConvert(t)).toBe(false);
+    expect(() => reviewTakeoff(t)).toThrow("contract scope");
+    const q = seed().quotes[0];
+    q.status = "Draft";
+    q.takeoff = [t];
+    expect(() => takeoffToLine(q, t, "Materials")).toThrow("scope inclusion");
+  }
+  const t = item({ workScope: "By others / excluded", included: false });
+  expect(canConvert(t)).toBe(false);
+  const included = editTakeoff(t, { included: true, scopeVerified: true });
+  const approved = approveTakeoff(reviewTakeoff(included));
+  expect(canConvert(approved)).toBe(true);
+});
+it("AI beam run counts cannot become boards by approval; verified purchase edits clear approval on further changes", () => {
+  const t = item({
+    description: "3-ply 2x10 beam",
+    category: "Beams",
+    quantity: 5,
+    unit: "runs",
+  });
+  expect(() => reviewTakeoff(t)).toThrow("not purchase");
+  const boards = editTakeoff(t, {
+    quantity: 18,
+    unit: "boards",
+    purchaseVerified: true,
+  });
+  const approved = approveTakeoff(reviewTakeoff(boards));
+  expect(canConvert(approved)).toBe(true);
+  const q = seed().quotes[0];
+  q.status = "Draft";
+  q.takeoff = [approved];
+  const before = q.lines.map((line) => ({ ...line }));
+  const converted = takeoffToLine(q, approved, "Materials");
+  expect(converted.lines.slice(0, before.length)).toEqual(before);
+  expect(converted.lines.at(-1)?.quantity).toBe(18);
+  expect(JSON.stringify(customerDocument(converted))).not.toMatch(
+    /purchaseVerified|sourceFacts|confidence/,
+  );
+  expect(() => takeoffToLine(converted, approved, "Materials")).toThrow();
+  const edited = editTakeoff(approved, { quantity: 20 });
+  expect(edited.purchaseVerified).toBe(false);
+  expect(canConvert(edited)).toBe(false);
+});

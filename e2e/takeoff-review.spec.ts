@@ -60,7 +60,9 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   await expect(checklist.locator("summary")).toContainText("3 items");
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(5);
-  await expect(page.locator(".overlap-warning")).toHaveCount(5);
+  await expect(
+    page.locator(".overlap-warning").filter({ hasText: "Potential overlap" }),
+  ).toHaveCount(5);
   await expect(
     rows.first().getByLabel("Written specification"),
   ).not.toBeVisible();
