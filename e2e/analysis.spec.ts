@@ -294,7 +294,11 @@ test("construction scope, summary-only observations, calculation evidence and sa
   ).toBeVisible();
   const joists = cards.filter({ has: page.locator('input[value="Joists"]') });
   await expect(joists.getByLabel("Calculation basis")).not.toBeVisible();
-  await joists.locator("summary").click();
+  await joists
+    .getByText("Review material — specifications, evidence & calculations", {
+      exact: true,
+    })
+    .click();
   await expect(joists.getByLabel("Takeoff quantity")).toHaveValue("11");
   await expect(joists.getByLabel("Written specification")).toHaveValue(
     '2x8 PT @ 16" O/C',

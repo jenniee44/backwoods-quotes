@@ -174,10 +174,34 @@ it("readable safety/status warnings can establish their own upright orientation"
 });
 
 it("a supported local majority suggests an upright view while remaining explicitly uncertain", () => {
-  const result = chooseDetailOrientation(180, [text(0), text(0), text(90)]);
+  const result = chooseDetailOrientation(180, [
+    text(0, 100, 100),
+    text(0, 100, 200),
+    text(90),
+  ]);
   expect(result).toMatchObject({
     rotation: 0,
     reliable: false,
     suggested: true,
   });
+});
+
+it("duplicate text overlays cannot overpower independent upright notes", () => {
+  const duplicate = text(180, 100, 150, "BEAM SPECIFICATION LUMBER");
+  const result = chooseDetailOrientation(180, [
+    ...Array.from({ length: 20 }, () => duplicate),
+    text(0, 100, 300),
+    text(0, 100, 400),
+    text(0, 100, 500),
+  ]);
+  expect(result.rotation).toBe(0);
+});
+it("one long reversed note does not silently dominate multiple local member annotations", () => {
+  const result = chooseDetailOrientation(180, [
+    text(180, 100, 100, "BEAM SPECIFICATION ".repeat(20)),
+    text(0, 100, 200),
+    text(0, 100, 300),
+    text(0, 100, 400),
+  ]);
+  expect(result.rotation).toBe(0);
 });

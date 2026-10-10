@@ -94,7 +94,11 @@ it("reduces narrow semantic synonyms without merging different components, locat
   expect(prepared.suggestions[0].confidence).toBe("Low");
   expect(
     prepared.suggestions
-      .find((item) => item.quantity === 8)!
+      .find((item) =>
+        item.sourceFacts?.some((fact) =>
+          fact.includes("Conflicting source count: 8"),
+        ),
+      )!
       .warnings?.join(" "),
   ).toContain("Conflicting quantities");
   expect(prepared.suggestions[0].sourceFacts).toContain(

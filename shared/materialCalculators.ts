@@ -3,6 +3,7 @@ export type CalculatorField = {
   label: string;
   integer?: boolean;
   zero?: boolean;
+  options?: { value: number; label: string }[];
 };
 export type MaterialCalculation = {
   kind: string;
@@ -19,7 +20,102 @@ const length = f("length", "Verified layout length (ft)");
 const width = f("width", "Verified width (ft)");
 const stock = f("stock", "Selected stock length (ft)");
 const count = f("count", "Verified component count", { integer: true });
+const direction = f("direction", "Installation direction", {
+  zero: true,
+  options: [
+    { value: 0, label: "Along layout length" },
+    { value: 1, label: "Along layout width" },
+  ],
+});
+// Each section/run is calculated separately. No automatic engineering or cross-run offcut reuse.
+const cutStock = (v: Record<string, number>) =>
+  Math.ceil(
+    (v.count / Math.floor((v.stock * 12 + v.kerf) / (v.member * 12 + v.kerf))) *
+      (1 + v.waste / 100),
+  );
+const cutFields = [
+  count,
+  f("member", "Verified cut length (ft)"),
+  stock,
+  f("kerf", "Saw kerf / cutting loss (in)", { zero: true }),
+  waste,
+];
 export const calculators = [
+  {
+    kind: "decking-layout",
+    name: "Deck boards — directional row / cut layout",
+    unit: "boards",
+    fields: [
+      length,
+      width,
+      direction,
+      f("boardWidth", "Actual board width (in)"),
+      f("gap", "Selected board gap (in)", { zero: true }),
+      stock,
+      f("kerf", "Saw kerf / cutting loss (in)", { zero: true }),
+      f("pieces", "Contractor-approved pieces per row", { integer: true }),
+      waste,
+    ],
+    formula:
+      "rows = ceil((cross-run × 12 + gap) / (actual width + gap)); cut length = run / pieces; cuts per stock = floor((stock × 12 + kerf) / (cut length × 12 + kerf)); purchase = ceil(rows × pieces / cuts per stock × (1 + waste / 100))",
+    run: (v: Record<string, number>) => {
+      const run = v.direction === 0 ? v.length : v.width;
+      const cross = v.direction === 0 ? v.width : v.length;
+      const rows = Math.ceil((cross * 12 + v.gap) / (v.boardWidth + v.gap));
+      return cutStock({ ...v, count: rows * v.pieces, member: run / v.pieces });
+    },
+  },
+  {
+    kind: "post-stock",
+    name: "Posts — verified cut-stock purchase",
+    unit: "posts",
+    fields: cutFields,
+    formula:
+      "ceil(count / floor((stock × 12 + kerf) / (cut length × 12 + kerf)) × (1 + waste / 100))",
+    run: cutStock,
+  },
+  ...["Ledger", "Rim joist", "Blocking", "Fascia", "Stair riser"].map(
+    (name) => ({
+      kind: name.toLowerCase().replace(/ /g, "-"),
+      name: `${name} — verified cut-stock purchase`,
+      unit: "boards",
+      fields: cutFields,
+      formula:
+        "ceil(count / floor((stock × 12 + kerf) / (cut length × 12 + kerf)) × (1 + waste / 100))",
+      run: cutStock,
+    }),
+  ),
+  {
+    kind: "rectangular-concrete",
+    name: "Rectangular footing / pad concrete volume",
+    unit: "cu yd",
+    fields: [
+      count,
+      f("padLength", "Verified pad length (in)"),
+      f("padWidth", "Verified pad width (in)"),
+      f("depth", "Verified concrete depth (in)"),
+      waste,
+    ],
+    formula:
+      "count × pad length × pad width × depth / 46656 × (1 + waste / 100)",
+    run: (v: Record<string, number>) =>
+      ((v.count * v.padLength * v.padWidth * v.depth) / 46656) *
+      (1 + v.waste / 100),
+  },
+  {
+    kind: "hardware",
+    name: "Hardware / connectors — verified assembly schedule",
+    unit: "each",
+    fields: [
+      count,
+      f("pieces", "Verified connectors per assembly", { integer: true }),
+      waste,
+    ],
+    formula:
+      "ceil(verified assembly count × connectors per assembly × (1 + waste / 100))",
+    run: (v: Record<string, number>) =>
+      Math.ceil(v.count * v.pieces * (1 + v.waste / 100)),
+  },
   {
     kind: "area",
     name: "Deck / rectangular surface area",
@@ -249,6 +345,7 @@ export function calculateMaterial(
       unit: "",
       formula: "",
       missing: ["Choose a valid calculator and inputs"],
+      steps: [] as string[],
     };
   const missing = definition.fields
     .filter(
@@ -256,10 +353,34 @@ export function calculateMaterial(
         recipe.inputs[f.key] === null ||
         recipe.inputs[f.key] === undefined ||
         (!f.zero && recipe.inputs[f.key]! <= 0) ||
-        (f.integer && !Number.isInteger(recipe.inputs[f.key])),
+        (f.integer && !Number.isInteger(recipe.inputs[f.key])) ||
+        (f.options && !f.options.some((o) => o.value === recipe.inputs[f.key])),
     )
     .map((f) => f.label);
   const v = recipe.inputs as Record<string, number>;
+  if (recipe.kind === "decking-layout") {
+    const run = v.direction === 0 ? v.length : v.width;
+    if (v.stock < run / v.pieces)
+      missing.push(
+        "Selected stock is too short for the approved equal-piece row layout",
+      );
+    if (v.boardWidth > 24 || v.gap > v.boardWidth || v.kerf > 1)
+      missing.push("Check actual board width, gap and saw kerf in inches");
+  }
+  if (
+    [
+      "post-stock",
+      "ledger",
+      "rim-joist",
+      "blocking",
+      "fascia",
+      "stair-riser",
+    ].includes(recipe.kind)
+  ) {
+    if (v.stock < v.member)
+      missing.push("Stock must cover the verified continuous cut length");
+    if (v.kerf > 1) missing.push("Check saw kerf in inches");
+  }
   if (v.waste > 100) missing.push("Waste allowance must be between 0 and 100%");
   if (
     ["joists", "treads", "stringers", "studs"].includes(recipe.kind) &&
@@ -283,10 +404,41 @@ export function calculateMaterial(
     (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000)
   )
     missing.push("Calculated result is outside the supported range");
+  const steps: string[] = [];
+  if (!missing.length && recipe.kind === "decking-layout") {
+    const run = v.direction === 0 ? v.length : v.width;
+    const cross = v.direction === 0 ? v.width : v.length;
+    const rows = Math.ceil((cross * 12 + v.gap) / (v.boardWidth + v.gap));
+    const cut = run / v.pieces;
+    const cutsPerStock = Math.floor(
+      (v.stock * 12 + v.kerf) / (cut * 12 + v.kerf),
+    );
+    steps.push(
+      `${rows} rows across ${cross} ft; ${v.pieces} equal pieces per row; ${rows * v.pieces} cuts at ${Number(cut.toFixed(6))} ft.`,
+      `${cutsPerStock} cuts per ${v.stock} ft stock board; ${v.waste}% waste allowance; ${amount} boards to purchase.`,
+    );
+  }
+  if (
+    !missing.length &&
+    [
+      "post-stock",
+      "ledger",
+      "rim-joist",
+      "blocking",
+      "fascia",
+      "stair-riser",
+    ].includes(recipe.kind)
+  ) {
+    const cuts = Math.floor((v.stock * 12 + v.kerf) / (v.member * 12 + v.kerf));
+    steps.push(
+      `${v.count} cuts at ${v.member} ft; ${cuts} cuts per ${v.stock} ft stock piece including ${v.kerf} in kerf; ${v.waste}% waste.`,
+    );
+  }
   return {
     quantity: missing.length ? null : amount,
     unit: definition.unit,
     formula: definition.formula,
     missing,
+    steps,
   };
 }

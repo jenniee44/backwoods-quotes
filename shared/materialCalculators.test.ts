@@ -55,6 +55,41 @@ it.each(cases)(
     expect(result.missing).toEqual([]);
   },
 );
+cases.push(
+  [
+    "decking-layout",
+    {
+      length: 20,
+      width: 12,
+      direction: 0,
+      boardWidth: 5.5,
+      gap: 0.125,
+      stock: 20,
+      kerf: 0.125,
+      pieces: 1,
+      waste: 0,
+    },
+    26,
+  ],
+  ...[
+    "post-stock",
+    "ledger",
+    "rim-joist",
+    "blocking",
+    "fascia",
+    "stair-riser",
+  ].map((kind): [string, Record<string, number>, number] => [
+    kind,
+    { count: 6, member: 4, stock: 8, kerf: 0, waste: 0 },
+    3,
+  ]),
+  [
+    "rectangular-concrete",
+    { count: 1, padLength: 36, padWidth: 36, depth: 36, waste: 0 },
+    1,
+  ],
+  ["hardware", { count: 6, pieces: 2, waste: 0 }, 12],
+);
 it.each(calculators)(
   "$kind leaves unknown dimensions/waste as contractor input",
   ({ kind }) => {
@@ -119,4 +154,78 @@ it("rejects unsafe inputs, short stock, unsupported splices and impossible exclu
       verified: true,
     }).quantity,
   ).toBeNull();
+});
+
+it("directional deck rows use actual width, gap and approved stock cuts", () => {
+  const inputs = {
+    length: 20,
+    width: 12,
+    direction: 0,
+    boardWidth: 5.5,
+    gap: 0.125,
+    stock: 10,
+    kerf: 0.125,
+    pieces: 2,
+    waste: 10,
+  };
+  expect(
+    calculateMaterial({ kind: "decking-layout", inputs, verified: true })
+      .quantity,
+  ).toBe(58);
+  expect(
+    calculateMaterial({
+      kind: "decking-layout",
+      inputs: { ...inputs, pieces: 1 },
+      verified: true,
+    }).quantity,
+  ).toBeNull();
+  expect(
+    calculateMaterial({
+      kind: "decking-layout",
+      inputs: { ...inputs, direction: 1, stock: 12, pieces: 1, waste: 0 },
+      verified: true,
+    }).quantity,
+  ).toBe(43);
+  expect(
+    calculateMaterial({
+      kind: "decking-layout",
+      inputs: { ...inputs, direction: 2 },
+      verified: true,
+    }).quantity,
+  ).toBeNull();
+});
+it.each([
+  "post-stock",
+  "ledger",
+  "rim-joist",
+  "blocking",
+  "fascia",
+  "stair-riser",
+])("%s accounts for stock cuts and kerf without assuming splices", (kind) => {
+  const inputs = { count: 12, member: 4, stock: 8, kerf: 0.125, waste: 0 };
+  expect(calculateMaterial({ kind, inputs, verified: true }).quantity).toBe(12);
+  expect(
+    calculateMaterial({ kind, inputs: { ...inputs, kerf: 0 }, verified: true })
+      .quantity,
+  ).toBe(6);
+  expect(
+    calculateMaterial({ kind, inputs: { ...inputs, stock: 3 }, verified: true })
+      .quantity,
+  ).toBeNull();
+});
+it("rectangular footing volume and hardware require verified schedules", () => {
+  expect(
+    calculateMaterial({
+      kind: "rectangular-concrete",
+      inputs: { count: 6, padLength: 24, padWidth: 24, depth: 12, waste: 10 },
+      verified: true,
+    }).quantity,
+  ).toBeCloseTo(0.9777777778);
+  expect(
+    calculateMaterial({
+      kind: "hardware",
+      inputs: { count: 12, pieces: 2, waste: 10 },
+      verified: true,
+    }).quantity,
+  ).toBe(27);
 });

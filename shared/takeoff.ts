@@ -246,11 +246,28 @@ export function prepareConstructionAnalysis(
           (candidate) =>
             candidate.itemRole !== "Supporting evidence" &&
             candidate.itemRole !== "Document observation" &&
-            semanticItemKey({
+            (semanticItemKey({
               ...candidate,
               supportBasis: supportBasisFor(candidate),
             }) ===
-              semanticItemKey({ ...item, supportBasis: supportBasisFor(item) }),
+              semanticItemKey({
+                ...item,
+                supportBasis: supportBasisFor(item),
+              }) ||
+              (candidate.quantity === null &&
+                candidate.warnings?.some((warning) =>
+                  warning.startsWith("Conflicting quantities"),
+                ) &&
+                semanticItemKey({
+                  ...candidate,
+                  quantity: null,
+                  supportBasis: supportBasisFor(candidate),
+                }) ===
+                  semanticItemKey({
+                    ...item,
+                    quantity: null,
+                    supportBasis: supportBasisFor(item),
+                  }))),
         ),
     );
   const retained: AnalysisSuggestion[] = [];
@@ -398,7 +415,11 @@ export function prepareConstructionAnalysis(
       );
     summary.siteVerification.push(...item.warnings);
     const existing = retained.find(
-      (candidate) => semanticItemKey(candidate) === semanticItemKey(item),
+      (candidate) =>
+        semanticItemKey(candidate) === semanticItemKey(item) &&
+        ![...(candidate.warnings ?? []), ...(item.warnings ?? [])].some(
+          (warning) => warning.startsWith("Conflicting quantities"),
+        ),
     );
     if (existing) {
       reduced++;
@@ -438,6 +459,29 @@ export function prepareConstructionAnalysis(
         ]).slice(0, 20);
     } else retained.push(item);
   }
+  // Compare cross-page observations of the same known physical component without merging them.
+  const originalCounts = new Map(retained.map((item) => [item, item.quantity]));
+  const physicalCountIdentity = (item: AnalysisSuggestion) => {
+    const category = materialCategoryFor(item);
+    if (
+      !item.location?.trim() ||
+      !item.specification?.trim() ||
+      !["Footings / concrete", "Posts", "Beams", "Joists"].includes(
+        category ?? "",
+      )
+    )
+      return "";
+    return JSON.stringify([
+      item.documentId,
+      item.destination,
+      category,
+      words(item.location),
+      words(scopeFor(item)),
+      words(item.specification),
+      words(item.unit),
+      item.supportBasis ?? "Not established",
+    ]);
+  };
   // Keep conflicting quantities/specifications visible; do not silently select one.
   for (let i = 0; i < retained.length; i++) {
     for (let j = i + 1; j < retained.length; j++) {
@@ -445,10 +489,19 @@ export function prepareConstructionAnalysis(
         b = retained[j];
       const identity = (item: AnalysisSuggestion) =>
         semanticItemKey({ ...item, quantity: null, specification: "" });
+      const countA = originalCounts.get(a),
+        countB = originalCounts.get(b);
+      const conflictingPhysicalCount =
+        !!physicalCountIdentity(a) &&
+        physicalCountIdentity(a) === physicalCountIdentity(b) &&
+        countA !== null &&
+        countB !== null &&
+        countA !== countB;
       if (
-        identity(a) === identity(b) &&
-        (a.quantity !== b.quantity ||
-          words(a.specification ?? "") !== words(b.specification ?? ""))
+        conflictingPhysicalCount ||
+        (identity(a) === identity(b) &&
+          (countA !== countB ||
+            words(a.specification ?? "") !== words(b.specification ?? "")))
       ) {
         const warning =
           "Conflicting quantities or specifications for the same component/location. Reconcile the source before approving either item.";
@@ -458,6 +511,21 @@ export function prepareConstructionAnalysis(
             20,
           );
           item.confidence = "Low";
+          if (conflictingPhysicalCount) {
+            item.sourceFacts = unique([
+              `Conflicting source count: ${originalCounts.get(item)} ${item.unit}; ${item.documentId}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original"}. Verify unique physical locations; not a purchasing quantity.`,
+              ...(item.sourceFacts ?? []),
+            ]).slice(0, 20);
+            item.quantity = null;
+            item.quantityMethod = "Unknown";
+            item.classification = "Contractor input required";
+            summary.majorUnknowns.push(
+              `${item.description}: quantity/specification requires contractor input`.slice(
+                0,
+                1000,
+              ),
+            );
+          }
         }
         summary.siteVerification.push(warning);
       }

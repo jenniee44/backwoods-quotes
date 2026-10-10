@@ -26,6 +26,7 @@ import {
   unresolvedFoundationAlternative,
 } from "./takeoffScope";
 import NumberInput from "./NumberInput";
+import { drawingMeasurements } from "../shared/constructionMeasurements";
 const Field = ({
   label,
   children,
@@ -101,7 +102,7 @@ export default function TakeoffTable({
         Posts: "posts",
         Beams: "beams",
         Joists: "joists",
-        Decking: "decking",
+        Decking: "decking-layout",
         "Guards / railings": "railing",
       }) as Record<string, string>
     )[t.category ?? ""];
@@ -476,6 +477,20 @@ export default function TakeoffTable({
                                   {overlappingItems(q, t).map((peer) => (
                                     <article key={peer.id}>
                                       <b>{peer.description}</b>
+                                      {t.quantity !== null &&
+                                        peer.quantity !== null &&
+                                        t.quantity !== peer.quantity &&
+                                        t.unit === peer.unit && (
+                                          <p className="info">
+                                            Conflicting counts: {t.quantity}{" "}
+                                            versus {peer.quantity} {t.unit}.
+                                            Reconcile physical locations against
+                                            the plan; do not add counts or
+                                            choose the larger count. Keep
+                                            separate only if verified as
+                                            different components.
+                                          </p>
+                                        )}
                                       <p>
                                         {peer.specification ||
                                           "Specification unknown"}{" "}
@@ -551,6 +566,42 @@ export default function TakeoffTable({
                                   <b>Extracted drawing facts:</b>{" "}
                                   {t.sourceFacts.join("; ")}
                                 </p>
+                              )}
+                              {!!drawingMeasurements(t).length && (
+                                <details>
+                                  <summary>
+                                    Written measurements — verify before using
+                                  </summary>
+                                  <ul>
+                                    {drawingMeasurements(t).map(
+                                      (measurement, index) => (
+                                        <li key={index}>
+                                          <b>{measurement.written}</b> (
+                                          {Number(
+                                            (measurement.inches / 12).toFixed(
+                                              6,
+                                            ),
+                                          )}{" "}
+                                          ft) · {measurement.confidence}{" "}
+                                          confidence · source{" "}
+                                          {measurement.documentId}, page{" "}
+                                          {measurement.page ?? "unknown"},
+                                          detail{" "}
+                                          {measurement.detail ?? "original"}.
+                                          <br />
+                                          {measurement.fact}
+                                        </li>
+                                      ),
+                                    )}
+                                  </ul>
+                                  <p className="tiny">
+                                    Transcribed drawing observations, not
+                                    verified inputs. Confirm location, units and
+                                    layout before entering calculator values.
+                                    Nominal lumber sizes are not actual board
+                                    coverage.
+                                  </p>
+                                </details>
                               )}
                               {!!t.warnings?.length && (
                                 <p>
@@ -694,34 +745,139 @@ export default function TakeoffTable({
                                     </p>
                                     <div className="fields compact">
                                       {definition.fields.map((field) => (
-                                        <Field
-                                          key={field.key}
-                                          label={field.label}
-                                        >
-                                          <NumberInput
-                                            nullable
-                                            value={
-                                              recipe.inputs[field.key] ?? null
-                                            }
-                                            step={field.integer ? "1" : "any"}
-                                            onChange={(value) =>
-                                              calculate(t, {
-                                                ...recipe,
-                                                verified: false,
-                                                inputs: {
-                                                  ...recipe.inputs,
-                                                  [field.key]: Number.isNaN(
-                                                    value,
-                                                  )
-                                                    ? null
-                                                    : value,
-                                                },
-                                              })
-                                            }
-                                          />
-                                        </Field>
+                                        <div key={field.key}>
+                                          <Field label={field.label}>
+                                            {field.options ? (
+                                              <select
+                                                aria-label={field.label}
+                                                value={
+                                                  recipe.inputs[field.key] ?? ""
+                                                }
+                                                onChange={(e) =>
+                                                  calculate(t, {
+                                                    ...recipe,
+                                                    verified: false,
+                                                    inputs: {
+                                                      ...recipe.inputs,
+                                                      [field.key]:
+                                                        e.target.value === ""
+                                                          ? null
+                                                          : Number(
+                                                              e.target.value,
+                                                            ),
+                                                    },
+                                                  })
+                                                }
+                                              >
+                                                <option value="">
+                                                  Choose direction
+                                                </option>
+                                                {field.options.map((option) => (
+                                                  <option
+                                                    key={option.value}
+                                                    value={option.value}
+                                                  >
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            ) : (
+                                              <NumberInput
+                                                nullable
+                                                value={
+                                                  recipe.inputs[field.key] ??
+                                                  null
+                                                }
+                                                step={
+                                                  field.integer ? "1" : "any"
+                                                }
+                                                onChange={(value) =>
+                                                  calculate(t, {
+                                                    ...recipe,
+                                                    verified: false,
+                                                    inputs: {
+                                                      ...recipe.inputs,
+                                                      [field.key]: Number.isNaN(
+                                                        value,
+                                                      )
+                                                        ? null
+                                                        : value,
+                                                    },
+                                                  })
+                                                }
+                                              />
+                                            )}
+                                          </Field>
+                                          {/\((?:ft|in)\)/.test(field.label) &&
+                                            !!drawingMeasurements(t).length && (
+                                              <label className="field">
+                                                <span>
+                                                  Use written measurement for{" "}
+                                                  {field.label}
+                                                </span>
+                                                <select
+                                                  aria-label={`Use written measurement for ${field.label}`}
+                                                  value=""
+                                                  onChange={(e) => {
+                                                    if (!e.target.value) return;
+                                                    const m =
+                                                      drawingMeasurements(t)[
+                                                        Number(e.target.value) -
+                                                          1
+                                                      ];
+                                                    if (!m) return;
+                                                    calculate(t, {
+                                                      ...recipe,
+                                                      verified: false,
+                                                      inputs: {
+                                                        ...recipe.inputs,
+                                                        [field.key]:
+                                                          field.label.includes(
+                                                            "(ft)",
+                                                          )
+                                                            ? m.inches / 12
+                                                            : m.inches,
+                                                      },
+                                                    });
+                                                  }}
+                                                >
+                                                  <option value="">
+                                                    Choose a source observation
+                                                    — verify its role
+                                                  </option>
+                                                  {drawingMeasurements(t).map(
+                                                    (m, index) => (
+                                                      <option
+                                                        key={index}
+                                                        value={index + 1}
+                                                      >
+                                                        {m.written} · {m.fact} ·
+                                                        page{" "}
+                                                        {m.page ?? "unknown"} ·{" "}
+                                                        {m.confidence}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </label>
+                                            )}
+                                        </div>
                                       ))}
                                     </div>
+                                    <p className="tiny">
+                                      {recipe.kind === "decking-layout"
+                                        ? "Rectangular section only; each row uses the approved number of equal-length pieces. Confirm joints, supports, end gaps and trimming. Calculate irregular sections separately; do not subtract openings that do not remove entire rows. Stock offcuts are reused within this section only."
+                                        : [
+                                              "post-stock",
+                                              "ledger",
+                                              "rim-joist",
+                                              "blocking",
+                                              "fascia",
+                                              "stair-riser",
+                                            ].includes(recipe.kind)
+                                          ? "Equal cut lengths within one run/section only. Kerf is included between cuts. No structural splice or offcut reuse between different sections is assumed."
+                                          : "Verify shape, openings, edge conditions and construction specifications. Calculate different sections or member lengths separately."}
+                                    </p>
                                     <label className="check-options">
                                       <input
                                         type="checkbox"
@@ -744,6 +900,13 @@ export default function TakeoffTable({
                                         ? "Review and approve before conversion."
                                         : "Requires contractor verification before use."}
                                     </p>
+                                    {!!preview?.steps?.length && (
+                                      <ul className="tiny">
+                                        {preview.steps.map((step) => (
+                                          <li key={step}>{step}</li>
+                                        ))}
+                                      </ul>
+                                    )}
                                     <p className="tiny">
                                       Counts and purchase allowances only: no
                                       span, connection, stair-code, footing

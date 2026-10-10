@@ -150,7 +150,11 @@ it("same-basis conflicts still remain visible; different support bases are not d
   ).toHaveLength(2);
   expect(
     prepared.suggestions
-      .find((item) => item.quantity === 8)!
+      .find((item) =>
+        item.sourceFacts?.some((fact) =>
+          fact.includes("Conflicting source count: 8"),
+        ),
+      )!
       .warnings!.join(" "),
   ).toContain("Conflicting quantities");
 });
@@ -382,4 +386,51 @@ it("repeated detail observations of the same new footings retain sources without
   expect(result.sourceObservations?.map((s) => s.sourceDetailView)).toEqual([
     1, 2,
   ]);
+});
+
+it("cross-page conflicting support counts are preserved as observations rather than choosing 9 or 12", () => {
+  const data = deckTakeoffFixture();
+  const base = data.sourceObservations![0];
+  data.sourceObservations = [];
+  data.suggestions = [9, 12].map((quantity, index) => ({
+    ...base,
+    description: index ? "Concrete foundation piers" : "Concrete footings",
+    destination: "Materials",
+    category: "Footings / concrete",
+    itemRole: "Construction item",
+    specification: "12 IN concrete footing",
+    location: "Rear deck",
+    page: index + 1,
+    quantity,
+    unit: "each",
+    quantityMethod: "Counted",
+    supportBasis: "Apparent new work",
+    sourceFacts: [`Page ${index + 1}: ${quantity} apparent new supports`],
+  }));
+  const result = prepareConstructionAnalysis(data);
+  expect(result.suggestions).toHaveLength(2);
+  expect(
+    result.suggestions.every(
+      (s) => s.quantity === null && s.confidence === "Low",
+    ),
+  ).toBe(true);
+  expect(result.suggestions[0].sourceFacts?.join()).toContain("9 each");
+  expect(result.suggestions[1].sourceFacts?.join()).toContain("12 each");
+  expect(prepareConstructionAnalysis(result)).toEqual(result);
+  const withObservations = {
+    ...data,
+    suggestions: [],
+    sourceObservations: data.suggestions.map((s) => ({
+      ...s,
+      destination: "Informational" as const,
+      itemRole: "Supporting evidence" as const,
+    })),
+  };
+  const promoted = prepareConstructionAnalysis(withObservations);
+  expect(promoted.suggestions).toHaveLength(2);
+  expect(prepareConstructionAnalysis(promoted)).toEqual(promoted);
+  data.suggestions[1].location = "Front deck";
+  expect(
+    prepareConstructionAnalysis(data).suggestions.map((s) => s.quantity),
+  ).toEqual([9, 12]);
 });

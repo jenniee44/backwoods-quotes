@@ -10,7 +10,7 @@ export type PreparedDetail = PdfDetailRegion & {
 };
 export type PositionedText = TextDirection & { width: number; height: number };
 export const constructionText =
-  /footing|foundation|beam|joist|post|framing|connection|hanger|ledger|stair|guard|railing|specification|construction|notes?|spacing|lumber|concrete|schedule|\d+\s*(?:ft|in\b|mm|cm|["′″'])/i;
+  /footing|foundation|beam|joist|post|framing|connection|hanger|anchor|fastener|ledger|stair|guard|railing|specification|construction|notes?|spacing|lumber|concrete|schedule|\d+\s*(?:ft|in\b|mm|cm|["′″'])/i;
 export const criticalDrawingWarning =
   /do not scale|verify.*(?:site|field)|not for construction|preliminary|superseded|revision\s+(?:\d+|[A-Z]\b)|engineer.*verify|contractor.*verify|existing conditions|by others|not in contract|hold for|construction status/i;
 export const memberAnnotation =
@@ -68,7 +68,12 @@ export function chooseDetailOrientation(
   }));
   let unsupported = false;
   let total = 0;
+  const seen = new Set<string>();
   for (const item of items) {
+    // Duplicate text overlays must not outvote separate physical annotations.
+    const identity = JSON.stringify([item.str.trim(), item.transform]);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     if (
       !item.str.trim() ||
       (administrativeText.test(item.str) &&
@@ -87,7 +92,7 @@ export function chooseDetailOrientation(
     const angle =
       (Math.atan2(item.transform[1], item.transform[0]) * 180) / Math.PI;
     const weight =
-      Math.min(120, item.str.replace(/\s/g, "").length) *
+      Math.min(40, item.str.replace(/\s/g, "").length) *
       (memberAnnotation.test(item.str)
         ? 8
         : constructionText.test(item.str)

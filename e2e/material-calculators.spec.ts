@@ -193,3 +193,90 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     fullPage: true,
   });
 });
+
+test("directional decking purchase layout recalculates, remains unverified and converts only after review", async ({
+  page,
+}) => {
+  await open(page);
+  await page
+    .getByRole("button", { name: "Add takeoff item", exact: true })
+    .click();
+  const row = page.locator(".takeoff-table tbody.line-card").first();
+  await row.getByLabel("Takeoff description").fill("Deck board purchase");
+  await row
+    .getByLabel("Written specification")
+    .fill("Verified actual width 5.5 in PT decking");
+  await row.getByLabel("Suggested destination").selectOption("Materials");
+  await row.getByLabel("Source facts").fill("Deck length 20 ft; width 12 ft");
+  await row.getByLabel("Material calculator").selectOption("decking-layout");
+  await row
+    .getByLabel("Use written measurement for Verified layout length (ft)", {
+      exact: true,
+    })
+    .selectOption("1");
+  await expect(
+    row.getByLabel("Verified layout length (ft)", { exact: true }),
+  ).toHaveValue("20");
+  await expect(
+    row.getByLabel("I verified all calculator inputs"),
+  ).not.toBeChecked();
+  const fields: [string, string][] = [
+    ["Verified layout length (ft)", "20"],
+    ["Verified width (ft)", "12"],
+    ["Actual board width (in)", "5.5"],
+    ["Selected board gap (in)", "0.125"],
+    ["Selected stock length (ft)", "10"],
+    ["Saw kerf / cutting loss (in)", "0.125"],
+    ["Contractor-approved pieces per row", "2"],
+    ["Waste allowance (%)", "10"],
+  ];
+  for (const [name, value] of fields)
+    await row.getByLabel(name, { exact: true }).fill(value);
+  await row
+    .getByLabel("Installation direction", { exact: true })
+    .selectOption("0");
+  await expect(row).toContainText("Calculated preview: 58 boards");
+  await expect(row.getByLabel("Takeoff quantity")).toHaveValue("");
+  await expect(
+    row.getByLabel("Convert reviewed item to estimate"),
+  ).toBeDisabled();
+  await row.getByLabel("I verified all calculator inputs").check();
+  await expect(row.getByLabel("Takeoff quantity")).toHaveValue("58");
+  await row
+    .getByLabel("Installation direction", { exact: true })
+    .selectOption("1");
+  await expect(row.getByLabel("Takeoff quantity")).toHaveValue("");
+  await expect(
+    row.getByLabel("I verified all calculator inputs"),
+  ).not.toBeChecked();
+  await row
+    .getByLabel("Selected stock length (ft)", { exact: true })
+    .fill("12");
+  await row
+    .getByLabel("Contractor-approved pieces per row", { exact: true })
+    .fill("1");
+  await row.getByLabel("Waste allowance (%)", { exact: true }).fill("0");
+  await expect(row).toContainText("Calculated preview: 43 boards");
+  await row.getByLabel("I verified all calculator inputs").check();
+  await row
+    .getByRole("button", {
+      name: "Mark reviewed — I verified this item",
+      exact: true,
+    })
+    .click();
+  await row.getByRole("button", { name: "Approve item", exact: true }).click();
+  await row
+    .getByLabel("Convert reviewed item to estimate")
+    .selectOption("Materials");
+  await expect(row).toContainText("Converted to an estimate line");
+  await expect(row.getByLabel("Takeoff quantity")).toBeDisabled();
+  await page
+    .getByRole("button", { name: "Customer quote", exact: true })
+    .click();
+  await expect(page.locator(".customer-document")).not.toContainText(
+    "Saw kerf",
+  );
+  await expect(page.locator(".customer-document")).not.toContainText(
+    "sourceFacts",
+  );
+});
