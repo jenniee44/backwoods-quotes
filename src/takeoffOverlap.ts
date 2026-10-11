@@ -39,6 +39,7 @@ export function overlapKey(a: TakeoffItem, b: TakeoffItem) {
         t.alternativeGroup,
         t.alternativeOption,
         t.calculation,
+        t.stockLength ?? null,
         t.documentId,
         t.page,
         t.sourceFacts,
@@ -106,6 +107,7 @@ export function consolidateCompared(
     norm(a.specification) !== norm(b.specification) ||
     norm(a.location) !== norm(b.location) ||
     a.quantity !== b.quantity ||
+    (a.stockLength ?? null) !== (b.stockLength ?? null) ||
     a.quantity === null ||
     norm(a.unit) !== norm(b.unit) ||
     a.workScope !== b.workScope ||

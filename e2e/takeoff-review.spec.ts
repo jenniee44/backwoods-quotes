@@ -50,6 +50,7 @@ async function setup(page: import("@playwright/test").Page) {
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
 }
 test("laptop summaries stay compact; missing inputs start collapsed; beam/guard comparisons are explicit and safe", async ({
   page,
@@ -64,7 +65,9 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(5);
   await expect(
-    page.locator(".overlap-warning").filter({ hasText: "Potential overlap" }),
+    page
+      .locator(".material-next-action")
+      .filter({ hasText: "Review possible duplicate" }),
   ).toHaveCount(4);
   await expect(
     rows.first().getByLabel("Written specification"),
@@ -93,13 +96,13 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   page.once("dialog", (d) => d.dismiss());
   await rows
     .first()
-    .getByRole("button", { name: "Consolidate matching material" })
+    .getByRole("button", { name: "Combine matching materials" })
     .click();
   await expect(rows.nth(1).getByLabel("Review status")).toHaveValue("Proposed");
   page.once("dialog", (d) => d.accept());
   await rows
     .first()
-    .getByRole("button", { name: "Consolidate matching material" })
+    .getByRole("button", { name: "Combine matching materials" })
     .click();
   await expect(rows.nth(1).getByLabel("Review status")).toHaveValue("Rejected");
   await expect(rows.first().getByLabel("Takeoff quantity")).toHaveValue("2");
@@ -114,7 +117,7 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   page.once("dialog", (d) => d.accept());
   await rows
     .nth(2)
-    .getByRole("button", { name: "Consolidate matching material" })
+    .getByRole("button", { name: "Combine matching materials" })
     .nth(1)
     .click();
   await expect(page.getByRole("alert")).toContainText(
@@ -123,7 +126,7 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   page.once("dialog", (d) => d.accept());
   await rows
     .nth(2)
-    .getByRole("button", { name: "Confirm separate items" })
+    .getByRole("button", { name: "Keep separate" })
     .nth(1)
     .click();
   await expect(rows).toHaveCount(5);
@@ -188,9 +191,14 @@ test("two observations of twelve concrete footings require comparison and retain
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(2);
-  await expect(page.locator(".overlap-warning")).toHaveCount(2);
+  await expect(
+    page
+      .locator(".material-next-action")
+      .filter({ hasText: "Review possible duplicate" }),
+  ).toHaveCount(2);
   await openAdvancedMaterial(rows.first());
   await expect(
     rows.first().getByRole("button", { name: "Approve item", exact: true }),
@@ -198,7 +206,7 @@ test("two observations of twelve concrete footings require comparison and retain
   page.once("dialog", (d) => d.accept());
   await rows
     .first()
-    .getByRole("button", { name: "Consolidate matching material", exact: true })
+    .getByRole("button", { name: "Combine matching materials", exact: true })
     .click();
   await expect(rows.nth(1).getByLabel("Review status")).toHaveValue("Rejected");
   await expect(rows.first().getByLabel("Takeoff quantity")).toHaveValue("12");

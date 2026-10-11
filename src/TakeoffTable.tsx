@@ -1,8 +1,11 @@
-import { formatFeet, formatQuantity } from "../shared/measurementFormatting";
+import { applyQuickMaterialChanges } from "./quickMaterialEdit";
+import QuickMaterialEdit from "./QuickMaterialEdit";
 import {
-  equivalentComponentKey,
-  purchaseQuantityProblem,
-} from "../shared/componentIdentity";
+  materialReviewGroup,
+  materialNextAction,
+} from "./materialReviewPresentation";
+import { formatFeet, formatQuantity } from "../shared/measurementFormatting";
+import { equivalentComponentKey } from "../shared/componentIdentity";
 import {
   overlappingItems,
   unresolvedOverlaps,
@@ -91,19 +94,7 @@ export default function TakeoffTable({
     if (added.length)
       setEditing((ids) => [...new Set([...ids, ...added.map((t) => t.id)])]);
   }, [q.takeoff]);
-  const groupFor = (t: TakeoffItem) => {
-    if (
-      t.destination === "Informational" ||
-      t.itemRole === "Document observation" ||
-      t.itemRole === "Supporting evidence"
-    )
-      return "Informational / excluded";
-    if ((t.destination ?? "Materials") === "Materials")
-      return t.category && t.category !== "Miscellaneous"
-        ? t.category
-        : "Other materials";
-    return t.destination === "Labour" ? "Labour" : "Other work";
-  };
+  const groupFor = (t: TakeoffItem) => materialReviewGroup(q, t);
   const matchesFilter = (t: TakeoffItem, bucket: ReviewBucket) =>
     reviewBucket(q, t) === bucket &&
     (bucket !== "Ready for review" ||
@@ -138,6 +129,11 @@ export default function TakeoffTable({
     const result = calculateMaterial(recipe);
     patch(t, {
       calculation: recipe,
+      ...(calculators
+        .find((c) => c.kind === recipe.kind)
+        ?.fields.some((f) => f.key === "stock")
+        ? { stockLength: recipe.inputs.stock ?? null }
+        : {}),
       quantity: result.quantity,
       unit: result.unit || t.unit,
       classification:
@@ -335,31 +331,20 @@ export default function TakeoffTable({
                                   ? "Added to estimate"
                                   : t.status === "Approved"
                                     ? "Approved"
-                                    : reviewBucket(q, t) !== "Ready for review"
-                                      ? reviewBucket(q, t)
-                                      : "Ready for review"}
+                                    : reviewBucket(q, t) ===
+                                        "Excluded or informational"
+                                      ? "Excluded"
+                                      : t.reviewAcknowledged
+                                        ? "Verified quantity"
+                                        : t.origin === "ai"
+                                          ? "Proposed quantity"
+                                          : "Ready for review"}
                               </span>
                             </div>
                           </div>
-                          {(t.confidence === "Low" ||
-                            t.confidence === "Medium" ||
-                            t.origin === "ai") && (
-                            <p className="tiny">
-                              {t.confidence} confidence · Verify against drawing
-                              before approval
-                            </p>
-                          )}
-                          {reviewBucket(q, t) ===
-                            "Potential duplicates or conflicts" && (
-                            <strong className="overlap-warning">
-                              Potential overlap or conflicting observations —
-                              compare in View details
-                            </strong>
-                          )}
-                          {!!purchaseQuantityProblem(t) && (
-                            <p className="tiny">
-                              Purchase quantity needs verification — drawing
-                              counts are not stock quantities.
+                          {materialNextAction(q, t) && (
+                            <p className="tiny material-next-action">
+                              {materialNextAction(q, t)}
                             </p>
                           )}
                           <div className="takeoff-main-actions">
@@ -390,6 +375,7 @@ export default function TakeoffTable({
                               aria-label="Approve material"
                               disabled={
                                 disabled ||
+                                editing.includes(t.id) ||
                                 t.status === "Approved" ||
                                 reviewBucket(q, t) !== "Ready for review"
                               }
@@ -408,7 +394,11 @@ export default function TakeoffTable({
                             </button>
                             <button
                               className="button secondary"
-                              disabled={disabled || t.status === "Rejected"}
+                              disabled={
+                                disabled ||
+                                editing.includes(t.id) ||
+                                t.status === "Rejected"
+                              }
                               onClick={() =>
                                 updateItem(t, (item) => ({
                                   ...item,
@@ -421,137 +411,31 @@ export default function TakeoffTable({
                             </button>
                           </div>
                           {editing.includes(t.id) && (
-                            <fieldset
-                              className="quick-material-edit"
+                            <QuickMaterialEdit
+                              item={t}
                               disabled={disabled}
-                            >
-                              <Field label="Edit material description">
-                                <input
-                                  value={t.description}
-                                  onChange={(e) =>
-                                    patch(t, { description: e.target.value })
-                                  }
-                                />
-                              </Field>
-                              <Field label="Edit quantity">
-                                <NumberInput
-                                  nullable
-                                  value={t.quantity}
-                                  onChange={(n) =>
-                                    patch(t, {
-                                      quantity: Number.isNaN(n) ? null : n,
-                                      calculation: undefined,
-                                      quantityMethod: "Unknown",
-                                      calculationBasis: "",
-                                    })
-                                  }
-                                />
-                              </Field>
-                              <Field label="Edit unit">
-                                <input
-                                  list="takeoff-units"
-                                  value={t.unit}
-                                  onChange={(e) =>
-                                    patch(t, {
-                                      unit: e.target.value,
-                                      calculation: undefined,
-                                      quantityMethod: "Unknown",
-                                      calculationBasis: "",
-                                    })
-                                  }
-                                />
-                              </Field>
-                              {!hasReadableSpecification(t) && (
-                                <Field label="Missing material specification">
-                                  <input
-                                    defaultValue=""
-                                    onBlur={(e) => {
-                                      if (e.target.value.trim())
-                                        patch(t, {
-                                          specification: e.target.value,
-                                        });
-                                    }}
-                                  />
-                                </Field>
-                              )}
-                              {(!includedScope(t) ||
-                                (requiresScopeVerification(t) &&
-                                  !t.scopeVerified)) && (
-                                <Field label="Confirm work scope">
-                                  <select
-                                    value={workScope(t)}
-                                    onChange={(e) =>
-                                      patch(t, {
-                                        workScope: e.target
-                                          .value as TakeoffItem["workScope"],
-                                        included: e.target.value === "New work",
-                                        scopeVerified: false,
-                                      })
-                                    }
-                                  >
-                                    {[
-                                      "New work",
-                                      "Existing work to remain",
-                                      "Existing work to remove or modify",
-                                      "By others / excluded",
-                                      "Requires scope confirmation",
-                                      ...(t.workScope === "Existing work" ||
-                                      t.workScope === "By others"
-                                        ? [t.workScope]
-                                        : []),
-                                    ].map((value) => (
-                                      <option key={value}>{value}</option>
-                                    ))}
-                                  </select>
-                                </Field>
-                              )}
-                              {(requiresScopeVerification(t) ||
-                                workScope(t) !== "New work") && (
-                                <label className="check-options">
-                                  <input
-                                    type="checkbox"
-                                    checked={
-                                      !!t.scopeVerified && includedScope(t)
-                                    }
-                                    disabled={[
-                                      "Existing work to remain",
-                                      "Requires scope confirmation",
-                                    ].includes(workScope(t))}
-                                    onChange={(e) =>
-                                      patch(t, {
-                                        scopeVerified: e.target.checked,
-                                        included: e.target.checked,
-                                      })
-                                    }
-                                  />
-                                  I verified this work is included in our
-                                  contract
-                                </label>
-                              )}
-                              {t.destination === "Informational" && (
-                                <p className="tiny">
-                                  Informational only. Choose an estimate
-                                  destination in Advanced only if this is
-                                  verified construction work explicitly included
-                                  in our scope.
-                                </p>
-                              )}
-                              <p className="tiny">
-                                Editing resets approval. Stock calculations and
-                                specification changes are available in View
-                                details → Advanced.
-                              </p>
-                              <button
-                                className="button secondary"
-                                onClick={() =>
-                                  setEditing((ids) =>
-                                    ids.filter((id) => id !== t.id),
-                                  )
-                                }
-                              >
-                                Done editing
-                              </button>
-                            </fieldset>
+                              onSave={(delta) =>
+                                updateItem(t, (item) =>
+                                  applyQuickMaterialChanges(item, delta),
+                                )
+                              }
+                              onClose={() =>
+                                setEditing((ids) =>
+                                  ids.filter((id) => id !== t.id),
+                                )
+                              }
+                              onAdvanced={() => {
+                                setEditing((ids) =>
+                                  ids.filter((id) => id !== t.id),
+                                );
+                                setExpanded((ids) => [
+                                  ...new Set([...ids, t.id]),
+                                ]);
+                                setAdvanced((ids) => [
+                                  ...new Set([...ids, t.id]),
+                                ]);
+                              }}
+                            />
                           )}
                         </td>
                       </tr>
@@ -576,28 +460,19 @@ export default function TakeoffTable({
                             >
                               View details
                             </summary>
-                            <p className="tiny">
-                              {t.classification ?? "Contractor entry"} ·{" "}
-                              {t.sourceDocumentName || "Manual source"} · Source
-                              page {t.page ?? "unknown"}, detail{" "}
-                              {t.sourceDetailView ?? "original"} ·{" "}
-                              {workScope(t)} · Quantity basis:{" "}
-                              {t.quantityMethod ?? "Contractor entry"}
-                            </p>
                             {!!overlappingItems(q, t).length && (
                               <section className="overlap-comparison">
-                                <h4>
-                                  Compare potentially overlapping materials
-                                </h4>
-                                <p>
-                                  Compare specifications, locations, quantities,
-                                  methods and source evidence. Different
-                                  assemblies and work by others must remain
-                                  separate. No quantities are added together.
+                                <h4>Review possible duplicates</h4>
+                                <p className="tiny">
+                                  Match specification, location and method.
+                                  Quantities are never added.
                                 </p>
                                 {overlappingItems(q, t).map((peer) => (
                                   <article key={peer.id}>
-                                    <b>{peer.description}</b>
+                                    <b>
+                                      Possible duplicate:{" "}
+                                      {peer.specification || peer.description}
+                                    </b>
                                     {t.quantity !== null &&
                                       peer.quantity !== null &&
                                       t.quantity !== peer.quantity &&
@@ -605,10 +480,8 @@ export default function TakeoffTable({
                                         <p className="info">
                                           Conflicting counts: {t.quantity}{" "}
                                           versus {peer.quantity} {t.unit}.
-                                          Reconcile physical locations against
-                                          the plan; do not add counts or choose
-                                          the larger count. Keep separate only
-                                          if verified as different components.
+                                          Verify against the drawing; never add
+                                          the counts.
                                         </p>
                                       )}
                                     <p>
@@ -620,12 +493,20 @@ export default function TakeoffTable({
                                       {peer.alternativeOption ||
                                         "Method unspecified"}
                                     </p>
-                                    <p>
-                                      Source: {peer.documentId || "manual"},
-                                      page {peer.page ?? "unknown"};{" "}
-                                      {peer.sourceFacts?.join("; ")}{" "}
-                                      {peer.notes}
-                                    </p>
+                                    <details>
+                                      <summary>View evidence</summary>
+                                      <p>
+                                        This item: {t.documentId || "manual"},
+                                        page {t.page ?? "unknown"};{" "}
+                                        {t.sourceFacts?.join("; ")} {t.notes}
+                                        <br />
+                                        Other item:{" "}
+                                        {peer.documentId || "manual"}, page{" "}
+                                        {peer.page ?? "unknown"};{" "}
+                                        {peer.sourceFacts?.join("; ")}{" "}
+                                        {peer.notes}
+                                      </p>
+                                    </details>
                                     <button
                                       className="button secondary"
                                       disabled={locked || !!t.convertedLineId}
@@ -640,7 +521,7 @@ export default function TakeoffTable({
                                           );
                                       }}
                                     >
-                                      Confirm separate items
+                                      Keep separate
                                     </button>
                                     <button
                                       className="button secondary"
@@ -665,99 +546,13 @@ export default function TakeoffTable({
                                         }
                                       }}
                                     >
-                                      Consolidate matching material
+                                      Combine matching materials
                                     </button>
                                   </article>
                                 ))}
                               </section>
                             )}
 
-                            <p className="tiny">
-                              {t.confidence} confidence · {t.classification} ·
-                              Support basis:{" "}
-                              {t.supportBasis ?? "Not established"} · Quantity
-                              basis: {t.quantityMethod ?? "Contractor entry"}
-                            </p>
-                            {t.specification && (
-                              <p>Written specification: {t.specification}</p>
-                            )}
-                            {!!t.sourceFacts?.length && (
-                              <p>
-                                <b>Extracted drawing facts:</b>{" "}
-                                {t.sourceFacts.join("; ")}
-                              </p>
-                            )}
-                            {!!drawingMeasurements(t).length && (
-                              <details>
-                                <summary>
-                                  Written measurements — verify before using
-                                </summary>
-                                <ul>
-                                  {drawingMeasurements(t).map(
-                                    (measurement, index) => (
-                                      <li key={index}>
-                                        <b>{measurement.written}</b> (
-                                        {formatFeet(measurement.inches / 12)}) ·{" "}
-                                        {measurement.confidence} confidence ·
-                                        source {measurement.documentId}, page{" "}
-                                        {measurement.page ?? "unknown"}, detail{" "}
-                                        {measurement.detail ?? "original"}.
-                                        <br />
-                                        {measurement.fact}
-                                      </li>
-                                    ),
-                                  )}
-                                </ul>
-                                <p className="tiny">
-                                  Transcribed drawing observations, not verified
-                                  inputs. Confirm location, units and layout
-                                  before entering calculator values. Nominal
-                                  lumber sizes are not actual board coverage.
-                                </p>
-                              </details>
-                            )}
-                            {!!t.warnings?.length && (
-                              <p>
-                                All verification notes: {t.warnings.join("; ")}
-                              </p>
-                            )}
-                            {!!t.assumptions?.length && (
-                              <p>Assumptions: {t.assumptions.join("; ")}</p>
-                            )}
-                            {(q.analysisReports ?? [])
-                              .flatMap(
-                                (report) => report.duplicateEvidence ?? [],
-                              )
-                              .filter(
-                                (evidence) =>
-                                  semanticItemKey(evidence) ===
-                                    semanticItemKey(t) ||
-                                  (!!equivalentComponentKey(
-                                    t,
-                                    materialCategoryFor(t),
-                                  ) &&
-                                    equivalentComponentKey(
-                                      evidence,
-                                      materialCategoryFor(evidence),
-                                    ) ===
-                                      equivalentComponentKey(
-                                        t,
-                                        materialCategoryFor(t),
-                                      )),
-                              )
-                              .map((evidence, index) => (
-                                <p key={index} className="tiny">
-                                  Additional duplicate source:{" "}
-                                  {evidence.documentId}, page{" "}
-                                  {evidence.page ?? "unknown"}, detail{" "}
-                                  {evidence.sourceDetailView ?? "original"}.{" "}
-                                  {evidence.sourceFacts?.join("; ")}{" "}
-                                  {evidence.notes}
-                                </p>
-                              ))}
-                            {t.calculationBasis && (
-                              <p>Calculation basis: {t.calculationBasis}</p>
-                            )}
                             <details
                               className="takeoff-advanced"
                               open={advanced.includes(t.id)}
@@ -772,8 +567,105 @@ export default function TakeoffTable({
                                   );
                                 }}
                               >
-                                Advanced — settings & calculators
+                                Advanced details
                               </summary>
+                              <p className="tiny">
+                                {t.classification ?? "Contractor entry"} ·{" "}
+                                {t.sourceDocumentName || "Manual source"} ·
+                                Source page {t.page ?? "unknown"}, detail{" "}
+                                {t.sourceDetailView ?? "original"} ·{" "}
+                                {workScope(t)} · Quantity basis:{" "}
+                                {t.quantityMethod ?? "Contractor entry"}
+                              </p>
+                              <p className="tiny">
+                                {t.confidence} confidence · {t.classification} ·
+                                Support basis:{" "}
+                                {t.supportBasis ?? "Not established"} · Quantity
+                                basis: {t.quantityMethod ?? "Contractor entry"}
+                              </p>
+                              {t.specification && (
+                                <p>Written specification: {t.specification}</p>
+                              )}
+                              {!!t.sourceFacts?.length && (
+                                <p>
+                                  <b>Extracted drawing facts:</b>{" "}
+                                  {t.sourceFacts.join("; ")}
+                                </p>
+                              )}
+                              {!!drawingMeasurements(t).length && (
+                                <details>
+                                  <summary>
+                                    Written measurements — verify before using
+                                  </summary>
+                                  <ul>
+                                    {drawingMeasurements(t).map(
+                                      (measurement, index) => (
+                                        <li key={index}>
+                                          <b>{measurement.written}</b> (
+                                          {formatFeet(measurement.inches / 12)})
+                                          · {measurement.confidence} confidence
+                                          · source {measurement.documentId},
+                                          page {measurement.page ?? "unknown"},
+                                          detail{" "}
+                                          {measurement.detail ?? "original"}.
+                                          <br />
+                                          {measurement.fact}
+                                        </li>
+                                      ),
+                                    )}
+                                  </ul>
+                                  <p className="tiny">
+                                    Transcribed drawing observations, not
+                                    verified inputs. Confirm location, units and
+                                    layout before entering calculator values.
+                                    Nominal lumber sizes are not actual board
+                                    coverage.
+                                  </p>
+                                </details>
+                              )}
+                              {!!t.warnings?.length && (
+                                <p>
+                                  All verification notes:{" "}
+                                  {t.warnings.join("; ")}
+                                </p>
+                              )}
+                              {!!t.assumptions?.length && (
+                                <p>Assumptions: {t.assumptions.join("; ")}</p>
+                              )}
+                              {(q.analysisReports ?? [])
+                                .flatMap(
+                                  (report) => report.duplicateEvidence ?? [],
+                                )
+                                .filter(
+                                  (evidence) =>
+                                    semanticItemKey(evidence) ===
+                                      semanticItemKey(t) ||
+                                    (!!equivalentComponentKey(
+                                      t,
+                                      materialCategoryFor(t),
+                                    ) &&
+                                      equivalentComponentKey(
+                                        evidence,
+                                        materialCategoryFor(evidence),
+                                      ) ===
+                                        equivalentComponentKey(
+                                          t,
+                                          materialCategoryFor(t),
+                                        )),
+                                )
+                                .map((evidence, index) => (
+                                  <p key={index} className="tiny">
+                                    Additional duplicate source:{" "}
+                                    {evidence.documentId}, page{" "}
+                                    {evidence.page ?? "unknown"}, detail{" "}
+                                    {evidence.sourceDetailView ?? "original"}.{" "}
+                                    {evidence.sourceFacts?.join("; ")}{" "}
+                                    {evidence.notes}
+                                  </p>
+                                ))}
+                              {t.calculationBasis && (
+                                <p>Calculation basis: {t.calculationBasis}</p>
+                              )}
                               <fieldset disabled={disabled}>
                                 <p className="tiny">
                                   <b>1. Drawing facts & specifications</b> —

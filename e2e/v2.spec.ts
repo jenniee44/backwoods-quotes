@@ -130,6 +130,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   const pdf = await page.pdf({ format: "A4" });
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "engineer-plans.pdf",
@@ -177,6 +178,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   await expect(page.getByLabel("Takeoff quantity")).toHaveValue("12");
   await page
     .getByRole("button", { name: "revised-plans.pdf", exact: true })

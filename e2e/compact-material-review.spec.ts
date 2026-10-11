@@ -98,6 +98,7 @@ async function setup(
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
 }
 test("compact cards offer quick edits, summary navigation and explicit approval before safe batch conversion", async ({
   page,
@@ -125,16 +126,16 @@ test("compact cards offer quick edits, summary navigation and explicit approval 
   await expect(posts.getByLabel("Edit material description")).toHaveValue(
     "Deck posts",
   );
-  await expect(posts.getByLabel("Edit quantity", { exact: true })).toHaveValue(
-    "4",
-  );
+  await expect(
+    posts.getByLabel("Verified quantity", { exact: true }),
+  ).toHaveValue("4");
   await expect(posts.getByLabel("Missing material specification")).toHaveCount(
     0,
   );
   await expect(posts.getByLabel("Confirm work scope")).toHaveCount(0);
   await expect(posts.getByLabel("Source facts")).not.toBeVisible();
-  await posts.getByLabel("Edit quantity", { exact: true }).fill("5");
-  await posts.getByRole("button", { name: "Done editing" }).click();
+  await posts.getByLabel("Verified quantity", { exact: true }).fill("5");
+  await posts.getByRole("button", { name: "Save changes" }).click();
   page.once("dialog", (d) => d.dismiss());
   await posts
     .getByRole("button", { name: "Approve material", exact: true })
@@ -185,10 +186,13 @@ test("compact cards offer quick edits, summary navigation and explicit approval 
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("Decking boards");
   await rows.first().getByRole("button", { name: "Edit", exact: true }).click();
-  await rows.first().getByLabel("Edit quantity", { exact: true }).fill("32");
+  await rows
+    .first()
+    .getByLabel("Verified quantity", { exact: true })
+    .fill("32");
   // Keep an item visible while editing, even if its missing input is resolved.
   await expect(rows).toHaveCount(1);
-  await rows.first().getByRole("button", { name: "Done editing" }).click();
+  await rows.first().getByRole("button", { name: "Save changes" }).click();
   await expect(rows).toHaveCount(0);
   await nav.getByRole("button", { name: /All items/ }).click();
   const remain = rows.filter({
@@ -232,7 +236,8 @@ test("missing specifications, conflicts and unknown purchase quantities cannot b
       .getByText("Decking boards", { exact: true }),
   });
   await decking.getByRole("button", { name: "Edit", exact: true }).click();
-  await decking.getByLabel("Edit quantity", { exact: true }).fill("12");
+  await decking.getByLabel("Verified quantity", { exact: true }).fill("12");
+  await decking.getByRole("button", { name: "Save changes" }).click();
   await openAdvancedMaterial(decking);
   await decking.getByLabel("Written specification").fill("unreadable");
   await expect(
@@ -262,12 +267,14 @@ test("clear equivalent source observations group into one card while distinct lo
   await expect(posts.locator(".material-card-quantity")).toContainText(
     "4 each",
   );
-  await posts.getByText("View details", { exact: true }).click();
+  await openAdvancedMaterial(posts);
   await expect(posts).toContainText(
     "Section page 2 references the same four posts",
   );
   await expect(posts).toContainText("page 1");
   await expect(posts).toContainText("page 2");
+  await expect(posts.getByLabel("Source facts")).toBeVisible();
+  await posts.locator(".takeoff-advanced > summary").click();
   await expect(posts.getByLabel("Source facts")).not.toBeVisible();
 });
 test("conflicting counts need explicit reconciliation and changing the quantity invalidates it", async ({
@@ -279,7 +286,8 @@ test("conflicting counts need explicit reconciliation and changing the quantity 
     row.getByRole("button", { name: "Approve material" }),
   ).toBeDisabled();
   await row.getByRole("button", { name: "Edit", exact: true }).click();
-  await row.getByLabel("Edit quantity", { exact: true }).fill("4");
+  await row.getByLabel("Verified quantity", { exact: true }).fill("4");
+  await row.getByRole("button", { name: "Save changes" }).click();
   await expect(
     row.getByRole("button", { name: "Approve material" }),
   ).toBeDisabled();
@@ -292,7 +300,8 @@ test("conflicting counts need explicit reconciliation and changing the quantity 
     page.getByRole("region", { name: "Reviewed estimate summary" }),
   ).toContainText("1 approved item");
   await row.getByRole("button", { name: "Edit", exact: true }).click();
-  await row.getByLabel("Edit quantity", { exact: true }).fill("6");
+  await row.getByLabel("Verified quantity", { exact: true }).fill("6");
+  await row.getByRole("button", { name: "Save changes" }).click();
   await expect(
     row.getByRole("button", { name: "Approve material" }),
   ).toBeDisabled();

@@ -4,6 +4,7 @@ import { analysisBatches, analyzeBatches } from "./analysisBatches";
 import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
+import MaterialsSummary from "./MaterialsSummary";
 import { assertScope } from "./takeoffScope";
 import { consolidateTakeoff } from "./consolidateTakeoff";
 import { optimizeAnalysisPackage } from "./optimizeAnalysisPackage";
@@ -347,6 +348,13 @@ export default function PlansTakeoff({
           selectedDocuments,
         ),
       );
+      setAdvancedReview(false);
+      requestAnimationFrame(() =>
+        summaryRef.current?.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        }),
+      );
       setAnalysisState(
         result.suggestions.length || result.dimensions?.length
           ? "Analysis complete — needs review"
@@ -396,6 +404,8 @@ export default function PlansTakeoff({
       setReviewError((error as Error).message);
     }
   }
+  const [advancedReview, setAdvancedReview] = useState(false);
+  const summaryRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const current = q.documents.find((d) => d.id === selected);
@@ -1183,88 +1193,108 @@ export default function PlansTakeoff({
           {reviewError}
         </p>
       )}
-      <p className="muted">
-        Changing a measurement resets it to Proposed. Replacing or removing a
-        source document also requires re-review. Existing converted estimate
-        lines are preserved and must be checked separately.
-      </p>
-      <details className="takeoff-list-tools">
-        <summary>Advanced list tools</summary>
-        {!!q.takeoff.some((t) => t.origin === "ai") && (
-          <div className="heading-actions">
-            <button
-              className="button secondary"
-              disabled={locked || !selectedItems.length}
-              onClick={() => bulkApprove()}
-            >
-              Approve selected reviewed items
-            </button>
-            <button
-              className="button secondary"
-              disabled={
-                locked ||
-                !q.takeoff.some(
-                  (t) =>
-                    t.origin === "ai" &&
-                    t.status === "Reviewed" &&
-                    t.reviewAcknowledged &&
-                    !t.convertedLineId,
-                )
-              }
-              onClick={() => bulkApprove(true)}
-            >
-              Approve all reviewed items
-            </button>
-          </div>
-        )}
+      <div ref={summaryRef}>
+        <MaterialsSummary
+          key={q.id + ":" + (q.analysisReports?.at(-1)?.id ?? "initial")}
+          quote={q}
+          locked={locked || busy}
+          onChange={onChange}
+          onError={setReviewError}
+          onAdvanced={() => setAdvancedReview(true)}
+        />
+      </div>
+      <details className="advanced-review" open={advancedReview}>
+        <summary
+          onClick={(e) => {
+            e.preventDefault();
+            setAdvancedReview((v) => !v);
+          }}
+        >
+          Advanced Review
+        </summary>
+        <p className="muted">
+          Changing a measurement resets it to Proposed. Replacing or removing a
+          source document also requires re-review. Existing converted estimate
+          lines are preserved and must be checked separately.
+        </p>
+        <details className="takeoff-list-tools">
+          <summary>Advanced list tools</summary>
+          {!!q.takeoff.some((t) => t.origin === "ai") && (
+            <div className="heading-actions">
+              <button
+                className="button secondary"
+                disabled={locked || !selectedItems.length}
+                onClick={() => bulkApprove()}
+              >
+                Approve selected reviewed items
+              </button>
+              <button
+                className="button secondary"
+                disabled={
+                  locked ||
+                  !q.takeoff.some(
+                    (t) =>
+                      t.origin === "ai" &&
+                      t.status === "Reviewed" &&
+                      t.reviewAcknowledged &&
+                      !t.convertedLineId,
+                  )
+                }
+                onClick={() => bulkApprove(true)}
+              >
+                Approve all reviewed items
+              </button>
+            </div>
+          )}
+          <button
+            className="button secondary"
+            disabled={locked || busy || !q.takeoff.length}
+            onClick={() =>
+              window.confirm(
+                "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
+              ) && onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
+            }
+          >
+            Consolidate exact unreviewed duplicates
+          </button>
+        </details>
+        <TakeoffTable
+          quote={q}
+          locked={locked || busy}
+          onChange={onChange}
+          patch={patch}
+          updateItem={updateItem}
+          onError={setReviewError}
+          selected={selectedItems}
+          setSelected={setSelectedItems}
+        />
         <button
           className="button secondary"
-          disabled={locked || busy || !q.takeoff.length}
+          disabled={locked}
           onClick={() =>
-            window.confirm(
-              "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
-            ) && onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
+            onChange({
+              ...q,
+              takeoff: [
+                ...q.takeoff,
+                {
+                  id: id(),
+                  description: "",
+                  quantity: null,
+                  unit: "each",
+                  documentId: "",
+                  page: null,
+                  notes: "",
+                  status: "Proposed",
+                  confidence: "Unspecified",
+                },
+              ],
+            })
           }
         >
-          Consolidate exact unreviewed duplicates
+          <Plus size={17} />
+          Add takeoff item
         </button>
       </details>
-      <TakeoffTable
-        quote={q}
-        locked={locked || busy}
-        onChange={onChange}
-        patch={patch}
-        updateItem={updateItem}
-        onError={setReviewError}
-        selected={selectedItems}
-        setSelected={setSelectedItems}
-      />
-      <button
-        className="button secondary"
-        disabled={locked}
-        onClick={() =>
-          onChange({
-            ...q,
-            takeoff: [
-              ...q.takeoff,
-              {
-                id: id(),
-                description: "",
-                quantity: null,
-                unit: "each",
-                documentId: "",
-                page: null,
-                notes: "",
-                status: "Proposed",
-                confidence: "Unspecified",
-              },
-            ],
-          })
-        }
-      >
-        <Plus size={17} />
-        Add takeoff item
-      </button>
     </>
   );
 }

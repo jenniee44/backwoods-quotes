@@ -19,6 +19,7 @@ async function open(page: import("@playwright/test").Page) {
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "test-plan.png",
     mimeType: "image/png",
@@ -44,6 +45,7 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
   await expect(
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
+  await page.locator(".advanced-review > summary").click();
   await expect(
     page.getByText("DO NOT SCALE DRAWINGS", { exact: true }),
   ).toBeVisible();
@@ -136,12 +138,14 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: /Plan quote/ }).click();
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   await expect(
     page.getByText("DO NOT SCALE DRAWINGS", { exact: true }),
   ).toBeVisible();
@@ -285,6 +289,7 @@ test("construction scope, summary-only observations, calculation evidence and sa
   await expect(
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
+  await page.locator(".advanced-review > summary").click();
   const cards = page.locator("tbody.line-card");
   await expect(cards).toHaveCount(3);
   await expect(
@@ -431,6 +436,7 @@ test("useful deck observations become specific estimate candidates while unknown
   await expect(
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible();
+  await page.locator(".advanced-review > summary").click();
   await expect(page.getByLabel("Takeoff description")).toHaveCount(6);
   const card = (description: string) =>
     page
@@ -540,6 +546,7 @@ test("useful deck observations become specific estimate candidates while unknown
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   await expect(card("2x6 PT deck joists")).toContainText(
     "2x6 PT deck joists @ 16 in. O.C.",
   );

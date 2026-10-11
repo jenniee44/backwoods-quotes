@@ -37,6 +37,7 @@ export type Line = {
   pricingRequired?: boolean;
   takeoffSource?: ConstructionEvidence &
     ContractorScope & {
+      stockLength?: number | null;
       classification?: TakeoffItem["classification"];
       assumptions?: string[];
       warnings?: string[];
@@ -201,6 +202,7 @@ export type TakeoffItem = ConstructionEvidence &
     overlapReviews?: string[];
     purchaseVerified?: boolean;
     conflictsVerified?: boolean;
+    stockLength?: number | null;
     calculation?: MaterialCalculation;
     id: string;
     description: string;
@@ -1101,6 +1103,7 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       alternativeOption: item.alternativeOption,
       scopeGroup: item.scopeGroup,
       specification: item.specification,
+      stockLength: item.stockLength,
       location: item.location,
       sourceFacts: structuredClone(item.sourceFacts ?? []),
       calculationBasis: item.calculationBasis,
@@ -1179,6 +1182,11 @@ function validExtensions(v: unknown) {
         strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
         validConstructionEvidence(t) &&
         validScope(t) &&
+        (t.stockLength === undefined ||
+          t.stockLength === null ||
+          (typeof t.stockLength === "number" &&
+            Number.isFinite(t.stockLength) &&
+            t.stockLength > 0)) &&
         (t.conflictsVerified === undefined ||
           typeof t.conflictsVerified === "boolean") &&
         (t.purchaseVerified === undefined ||

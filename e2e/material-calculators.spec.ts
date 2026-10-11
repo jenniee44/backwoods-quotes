@@ -8,6 +8,7 @@ async function open(page: Page) {
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
 }
 test("compact table calculates only from verified inputs, resets review on edits, converts once and keeps customer output private", async ({
   page,
@@ -105,6 +106,7 @@ test("compact table calculates only from verified inputs, resets review on edits
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   await expect(page.locator(".takeoff-table")).toContainText(
     "Converted to an estimate line",
   );

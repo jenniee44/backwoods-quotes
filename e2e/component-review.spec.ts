@@ -81,6 +81,7 @@ test("equivalent observations share one candidate, remain/excluded scopes stay u
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-review > summary").click();
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(4);
   const posts = rows.filter({ has: page.locator('input[value="Posts"]') });

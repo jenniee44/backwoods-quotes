@@ -17,6 +17,7 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
       item.alternativeGroup,
       item.alternativeOption,
       item.calculation,
+      item.stockLength ?? null,
       // Broad locations such as "Rear deck" cannot erase distinct assembly
       // labels in the descriptions during automatic grouping.
       ...(automatic
