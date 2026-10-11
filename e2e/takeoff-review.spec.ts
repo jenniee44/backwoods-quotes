@@ -1,3 +1,4 @@
+import { openAdvancedMaterial } from "./material-review.helpers";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -55,18 +56,20 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
 }) => {
   await page.setViewportSize({ width: 1366, height: 900 });
   await setup(page);
-  const checklist = page.locator(".missing-information");
-  await expect(checklist).not.toHaveAttribute("open", "");
-  await expect(checklist.locator("summary")).toContainText("3 items");
+  const reviewSummary = page.getByRole("navigation", {
+    name: "Material review summary",
+  });
+  await expect(reviewSummary).toBeVisible();
+  await expect(page.locator(".missing-information")).toHaveCount(0);
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(5);
   await expect(
     page.locator(".overlap-warning").filter({ hasText: "Potential overlap" }),
-  ).toHaveCount(5);
+  ).toHaveCount(4);
   await expect(
     rows.first().getByLabel("Written specification"),
   ).not.toBeVisible();
-  await rows.first().locator("summary").click();
+  await openAdvancedMaterial(rows.first());
   await expect(rows.first().getByLabel("Written specification")).toHaveValue(
     "3-ply 2x10 PT",
   );
@@ -101,7 +104,7 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   await expect(rows.nth(1).getByLabel("Review status")).toHaveValue("Rejected");
   await expect(rows.first().getByLabel("Takeoff quantity")).toHaveValue("2");
   await expect(rows.first()).toContainText("Synthetic reference b2");
-  await rows.nth(2).locator("summary").click();
+  await openAdvancedMaterial(rows.nth(2));
   await expect(rows.nth(2).locator(".overlap-comparison")).toContainText(
     "Front deck",
   );
@@ -124,8 +127,11 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
     .nth(1)
     .click();
   await expect(rows).toHaveCount(5);
-  await checklist.locator("summary").click();
-  await expect(checklist.getByRole("button").first()).toBeVisible();
+  await reviewSummary
+    .getByRole("button", { name: /Excluded or informational/ })
+    .click();
+  await expect(rows).toHaveCount(2);
+  await reviewSummary.getByRole("button", { name: /All items/ }).click();
   await page.screenshot({
     path: "/tmp/backwoods-takeoff-review-laptop.png",
     fullPage: true,
@@ -185,7 +191,7 @@ test("two observations of twelve concrete footings require comparison and retain
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(2);
   await expect(page.locator(".overlap-warning")).toHaveCount(2);
-  await rows.first().locator("summary").click();
+  await openAdvancedMaterial(rows.first());
   await expect(
     rows.first().getByRole("button", { name: "Approve item", exact: true }),
   ).toBeDisabled();

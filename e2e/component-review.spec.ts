@@ -1,3 +1,4 @@
+import { openAdvancedMaterial } from "./material-review.helpers";
 import { expect, test } from "@playwright/test";
 import { seed } from "../src/model";
 import { addAnalysisSuggestions } from "../src/planAnalysis";
@@ -84,21 +85,13 @@ test("equivalent observations share one candidate, remain/excluded scopes stay u
   await expect(rows).toHaveCount(4);
   const posts = rows.filter({ has: page.locator('input[value="Posts"]') });
   await expect(posts).toContainText("4 each");
-  await posts
-    .getByText("Review material — specifications, evidence & calculations", {
-      exact: true,
-    })
-    .click();
+  await openAdvancedMaterial(posts);
   await expect(posts).toContainText("page 2");
   await expect(posts).toContainText(
     "Page 3 support detail corroborates the same four posts",
   );
   const remain = rows.filter({ hasText: "Existing concrete pier to remain" });
-  await remain
-    .getByText("Review material — specifications, evidence & calculations", {
-      exact: true,
-    })
-    .click();
+  await openAdvancedMaterial(remain);
   await expect(remain.getByLabel("Work scope")).toHaveValue(
     "Existing work to remain",
   );
@@ -109,20 +102,12 @@ test("equivalent observations share one candidate, remain/excluded scopes stay u
     remain.getByLabel("Convert reviewed item to estimate"),
   ).toBeDisabled();
   const excluded = rows.filter({ hasText: "Guards by others" });
-  await excluded
-    .getByText("Review material — specifications, evidence & calculations", {
-      exact: true,
-    })
-    .click();
+  await openAdvancedMaterial(excluded);
   await expect(excluded.getByLabel("Suggested destination")).toHaveValue(
     "Informational",
   );
   const beam = rows.filter({ hasText: "3-ply 2x10 beam runs" });
-  await beam
-    .getByText("Review material — specifications, evidence & calculations", {
-      exact: true,
-    })
-    .click();
+  await openAdvancedMaterial(beam);
   await beam
     .getByRole("button", {
       name: "Mark reviewed — I verified this item",

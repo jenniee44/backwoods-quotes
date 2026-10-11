@@ -177,6 +177,8 @@ it("calculated takeoff provenance persists privately through conversion, reload 
 it("overlapping semantic facts are skipped without changing reviewed originals or collapsing distinct locations", () => {
   const fixture = analysisFixture();
   fixture.suggestions[1].description = "Concrete footings";
+  fixture.suggestions[1].specification =
+    "Verified synthetic concrete footing design";
   fixture.suggestions[1].location = "Main deck";
   const first = addAnalysisSuggestions(quote(), fixture, "first");
   first.takeoff[1] = approveTakeoff(

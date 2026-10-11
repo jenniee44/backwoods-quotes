@@ -2,7 +2,7 @@ import type { TakeoffItem } from "./model";
 import { equivalentComponentKey } from "../shared/componentIdentity";
 import { materialCategoryFor } from "../shared/takeoff";
 import { semanticItemKey } from "../shared/takeoff";
-export function consolidateTakeoff(items: TakeoffItem[]) {
+export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
   const retained: TakeoffItem[] = [];
   const seen = new Map<string, TakeoffItem>();
   for (const item of items) {
@@ -17,9 +17,28 @@ export function consolidateTakeoff(items: TakeoffItem[]) {
       item.alternativeGroup,
       item.alternativeOption,
       item.calculation,
+      // Broad locations such as "Rear deck" cannot erase distinct assembly
+      // labels in the descriptions during automatic grouping.
+      ...(automatic
+        ? [
+            [
+              ...new Set(
+                item.description
+                  .toLowerCase()
+                  .match(
+                    /\b(?:inner|outer|interior|exterior|middle|central|centre|center|perimeter|main|secondary|first|second|third)\b|\b(?:beam|post|footing|joist|guard|railing)\s+(?:(?:run|line|section|assembly)\s+)?\d+\b/g,
+                  ) ?? [],
+              ),
+            ].sort(),
+          ]
+        : []),
     ]);
     const existing = seen.get(key);
     if (
+      (automatic &&
+        (item.origin !== "ai" ||
+          !item.documentId ||
+          !equivalentComponentKey(item, materialCategoryFor(item)))) ||
       !item.description.trim() ||
       item.status !== "Proposed" ||
       item.convertedLineId ||
@@ -27,7 +46,14 @@ export function consolidateTakeoff(items: TakeoffItem[]) {
     ) {
       const copy = structuredClone(item);
       retained.push(copy);
-      if (item.status === "Proposed" && !item.convertedLineId)
+      if (
+        item.status === "Proposed" &&
+        !item.convertedLineId &&
+        (!automatic ||
+          (item.origin === "ai" &&
+            !!item.documentId &&
+            !!equivalentComponentKey(item, materialCategoryFor(item))))
+      )
         seen.set(key, copy);
       continue;
     }
@@ -54,6 +80,12 @@ export function consolidateTakeoff(items: TakeoffItem[]) {
       retained.push(structuredClone(item));
       continue;
     }
+    // Additional evidence must be reviewed again; never inherit a verification
+    // from only one of the observations being consolidated.
+    existing.scopeVerified = false;
+    existing.purchaseVerified = false;
+    existing.conflictsVerified = false;
+    existing.reviewAcknowledged = false;
     existing.sourceFacts = facts;
     existing.warnings = unique([
       ...(existing.warnings ?? []),

@@ -1,3 +1,4 @@
+import { openAdvancedMaterial } from "./material-review.helpers";
 import { execFileSync } from "node:child_process";
 import { test, expect } from "@playwright/test";
 import { deckTakeoffFixture } from "../shared/deckTakeoff.fixture";
@@ -59,14 +60,15 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
   const labour = cards.nth(0);
   await labour.screenshot({ path: "/tmp/backwoods-ai-review-card.png" });
   const materials = cards.nth(1);
-  await labour.locator("summary").click();
-  await materials.locator("summary").click();
+  await openAdvancedMaterial(labour);
+  await openAdvancedMaterial(materials);
   await expect(labour.getByLabel("Takeoff quantity")).toHaveValue("");
   await expect(labour.getByText(/Requires contractor input —/)).toBeVisible();
   await expect(
     labour.getByRole("button", { name: "Approve item", exact: true }),
   ).toBeDisabled();
   await labour.getByLabel("Select for approval").check();
+  await page.getByText("Advanced list tools", { exact: true }).click();
   await page
     .getByRole("button", { name: "Approve selected reviewed items" })
     .click();
@@ -112,7 +114,9 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
   await expect(page.getByLabel("Description *").nth(0)).toHaveValue(
     "Manual material",
   );
-  await expect(page.getByLabel("Description *").nth(1)).toHaveValue("Joists");
+  await expect(page.getByLabel("Description *").nth(1)).toHaveValue(
+    "Joists — Synthetic 2x8 PT joists",
+  );
   await expect(page.getByText(/Pricing required —/)).toBeVisible();
   await page
     .getByRole("button", { name: "Customer quote", exact: true })
@@ -294,11 +298,7 @@ test("construction scope, summary-only observations, calculation evidence and sa
   ).toBeVisible();
   const joists = cards.filter({ has: page.locator('input[value="Joists"]') });
   await expect(joists.getByLabel("Calculation basis")).not.toBeVisible();
-  await joists
-    .getByText("Review material — specifications, evidence & calculations", {
-      exact: true,
-    })
-    .click();
+  await openAdvancedMaterial(joists);
   await expect(joists.getByLabel("Takeoff quantity")).toHaveValue("11");
   await expect(joists.getByLabel("Written specification")).toHaveValue(
     '2x8 PT @ 16" O/C',
@@ -332,7 +332,7 @@ test("construction scope, summary-only observations, calculation evidence and sa
   const stairs = cards.filter({
     has: page.locator('input[value="Deck stairs assembly"]'),
   });
-  await stairs.locator("summary").click();
+  await openAdvancedMaterial(stairs);
   await expect(stairs.getByLabel("Takeoff quantity")).toHaveValue("");
   await expect(stairs.getByText(/enter verified labour hours/)).toBeVisible();
 
@@ -443,7 +443,7 @@ test("useful deck observations become specific estimate candidates while unknown
   const footing = card("Apparent new footing/pier assemblies");
   const labour = card("Deck framing labour");
   for (const item of [posts, beam, joists, hardware, footing, labour])
-    await item.locator("summary").click();
+    await openAdvancedMaterial(item);
   await expect(posts.getByLabel("Takeoff quantity")).toHaveValue("3");
   await expect(beam.getByLabel("Takeoff quantity")).toHaveValue("4");
   await expect(beam.getByLabel("Takeoff unit")).toHaveValue("runs");

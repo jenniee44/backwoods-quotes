@@ -1,3 +1,4 @@
+import { openAdvancedMaterial } from "./material-review.helpers";
 import { test, expect, type Page } from "@playwright/test";
 async function open(page: Page) {
   await page.goto("/");
@@ -16,12 +17,15 @@ test("compact table calculates only from verified inputs, resets review on edits
     .getByRole("button", { name: "Add takeoff item", exact: true })
     .click();
   const row = page.locator(".takeoff-table tbody.line-card").first();
+  await openAdvancedMaterial(row);
   await row.getByLabel("Takeoff description").fill("Deck joists");
   await row.getByLabel("Written specification").fill("2x8 PT, verified layout");
   await row.getByLabel("Suggested destination").selectOption("Materials");
   await row.getByLabel("Takeoff category").selectOption("Joists");
   await row.getByLabel("Material calculator").selectOption("joists");
-  await expect(page.getByText(/Missing information checklist/)).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Material review summary" }),
+  ).toBeVisible();
   await expect(row.getByLabel("Takeoff quantity")).toHaveValue("");
   await row
     .getByLabel("Verified layout length (ft)", { exact: true })
@@ -84,7 +88,7 @@ test("compact table calculates only from verified inputs, resets review on edits
     (await row.locator(".takeoff-evidence").boundingBox())!.width,
   ).toBeLessThanOrEqual(panelWidth);
   await row
-    .getByText("Review material — specifications, evidence & calculations", {
+    .getByText("View details", {
       exact: true,
     })
     .click();
@@ -122,6 +126,9 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     await page
       .getByRole("button", { name: "Add takeoff item", exact: true })
       .click();
+    await openAdvancedMaterial(
+      page.locator(".takeoff-table tbody.line-card").last(),
+    );
     await page
       .locator(".takeoff-table tbody.line-card")
       .last()
@@ -177,7 +184,7 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     .click();
   await expect(rows.last().getByLabel("Review status")).toHaveValue("Approved");
   for (const summary of await page
-    .getByText("Review material — specifications, evidence & calculations", {
+    .getByText("View details", {
       exact: true,
     })
     .all())
@@ -202,6 +209,7 @@ test("directional decking purchase layout recalculates, remains unverified and c
     .getByRole("button", { name: "Add takeoff item", exact: true })
     .click();
   const row = page.locator(".takeoff-table tbody.line-card").first();
+  await openAdvancedMaterial(row);
   await row.getByLabel("Takeoff description").fill("Deck board purchase");
   await row
     .getByLabel("Written specification")

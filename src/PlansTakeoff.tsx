@@ -456,6 +456,7 @@ export default function PlansTakeoff({
                     confidence: "Unspecified",
                     reviewAcknowledged: false,
                     scopeVerified: false,
+                    conflictsVerified: false,
                     sourceDetailView: null,
                   }
                 : t,
@@ -919,6 +920,7 @@ export default function PlansTakeoff({
                             confidence: "Unspecified",
                             reviewAcknowledged: false,
                             scopeVerified: false,
+                            conflictsVerified: false,
                             sourceDetailView: null,
                           }
                         : t,
@@ -1186,44 +1188,47 @@ export default function PlansTakeoff({
         source document also requires re-review. Existing converted estimate
         lines are preserved and must be checked separately.
       </p>
-      {!!q.takeoff.some((t) => t.origin === "ai") && (
-        <div className="heading-actions">
-          <button
-            className="button secondary"
-            disabled={locked || !selectedItems.length}
-            onClick={() => bulkApprove()}
-          >
-            Approve selected reviewed items
-          </button>
-          <button
-            className="button secondary"
-            disabled={
-              locked ||
-              !q.takeoff.some(
-                (t) =>
-                  t.origin === "ai" &&
-                  t.status === "Reviewed" &&
-                  t.reviewAcknowledged &&
-                  !t.convertedLineId,
-              )
-            }
-            onClick={() => bulkApprove(true)}
-          >
-            Approve all reviewed items
-          </button>
-        </div>
-      )}
-      <button
-        className="button secondary"
-        disabled={locked || busy || !q.takeoff.length}
-        onClick={() =>
-          window.confirm(
-            "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
-          ) && onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
-        }
-      >
-        Consolidate exact unreviewed duplicates
-      </button>
+      <details className="takeoff-list-tools">
+        <summary>Advanced list tools</summary>
+        {!!q.takeoff.some((t) => t.origin === "ai") && (
+          <div className="heading-actions">
+            <button
+              className="button secondary"
+              disabled={locked || !selectedItems.length}
+              onClick={() => bulkApprove()}
+            >
+              Approve selected reviewed items
+            </button>
+            <button
+              className="button secondary"
+              disabled={
+                locked ||
+                !q.takeoff.some(
+                  (t) =>
+                    t.origin === "ai" &&
+                    t.status === "Reviewed" &&
+                    t.reviewAcknowledged &&
+                    !t.convertedLineId,
+                )
+              }
+              onClick={() => bulkApprove(true)}
+            >
+              Approve all reviewed items
+            </button>
+          </div>
+        )}
+        <button
+          className="button secondary"
+          disabled={locked || busy || !q.takeoff.length}
+          onClick={() =>
+            window.confirm(
+              "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
+            ) && onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
+          }
+        >
+          Consolidate exact unreviewed duplicates
+        </button>
+      </details>
       <TakeoffTable
         quote={q}
         locked={locked || busy}

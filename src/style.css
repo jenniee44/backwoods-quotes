@@ -2393,3 +2393,117 @@ details[open] > summary {
     grid-template-columns: 1fr;
   }
 }
+
+/* Contractor-first material review: only essentials are shown until requested. */
+.review-summary {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.review-filter {
+  border: 1px solid #cbd8ce;
+  background: #f7faf7;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #244737;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.review-filter b {
+  margin-left: 8px;
+}
+.review-filter.active {
+  border-color: #28543d;
+  background: #e6f1e8;
+}
+.takeoff-table > tbody > .takeoff-summary-row > td {
+  display: block;
+  padding: 14px;
+}
+.material-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.material-card-heading span {
+  display: block;
+  margin-top: 4px;
+  color: #526458;
+  font-size: 12px;
+}
+.material-card-quantity {
+  flex-shrink: 0;
+  text-align: right;
+  max-width: 42%;
+}
+.takeoff-main-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.takeoff-main-actions .button {
+  min-height: 42px;
+}
+.quick-material-edit {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  border: 0;
+  padding: 16px 0 0;
+  margin: 0;
+  min-width: 0;
+}
+.quick-material-edit > :first-child,
+.quick-material-edit .check-options,
+.quick-material-edit p {
+  grid-column: 1/-1;
+}
+.takeoff-advanced {
+  margin-top: 12px;
+}
+.takeoff-advanced > summary,
+.takeoff-evidence > summary {
+  cursor: pointer;
+  padding: 8px;
+}
+.takeoff-list-tools {
+  margin: 12px 0;
+}
+.takeoff-list-tools > summary {
+  cursor: pointer;
+  color: #526458;
+  font-size: 13px;
+  padding: 8px 0;
+}
+.estimate-review-summary {
+  background: #eef6ef;
+  border: 1px solid #bdcfbf;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.estimate-review-summary h4 {
+  margin: 0 0 10px;
+}
+@media (max-width: 480px) {
+  .material-card-heading {
+    gap: 8px;
+  }
+  .material-card-quantity {
+    max-width: 45%;
+  }
+  .review-filter {
+    flex: 1 1 140px;
+  }
+}
+.material-card-heading > div:first-child > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}

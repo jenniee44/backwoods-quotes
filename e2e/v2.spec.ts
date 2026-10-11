@@ -1,3 +1,4 @@
+import { openAdvancedMaterial } from "./material-review.helpers";
 import { test, expect } from "@playwright/test";
 import { seed, calculate, estimateFor } from "../src/model";
 
@@ -139,6 +140,9 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
     page.getByRole("button", { name: "engineer-plans.pdf", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Add takeoff item" }).click();
+  await openAdvancedMaterial(
+    page.locator(".takeoff-table > tbody.line-card").first(),
+  );
   await page.getByLabel("Takeoff description").fill("Reviewed deck boards");
   await page.getByLabel("Takeoff quantity").fill("12");
   await page.getByLabel("Takeoff unit").fill("board");

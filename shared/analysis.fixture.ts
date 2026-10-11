@@ -40,6 +40,7 @@ export function analysisFixture(documentId = "plan"): PlanAnalysisResult {
       {
         ...item,
         description: "Joists",
+        specification: "Synthetic 2x8 PT joists",
         quantity: 6,
         unit: "each",
         destination: "Materials",

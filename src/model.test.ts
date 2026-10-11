@@ -1042,6 +1042,8 @@ describe("customer document and readiness refinements", () => {
     proposed.takeoff[0].workScope = "New work";
     proposed.takeoff[0].included = true;
     proposed.takeoff[0].scopeVerified = true;
+    proposed.takeoff[0].specification =
+      "Verified synthetic deck material specification";
     const converted = takeoffToLine(proposed, proposed.takeoff[0], "Materials");
     converted.documents = [];
     converted.takeoff = [];

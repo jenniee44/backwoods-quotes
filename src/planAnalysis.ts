@@ -1,3 +1,4 @@
+import { completenessProblem } from "./takeoffRequirements";
 import {
   equivalentComponentKey,
   evidenceScope,
@@ -243,7 +244,8 @@ export function editTakeoff(
     (key) =>
       key === "scopeVerified" ||
       key === "included" ||
-      key === "purchaseVerified",
+      key === "purchaseVerified" ||
+      key === "conflictsVerified",
   );
   const calculation =
     "calculation" in delta
@@ -254,6 +256,8 @@ export function editTakeoff(
   return {
     ...item,
     ...delta,
+    conflictsVerified:
+      delta.conflictsVerified ?? (scopeOnly ? item.conflictsVerified : false),
     purchaseVerified:
       delta.purchaseVerified ?? (scopeOnly ? item.purchaseVerified : false),
     calculation,
@@ -266,6 +270,7 @@ export function editTakeoff(
   };
 }
 export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
+  if (completenessProblem(item)) throw new Error(completenessProblem(item));
   if (purchaseQuantityProblem(item))
     throw new Error(purchaseQuantityProblem(item));
   if (!includedScope(item))
@@ -304,6 +309,7 @@ export function reviewTakeoff(item: TakeoffItem): TakeoffItem {
   return { ...item, status: "Reviewed", reviewAcknowledged: true };
 }
 export function approveTakeoff(item: TakeoffItem): TakeoffItem {
+  if (completenessProblem(item)) throw new Error(completenessProblem(item));
   if (purchaseQuantityProblem(item))
     throw new Error(purchaseQuantityProblem(item));
   if (!includedScope(item))
@@ -332,6 +338,7 @@ export function approveTakeoff(item: TakeoffItem): TakeoffItem {
 }
 export function canConvert(item: TakeoffItem): boolean {
   return (
+    !completenessProblem(item) &&
     includedScope(item) &&
     !purchaseQuantityProblem(item) &&
     (!item.calculation ||

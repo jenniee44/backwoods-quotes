@@ -1,3 +1,4 @@
+import { completenessProblem } from "./takeoffRequirements";
 import { purchaseQuantityProblem } from "../shared/componentIdentity";
 import { assertScope, validScope } from "./takeoffScope";
 import type { ContractorScope } from "./takeoffScope";
@@ -199,6 +200,7 @@ export type TakeoffItem = ConstructionEvidence &
   ContractorScope & {
     overlapReviews?: string[];
     purchaseVerified?: boolean;
+    conflictsVerified?: boolean;
     calculation?: MaterialCalculation;
     id: string;
     description: string;
@@ -996,6 +998,7 @@ export function reviewWarnings(q: Quote): string[] {
 }
 export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
   assertScope(q, item);
+  if (completenessProblem(item)) throw new Error(completenessProblem(item));
   if (purchaseQuantityProblem(item))
     throw new Error(purchaseQuantityProblem(item));
   if (item.calculation) {
@@ -1176,6 +1179,8 @@ function validExtensions(v: unknown) {
         strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
         validConstructionEvidence(t) &&
         validScope(t) &&
+        (t.conflictsVerified === undefined ||
+          typeof t.conflictsVerified === "boolean") &&
         (t.purchaseVerified === undefined ||
           typeof t.purchaseVerified === "boolean") &&
         (t.overlapReviews === undefined ||
