@@ -5,6 +5,9 @@ import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
 import MaterialsSummary from "./MaterialsSummary";
+import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
+import { supplementWholePdfs } from "./wholePdfAnalysis";
+import { revealMaterial } from "./materialReviewNavigation";
 import { assertScope } from "./takeoffScope";
 import { consolidateTakeoff } from "./consolidateTakeoff";
 import { optimizeAnalysisPackage } from "./optimizeAnalysisPackage";
@@ -207,6 +210,12 @@ export default function PlansTakeoff({
   const [analysisError, setAnalysisError] = useState("");
   const [reviewError, setReviewError] = useState("");
   const [inputNotes, setInputNotes] = useState<string[]>([]);
+  const [submittedPackage, setSubmittedPackage] = useState<{
+    sources: typeof selectedDocuments;
+    count: number;
+    pages: number;
+    bytes: number;
+  } | null>(null);
   const [detailRendering, setDetailRendering] = useState(false);
   const [automaticRendering, setAutomaticRendering] = useState(false);
   const detailProcessing = detailRendering || automaticRendering;
@@ -266,7 +275,7 @@ export default function PlansTakeoff({
         }),
         controller.signal,
       );
-      const prepared = originalText.map((d) => ({
+      const textWithSelectedDetails = originalText.map((d) => ({
         ...d,
         ...(documents.find((s) => s.id === d.id)?.detailRegions
           ? {
@@ -275,10 +284,36 @@ export default function PlansTakeoff({
             }
           : {}),
       }));
-      assertDetailInclusion(documents, prepared);
+      const automatic = originalOnlyConfirmed
+        ? { documents: textWithSelectedDetails, notes: [] }
+        : await supplementWholePdfs(
+            textWithSelectedDetails,
+            controller.signal,
+            (message) => setInputNotes([message]),
+          );
+      const prepared = automatic.documents;
+      // Explicit selections remain intact. Automatic supplements are temporary and
+      // bound to these exact original bytes, never persisted in quote attachments.
+      assertDetailInclusion(
+        documents,
+        prepared.map((d) => ({
+          ...d,
+          detailRegions: documents.find((original) => original.id === d.id)
+            ?.detailRegions?.length
+            ? d.detailRegions
+            : undefined,
+        })),
+      );
       controller.signal.throwIfAborted();
-      setInputNotes(
-        prepared
+      setSubmittedPackage({
+        sources: selectedDocuments,
+        count: analysisPackageSize(prepared).detailCount,
+        pages: prepared.reduce((n, d) => n + (d.pdfText?.pageCount ?? 0), 0),
+        bytes: analysisPackageSize(prepared).total,
+      });
+      setInputNotes([
+        ...automatic.notes,
+        ...prepared
           .filter((d) => d.type === "application/pdf")
           .flatMap((d) => {
             const layer = d.pdfText;
@@ -299,7 +334,7 @@ export default function PlansTakeoff({
                 );
             return notes;
           }),
-      );
+      ]);
       setAnalysisState("Analyzing plans");
       let submittedDetails = 0;
       const result = await analyzeBatches(
@@ -343,12 +378,13 @@ export default function PlansTakeoff({
       onChange(
         addAnalysisSuggestions(
           latest.current,
-          result,
+          deriveDrawingQuantities(result, prepared),
           fingerprint,
           selectedDocuments,
         ),
       );
       setAdvancedReview(false);
+      setReviewTarget(null);
       requestAnimationFrame(() =>
         summaryRef.current?.scrollIntoView({
           block: "start",
@@ -406,6 +442,33 @@ export default function PlansTakeoff({
   }
   const [advancedReview, setAdvancedReview] = useState(false);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const [reviewTarget, setReviewTarget] = useState<{
+    id: string;
+    request: number;
+  } | null>(null);
+  function openMaterialDetails(id: string) {
+    if (!q.takeoff.some((t) => t.id === id)) {
+      setReviewError(
+        "This material could not be located. Refresh the material list and try again.",
+      );
+      return;
+    }
+    setReviewError("");
+    setAdvancedReview(true);
+    setReviewTarget((target) => ({ id, request: (target?.request ?? 0) + 1 }));
+  }
+  function backToSummary() {
+    try {
+      if (!reviewTarget)
+        throw new Error(
+          "The original Materials Summary row could not be located.",
+        );
+      revealMaterial("summary-" + reviewTarget.id, summaryRef.current);
+      setReviewError("");
+    } catch (e) {
+      setReviewError((e as Error).message);
+    }
+  }
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const current = q.documents.find((d) => d.id === selected);
@@ -575,13 +638,29 @@ export default function PlansTakeoff({
         aria-live="polite"
       >
         <b>Analysis package</b>
+        {submittedPackage?.sources === selectedDocuments && (
+          <p role="status">
+            Whole-document request prepared: {submittedPackage.pages} original
+            PDF page(s), {submittedPackage.count} reading supplement(s),{" "}
+            {(submittedPackage.bytes / 1_000_000).toFixed(2)} MB. Submission is
+            confirmed below only after the server responds.
+          </p>
+        )}
+        {!selectedDetails.length && !originalOnlyConfirmed && (
+          <p className="tiny">
+            Whole-PDF analysis: all pages and available selectable text are sent
+            directly. Useful 250 DPI reading supplements are prepared
+            automatically within the existing size limit; manual zoom/cropping
+            is optional.
+          </p>
+        )}
         <p>
           <strong>
             {selectedDetails.length} detail views selected for analysis
           </strong>{" "}
           · {validDetails.length} available previews ·{" "}
           {packageReady
-            ? `${packageSize.detailCount} prepared for submission`
+            ? `${submittedPackage?.sources === selectedDocuments ? submittedPackage.count : packageSize.detailCount} prepared for submission`
             : "preparing…"}
         </p>
         {emptyDetailPackage && (
@@ -1200,7 +1279,7 @@ export default function PlansTakeoff({
           locked={locked || busy}
           onChange={onChange}
           onError={setReviewError}
-          onAdvanced={() => setAdvancedReview(true)}
+          onAdvanced={openMaterialDetails}
         />
       </div>
       <details className="advanced-review" open={advancedReview}>
@@ -1259,6 +1338,8 @@ export default function PlansTakeoff({
           </button>
         </details>
         <TakeoffTable
+          reviewTarget={reviewTarget}
+          onBackToSummary={backToSummary}
           quote={q}
           locked={locked || busy}
           onChange={onChange}

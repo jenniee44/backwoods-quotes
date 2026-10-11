@@ -18,7 +18,12 @@ export function openAIProvider(
         {
           type: "input_text",
           text: JSON.stringify(
-            documents.map((d) => ({ sourceId: d.id, type: d.type })),
+            documents.map((d) => ({
+              sourceId: d.id,
+              type: d.type,
+              sourceRole: "Complete original document",
+              physicalPdfPages: d.pdfText?.pageCount ?? null,
+            })),
           ),
         },
       ];

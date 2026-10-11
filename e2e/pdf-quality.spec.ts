@@ -194,13 +194,18 @@ test("replaced originals invalidate temporary details rather than analyzing a st
     })
     .click();
   await expect(page.locator(".pdf-detail-list")).toBeVisible();
+  const staleDetail = await page
+    .locator(".pdf-detail-list img")
+    .first()
+    .getAttribute("src");
+  const replacement = Buffer.from(
+    constructionPdf({ notes: ["REVISED DRAWING"] }),
+    "ascii",
+  );
   await page.getByLabel("Replace crisp-36x24-sheet.pdf").setInputFiles({
     name: "replacement.pdf",
     mimeType: "application/pdf",
-    buffer: Buffer.from(
-      constructionPdf({ notes: ["REVISED DRAWING"] }),
-      "ascii",
-    ),
+    buffer: replacement,
   });
   await expect(
     page.getByRole("button", { name: "replacement.pdf", exact: true }),
@@ -208,7 +213,14 @@ test("replaced originals invalidate temporary details rather than analyzing a st
   await expect(page.locator(".pdf-detail-list")).toHaveCount(0);
   await page.route("**/api/plan-analysis", async (route) => {
     const body = route.request().postDataJSON();
-    expect(body.documents[0].detailRegions).toBeUndefined();
+    expect(Buffer.from(body.documents[0].data.split(",")[1], "base64")).toEqual(
+      replacement,
+    );
+    expect(
+      (body.documents[0].detailRegions ?? []).every(
+        (r: { data: string }) => r.data !== staleDetail,
+      ),
+    ).toBe(true);
     expect(body.documents[0].pdfText.pages[0].text).toContain(
       "REVISED DRAWING",
     );

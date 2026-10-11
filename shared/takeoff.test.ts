@@ -298,3 +298,81 @@ it("separate construction scope groups are not merged even when quantities and d
   );
   expect(prepared.suggestions).toHaveLength(2);
 });
+it("reconciles repeated multi-page posts without adding counts and preserves independent assemblies", () => {
+  const post = component({
+    description: "6x6 PT posts",
+    specification: "6x6 PT",
+    quantity: 4,
+    notes: "New work",
+    warnings: [],
+    sourceFacts: ["Four new posts on layout page 1"],
+  });
+  const r = prepareConstructionAnalysis(
+    result([
+      post,
+      {
+        ...post,
+        page: 2,
+        sourceFacts: ["Same four posts in elevation page 2"],
+      },
+    ]),
+  );
+  expect(r.suggestions).toHaveLength(1);
+  expect(r.suggestions[0].quantity).toBe(4);
+  expect(r.suggestions[0].sourceFacts?.join()).toContain("page 2");
+  const different = prepareConstructionAnalysis(
+    result([
+      { ...post, description: "Beam B-1", specification: "3 ply 2x10 PT" },
+      {
+        ...post,
+        description: "Beam B-2",
+        specification: "3 ply 2x10 PT",
+        page: 2,
+      },
+    ]),
+  );
+  expect(different.suggestions).toHaveLength(2);
+});
+it("keeps uncertain and alternate-method cross-page observations separate", () => {
+  const p = component({
+    notes: "New work",
+    warnings: [],
+    specification: "12 inch footing",
+    quantity: 4,
+  });
+  expect(
+    prepareConstructionAnalysis(
+      result([
+        { ...p, description: "Concrete footings" },
+        { ...p, description: "Helical footings", page: 2 },
+      ]),
+    ).suggestions,
+  ).toHaveLength(2);
+  expect(
+    prepareConstructionAnalysis(
+      result([p, { ...p, page: 2, confidence: "Low" }]),
+    ).suggestions,
+  ).toHaveLength(2);
+});
+it("conflicting repeated cross-page counts stay unknown rather than summed or selected", () => {
+  const p = component({
+    description: "6x6 PT posts",
+    specification: "6x6 PT",
+    quantity: 4,
+    notes: "New work",
+    warnings: [],
+  });
+  const r = prepareConstructionAnalysis(
+    result([p, { ...p, page: 2, quantity: 5 }]),
+  );
+  expect(r.suggestions).toHaveLength(2);
+  expect(r.suggestions.every((t) => t.quantity === null)).toBe(true);
+  expect(
+    r.suggestions.every((t) =>
+      t.warnings?.some((w) => w.startsWith("Conflicting quantities")),
+    ),
+  ).toBe(true);
+  expect(r.suggestions.flatMap((t) => t.sourceFacts ?? []).join()).toContain(
+    "Conflicting source count: 4",
+  );
+});

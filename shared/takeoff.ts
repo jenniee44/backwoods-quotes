@@ -419,6 +419,16 @@ export function prepareConstructionAnalysis(
       (candidate) =>
         (semanticItemKey(candidate) === semanticItemKey(item) ||
           (!!equivalentComponentKey(item, materialCategoryFor(item)) &&
+            !["Low", "Unspecified"].includes(item.confidence) &&
+            !["Low", "Unspecified"].includes(candidate.confidence) &&
+            !/possibly|may be|unconfirmed|uncertain|alternative/i.test(
+              [
+                item.notes,
+                candidate.notes,
+                ...(item.warnings ?? []),
+                ...(candidate.warnings ?? []),
+              ].join(" "),
+            ) &&
             equivalentComponentKey(
               candidate,
               materialCategoryFor(candidate),
@@ -433,6 +443,8 @@ export function prepareConstructionAnalysis(
           `Source: ${item.documentId}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original"}; specification ${item.specification ?? "unknown"}; ${item.quantityMethod ?? "Unknown"}.`,
           ...(existing.sourceFacts ?? []),
           ...(item.sourceFacts ?? []),
+          "Original observation: " + existing.description,
+          "Original observation: " + item.description,
           item.notes,
           ...(item.calculationBasis &&
           item.calculationBasis !== existing.calculationBasis

@@ -18,6 +18,8 @@ export function constructionPdf({
   drawing = true,
   textRotation = 0,
   mixedNotes = false,
+  pageNotes,
+  pageDrawing,
 }: {
   width?: number;
   height?: number;
@@ -27,6 +29,8 @@ export function constructionPdf({
   drawing?: boolean;
   textRotation?: 0 | 90 | 180 | 270;
   mixedNotes?: boolean;
+  pageNotes?: string[][];
+  pageDrawing?: string[];
 } = {}) {
   const escape = (s: string) =>
     s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -36,7 +40,8 @@ export function constructionPdf({
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
   for (let page = 0; page < pages; page++) {
-    let stream = `${drawing ? `0.35 w 30 30 ${width - 60} ${height - 60} re S\n30 ${height - 200} 420 150 re S\n` : ""}BT /F1 6 Tf ${textRotation === 90 ? "0 1 -1 0 45 40 Tm" : textRotation === 180 ? `-1 0 0 -1 ${width - 40} 45 Tm` : textRotation === 270 ? `0 -1 1 0 ${width - 45} ${height - 40} Tm` : `40 ${height - 45} Td`} 12 TL\n${notes.map((note) => `(${escape(note)}) Tj T*`).join("\n")}\nET`;
+    let stream = `${drawing ? `0.35 w 30 30 ${width - 60} ${height - 60} re S\n30 ${height - 200} 420 150 re S\n` : ""}BT /F1 6 Tf ${textRotation === 90 ? "0 1 -1 0 45 40 Tm" : textRotation === 180 ? `-1 0 0 -1 ${width - 40} 45 Tm` : textRotation === 270 ? `0 -1 1 0 ${width - 45} ${height - 40} Tm` : `40 ${height - 45} Td`} 12 TL\n${(pageNotes?.[page] ?? notes).map((note) => `(${escape(note)}) Tj T*`).join("\n")}\nET`;
+    stream += "\n" + (pageDrawing?.[page] ?? "");
     if (mixedNotes)
       stream += [
         [`1 0 0 1 100 ${height - 100}`, "JOISTS 2x8 PT @ 16 IN O/C"],

@@ -86,9 +86,9 @@ test("default consolidated table edits inline, gates bulk approval and sends fin
   await summary
     .getByText("Needs Attention — 1 material", { exact: true })
     .click();
-  await expect(
-    summary.getByRole("link", { name: "Deck joists" }),
-  ).toBeVisible();
+  await expect(summary.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("#summary-unknown")).toBeVisible();
+  await summary.getByRole("button", { name: /All materials/ }).click();
   await page
     .getByLabel("Specifications: flash", { exact: true })
     .fill("Contractor-selected aluminum Z flashing");
@@ -225,7 +225,7 @@ test("successful new analysis immediately returns to Materials Summary instead o
   ).toBeVisible();
   await expect(page.locator(".advanced-review")).not.toHaveAttribute("open");
   await expect(
-    page.getByRole("button", { name: "Materials Summary", exact: true }),
+    page.getByRole("button", { name: /^Preliminary Shopping List/ }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("region", { name: "Materials Summary" }).locator("tbody tr"),

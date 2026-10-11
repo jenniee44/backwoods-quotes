@@ -11,13 +11,27 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
     const key = JSON.stringify([
       equivalentComponentKey(item, materialCategoryFor(item)) ||
         semanticItemKey(item),
-      item.category,
+      automatic ? (materialCategoryFor(item) ?? item.category) : item.category,
       item.workScope,
       item.included,
       item.alternativeGroup,
       item.alternativeOption,
       item.calculation,
       item.stockLength ?? null,
+      ...(automatic
+        ? [
+            [
+              ...new Set(
+                [item.description, item.specification]
+                  .join(" ")
+                  .toLowerCase()
+                  .match(
+                    /helical|screw pile|concrete|cast.in.place|precast|strip footing|pad footing|steel|wood/g,
+                  ) ?? [],
+              ),
+            ].sort(),
+          ]
+        : []),
       // Broad locations such as "Rear deck" cannot erase distinct assembly
       // labels in the descriptions during automatic grouping.
       ...(automatic
@@ -39,6 +53,10 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
       (automatic &&
         (item.origin !== "ai" ||
           !item.documentId ||
+          ["Low", "Unspecified"].includes(item.confidence) ||
+          /possibly|may be|unconfirmed|uncertain|could be|alternative/i.test(
+            [item.description, item.notes, ...(item.warnings ?? [])].join(" "),
+          ) ||
           !equivalentComponentKey(item, materialCategoryFor(item)))) ||
       !item.description.trim() ||
       item.status !== "Proposed" ||
@@ -53,6 +71,12 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
         (!automatic ||
           (item.origin === "ai" &&
             !!item.documentId &&
+            !["Low", "Unspecified"].includes(item.confidence) &&
+            !/possibly|may be|unconfirmed|uncertain|could be|alternative/i.test(
+              [item.description, item.notes, ...(item.warnings ?? [])].join(
+                " ",
+              ),
+            ) &&
             !!equivalentComponentKey(item, materialCategoryFor(item))))
       )
         seen.set(key, copy);
@@ -62,6 +86,8 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
     const facts = unique([
       ...(existing.sourceFacts ?? []),
       ...(item.sourceFacts ?? []),
+      "Original observation: " + existing.description,
+      "Original observation: " + item.description,
       `Source: ${existing.documentId || "manual"}, page ${existing.page ?? "unknown"}, detail ${existing.sourceDetailView ?? "original"}; ${existing.specification ?? ""}`,
       `Source: ${item.documentId || "manual"}, page ${item.page ?? "unknown"}, detail ${item.sourceDetailView ?? "original"}; ${item.specification ?? ""}`,
       item.notes,

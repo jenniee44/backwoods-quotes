@@ -75,15 +75,30 @@ export async function analyzeBatches(
     progress(index + 1, batches.length);
     const result = await analyze(batch.documents, signal);
     const remap = (items: AnalysisSuggestion[] | undefined) =>
-      items?.map((item) => ({
-        ...item,
-        ...(item.sourceDetailView
-          ? {
-              sourceDetailView:
-                batch.indices[item.documentId]?.[item.sourceDetailView - 1],
-            }
-          : {}),
-      }));
+      items?.map((item) => {
+        if (!item.sourceDetailView) return { ...item };
+        const region = batch.documents.find((d) => d.id === item.documentId)
+          ?.detailRegions?.[item.sourceDetailView - 1];
+        if (!region)
+          throw new Error(
+            "Analysis referenced a detail that was not submitted. No partial takeoff was added.",
+          );
+        const globalIndex =
+          batch.indices[item.documentId]?.[item.sourceDetailView - 1];
+        const provenance = `Submitted source: ${item.documentId}, page ${region.page}, detail ${globalIndex}, region ${region.x},${region.y},${region.width},${region.height} PDF points; rotation ${region.rotation ?? 0} degrees; ${region.dpi} DPI.`;
+        const facts = item.sourceFacts ?? [];
+        if (facts.length >= 20 && (item.notes + " " + provenance).length > 2000)
+          throw new Error(
+            "Detail provenance exceeds safe review limits. No partial takeoff was added.",
+          );
+        return {
+          ...item,
+          sourceDetailView: globalIndex,
+          sourceFacts: facts.length < 20 ? [...facts, provenance] : facts,
+          notes:
+            facts.length >= 20 ? item.notes + " " + provenance : item.notes,
+        };
+      });
     results.push({
       ...result,
       suggestions: remap(result.suggestions)!,

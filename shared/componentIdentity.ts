@@ -96,6 +96,26 @@ export function equivalentComponentKey(
         ).map((label) => label.toLowerCase()),
       ),
     ].sort(),
+    [
+      ...new Set(
+        [item.description, item.specification, item.location]
+          .join(" ")
+          .toLowerCase()
+          .match(
+            /\b(?:inner|outer|interior|exterior|main|secondary|middle|central|first|second|third)\b|\b(?:beam|post|footing|joist|guard|railing)\s+(?:(?:run|line|section|assembly)\s+)?\d+\b|\b[BPFJG]-?\d+\b/gi,
+          ) ?? [],
+      ),
+    ].sort(),
+    [
+      ...new Set(
+        [item.description, item.specification]
+          .join(" ")
+          .toLowerCase()
+          .match(
+            /helical|screw pile|concrete|cast.in.place|precast|strip footing|pad footing/g,
+          ) ?? [],
+      ),
+    ].sort(),
     item.scopeGroup?.trim().toLowerCase() ?? "",
     evidenceScope(item),
     item.supportBasis ?? "Not established",

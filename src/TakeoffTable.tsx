@@ -1,3 +1,4 @@
+import { revealMaterial } from "./materialReviewNavigation";
 import { applyQuickMaterialChanges } from "./quickMaterialEdit";
 import QuickMaterialEdit from "./QuickMaterialEdit";
 import {
@@ -58,6 +59,8 @@ const Field = ({
 );
 export default function TakeoffTable({
   quote: q,
+  reviewTarget,
+  onBackToSummary,
   locked,
   onChange,
   patch,
@@ -67,6 +70,8 @@ export default function TakeoffTable({
   setSelected,
 }: {
   quote: Quote;
+  reviewTarget?: { id: string; request: number } | null;
+  onBackToSummary?: () => void;
   locked: boolean;
   onChange: (q: Quote) => void;
   patch: (t: TakeoffItem, delta: Partial<TakeoffItem>) => void;
@@ -102,6 +107,35 @@ export default function TakeoffTable({
   const shown = q.takeoff.filter(
     (t) => !filter || matchesFilter(t, filter) || editing.includes(t.id),
   );
+  useEffect(() => {
+    if (!reviewTarget) return;
+    if (!q.takeoff.some((t) => t.id === reviewTarget.id)) {
+      onError(
+        "This material could not be located. Return to Materials Summary and select it again.",
+      );
+      return;
+    }
+    setFilter(null);
+    setExpanded((ids) => [...new Set([...ids, reviewTarget.id])]);
+    setAdvanced((ids) => [...new Set([...ids, reviewTarget.id])]);
+  }, [reviewTarget, q.takeoff, onError]);
+  const navigated = useRef<object | null>(null);
+  useEffect(() => {
+    if (
+      !reviewTarget ||
+      navigated.current === reviewTarget ||
+      filter ||
+      !expanded.includes(reviewTarget.id) ||
+      !advanced.includes(reviewTarget.id)
+    )
+      return;
+    try {
+      revealMaterial("takeoff-" + reviewTarget.id);
+      navigated.current = reviewTarget;
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }, [reviewTarget, filter, expanded, advanced, onError]);
   const groups = [...new Set(shown.map(groupFor))];
   const eligible = q.takeoff.filter((t) => readyForEstimate(q, t));
   const missingFor = (t: TakeoffItem) => [
@@ -460,6 +494,14 @@ export default function TakeoffTable({
                             >
                               View details
                             </summary>
+                            {reviewTarget?.id === t.id && onBackToSummary && (
+                              <button
+                                className="button secondary"
+                                onClick={onBackToSummary}
+                              >
+                                Back to Materials Summary
+                              </button>
+                            )}
                             {!!overlappingItems(q, t).length && (
                               <section className="overlap-comparison">
                                 <h4>Review possible duplicates</h4>
@@ -493,7 +535,13 @@ export default function TakeoffTable({
                                       {peer.alternativeOption ||
                                         "Method unspecified"}
                                     </p>
-                                    <details>
+                                    <details
+                                      open={
+                                        reviewTarget?.id === t.id
+                                          ? true
+                                          : undefined
+                                      }
+                                    >
                                       <summary>View evidence</summary>
                                       <p>
                                         This item: {t.documentId || "manual"},
@@ -593,7 +641,11 @@ export default function TakeoffTable({
                                 </p>
                               )}
                               {!!drawingMeasurements(t).length && (
-                                <details>
+                                <details
+                                  open={
+                                    reviewTarget?.id === t.id ? true : undefined
+                                  }
+                                >
                                   <summary>
                                     Written measurements — verify before using
                                   </summary>

@@ -75,3 +75,24 @@ it("cancellation and impossible original/detail packages fail without silently d
     analysisBatches([{ ...source, detailRegions: Array(25).fill(detail) }]),
   ).toThrow("24");
 });
+it("retains submitted detail coordinates and orientation privately, without storing image data in results", async () => {
+  const documents = [
+    { ...source, detailRegions: [{ ...detail, rotation: 90 as const }] },
+  ];
+  const r = await analyzeBatches(
+    documents,
+    new AbortController().signal,
+    async () => {
+      const r = analysisFixture();
+      r.suggestions = [{ ...r.suggestions[1], sourceDetailView: 1 }];
+      return r;
+    },
+  );
+  expect(r.suggestions[0].sourceFacts?.join()).toContain(
+    "rotation 90 degrees; 250 DPI",
+  );
+  expect(r.suggestions[0].sourceFacts?.join()).toContain(
+    "region 0,0,144,144 PDF points",
+  );
+  expect(JSON.stringify(r)).not.toContain("data:image/");
+});
