@@ -1,3 +1,4 @@
+import { relevantSpecifications } from "./materialReferences";
 import { purchasingGroups } from "./purchasingGroups";
 import { useEffect, useState } from "react";
 import type { Quote, TakeoffItem } from "./model";
@@ -23,7 +24,7 @@ import {
   quantityLabel,
   unresolvedMaterials,
 } from "./preliminaryMaterials";
-import { formatFeet, formatQuantity } from "../shared/measurementFormatting";
+import { formatFeet } from "../shared/measurementFormatting";
 
 export default function MaterialsSummary({
   quote: q,
@@ -73,9 +74,6 @@ export default function MaterialsSummary({
     view === "preliminary"
       ? allPreliminary.filter((g) => g.quantity === null).length
       : attention.length;
-  const informationCount = materials.filter(
-    (t) => preliminaryDisposition(t, q) === "information",
-  ).length;
   const eligible = shown.filter((t) => !summaryApprovalProblem(q, t));
   function change(
     t: TakeoffItem,
@@ -159,10 +157,8 @@ export default function MaterialsSummary({
       )}
       {view === "preliminary" && (
         <p className="preliminary-notice">
-          Preliminary Shopping List — informational only. Proposed quantities
-          need contractor verification; unknown quantities stay blank. Nothing
-          is added to the estimate. {informationCount} existing/excluded or note
-          record(s) are kept in Advanced Review, outside the shopping list.
+          Informational only. Confirm quantities and approve in Materials
+          Summary, then send the Final Shopping List to the estimate.
         </p>
       )}
       {view === "preliminary" && (
@@ -228,11 +224,11 @@ export default function MaterialsSummary({
           <thead>
             <tr>
               <th>Material</th>
-              <th>Specifications</th>
+              <th>Specification</th>
               <th>Quantity</th>
-              <th>Unit / stock length</th>
-              <th>Scope</th>
-              <th>Review</th>
+              <th>Unit</th>
+              <th>Status</th>
+              <th>Review Details</th>
             </tr>
           </thead>
           <tbody>
@@ -254,34 +250,37 @@ export default function MaterialsSummary({
                         id={"summary-" + observation.id}
                       />
                     ))}
-                    <small>{group.items.length} source record(s)</small>
                   </td>
-                  <td data-label="Specifications">
-                    {t.specification || "Specification needed"}
+                  <td data-label="Specification">
+                    <span
+                      className="purchasing-specification"
+                      title={t.specification || "Specification to confirm"}
+                    >
+                      {t.specification || "To confirm"}
+                    </span>
+                    {relevantSpecifications(q, group.items).length > 0 && (
+                      <small>Drawing requirements attached</small>
+                    )}
                   </td>
                   <td data-label="Quantity">
                     <strong>
                       {group.quantity === null
-                        ? "Quantity to confirm"
-                        : formatQuantity(group.quantity, group.unit)}
+                        ? "To confirm"
+                        : Number(group.quantity.toPrecision(8))}
                     </strong>
-                    <small>
-                      {group.quantity === null ? "Needs Attention — " : ""}
-                      {group.reason}
-                    </small>
                   </td>
-                  <td data-label="Unit / stock length">
-                    {group.quantity === null
-                      ? "Purchase unit / stock to confirm"
-                      : group.unit}
+                  <td data-label="Unit">
+                    {group.quantity === null ? "—" : group.unit}
                     {materialStockLength(t) !== null && (
-                      <small>
-                        Stock: {formatFeet(materialStockLength(t)!)}
-                      </small>
+                      <small>{formatFeet(materialStockLength(t)!)}</small>
                     )}
                   </td>
-                  <td data-label="Scope">
-                    Contractor review required; separate scopes retained
+                  <td data-label="Status">
+                    {group.quantity === null
+                      ? "Needs review"
+                      : readyForEstimate(q, t)
+                        ? "Verified"
+                        : "Calculated"}
                   </td>
                   <td data-label="Review">
                     <button
@@ -290,43 +289,6 @@ export default function MaterialsSummary({
                     >
                       Review details
                     </button>
-                    <details>
-                      <summary>
-                        Source observations ({group.items.length})
-                      </summary>
-                      {group.items.map((observation) => (
-                        <div key={observation.id}>
-                          <strong>{observation.description}</strong>
-                          <p>
-                            {observation.location || "Location to confirm"} ·{" "}
-                            {observation.documentId || "Source unknown"} · Page{" "}
-                            {observation.page ?? "unknown"}
-                          </p>
-                          <p>
-                            Observed:{" "}
-                            {observation.quantity === null
-                              ? "Quantity to confirm"
-                              : formatQuantity(
-                                  observation.quantity,
-                                  observation.unit,
-                                )}{" "}
-                            — not an added purchase quantity
-                          </p>
-                          <p>
-                            {observation.specification} ·{" "}
-                            {workScope(observation)} ·{" "}
-                            {observation.alternativeOption}
-                          </p>
-                          <p>{observation.sourceFacts?.join("; ")}</p>
-                          <button
-                            className="button secondary"
-                            onClick={() => onAdvanced(observation.id)}
-                          >
-                            Review this observation
-                          </button>
-                        </div>
-                      ))}
-                    </details>
                   </td>
                 </tr>
               );

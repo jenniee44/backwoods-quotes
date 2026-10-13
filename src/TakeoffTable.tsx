@@ -1,3 +1,4 @@
+import PurchasingReviewContext from "./PurchasingReviewContext";
 import { revealMaterial } from "./materialReviewNavigation";
 import { applyQuickMaterialChanges } from "./quickMaterialEdit";
 import QuickMaterialEdit from "./QuickMaterialEdit";
@@ -61,6 +62,7 @@ export default function TakeoffTable({
   quote: q,
   reviewTarget,
   onBackToSummary,
+  onReviewMaterial,
   locked,
   onChange,
   patch,
@@ -72,6 +74,7 @@ export default function TakeoffTable({
   quote: Quote;
   reviewTarget?: { id: string; request: number } | null;
   onBackToSummary?: () => void;
+  onReviewMaterial?: (id: string) => void;
   locked: boolean;
   onChange: (q: Quote) => void;
   patch: (t: TakeoffItem, delta: Partial<TakeoffItem>) => void;
@@ -501,6 +504,13 @@ export default function TakeoffTable({
                               >
                                 Back to Materials Summary
                               </button>
+                            )}
+                            {expanded.includes(t.id) && (
+                              <PurchasingReviewContext
+                                quote={q}
+                                item={t}
+                                onReview={onReviewMaterial}
+                              />
                             )}
                             {!!overlappingItems(q, t).length && (
                               <section className="overlap-comparison">

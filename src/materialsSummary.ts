@@ -1,3 +1,4 @@
+import { isGeneralSpecification } from "./materialReferences";
 import type { Quote, TakeoffItem } from "./model";
 import { takeoffToLine } from "./model";
 import { consolidateTakeoff } from "./consolidateTakeoff";
@@ -8,20 +9,24 @@ import { calculateMaterial } from "../shared/materialCalculators";
 import { editTakeoff } from "./planAnalysis";
 
 export function prepareMaterialsSummary(items: TakeoffItem[]) {
-  return consolidateTakeoff(items, true).map((t) => {
+  const referenceItems = items.map((t) => {
     if (
       t.origin === "ai" &&
       t.status === "Proposed" &&
       !t.convertedLineId &&
-      /^(?:general (?:construction )?notes?|construction notes?|(?:material )?specifications?|design criteria|do not scale)\b/i.test(
-        t.description,
-      )
+      (isGeneralSpecification(t) ||
+        /^(?:general (?:construction )?notes?|construction notes?|(?:material )?specifications?|design criteria|do not scale)\b/i.test(
+          t.description,
+        ))
     )
       return {
         ...t,
         destination: "Informational" as const,
         itemRole: "Document observation" as const,
       };
+    return t;
+  });
+  return consolidateTakeoff(referenceItems, true).map((t) => {
     // Only an explicitly verified, complete recipe can produce a quantity.
     // Extracted measurements alone do not authorize engineering/purchase assumptions.
     if (

@@ -2727,3 +2727,41 @@ details[open] > summary {
   flex: 1 1 280px;
   line-height: 1.4;
 }
+/* Compact purchasing rows; full evidence stays in the private review panel. */
+.preliminary-materials td {
+  vertical-align: middle;
+  padding: 0.35rem 0.45rem;
+}
+.preliminary-materials .purchasing-specification {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.preliminary-materials .button {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+.purchasing-review-context {
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  margin: 0.5rem 0;
+}
+.purchasing-review-context article {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .preliminary-materials tbody tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem 0.6rem;
+    padding: 0.6rem;
+  }
+  .preliminary-materials td[data-label="Material"],
+  .preliminary-materials td[data-label="Specification"] {
+    grid-column: 1 / -1;
+  }
+}

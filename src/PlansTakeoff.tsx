@@ -1340,6 +1340,7 @@ export default function PlansTakeoff({
         <TakeoffTable
           reviewTarget={reviewTarget}
           onBackToSummary={backToSummary}
+          onReviewMaterial={openMaterialDetails}
           quote={q}
           locked={locked || busy}
           onChange={onChange}

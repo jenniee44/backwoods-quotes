@@ -108,8 +108,11 @@ for (const width of [1366, 390])
           row.getByLabel("Written specification", { exact: true }),
         ).toBeVisible();
         await expect(
-          row.getByText("Synthetic drawing observation", { exact: true }),
+          row.getByRole("textbox", { name: "Source facts", exact: true }),
         ).toBeVisible();
+        await expect(
+          row.getByRole("textbox", { name: "Source facts", exact: true }),
+        ).toHaveValue(/Synthetic drawing observation/);
         await expect(row).toHaveClass(/material-navigation-highlight/);
         await expect
           .poll(() => row.evaluate((e) => document.activeElement === e))

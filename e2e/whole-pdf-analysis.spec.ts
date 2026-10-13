@@ -145,9 +145,9 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
   await expect(list).toBeVisible();
   const posts = list.locator("tr").filter({ hasText: "6x6 PT" });
   await expect(posts).toHaveCount(1);
-  await expect(posts).toContainText("4");
+  await expect(posts).toContainText("To confirm");
   await expect(list).toContainText("192");
-  await expect(list).toContainText("Quantity to confirm");
+  await expect(list).toContainText("To confirm");
   await expect(
     list.locator("tr[id]").filter({ hasText: "3-ply 2x10 PT" }),
   ).toHaveCount(1);

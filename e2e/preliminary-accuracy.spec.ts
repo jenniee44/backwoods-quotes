@@ -125,13 +125,9 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
     "notes",
   ])
     await expect(region.locator("#summary-" + id)).toHaveCount(0);
-  await expect(region.locator("#summary-beam")).toContainText("3 runs");
-  await expect(region.locator("#summary-joists")).toContainText(
-    "Quantity to confirm",
-  );
-  await expect(region.locator("#summary-hanger")).toContainText(
-    "Quantity to confirm",
-  );
+  await expect(region.locator("#summary-beam")).toContainText("To confirm");
+  await expect(region.locator("#summary-joists")).toContainText("To confirm");
+  await expect(region.locator("#summary-hanger")).toContainText("To confirm");
   await expect(region.locator("#summary-concrete")).toBeVisible();
   await expect(region.locator("#summary-helical")).toBeVisible();
   await region

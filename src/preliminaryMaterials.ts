@@ -1,3 +1,4 @@
+import { isGeneralSpecification } from "./materialReferences";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
 import { readyForEstimate } from "./takeoffReview";
@@ -86,6 +87,7 @@ export function preliminaryDisposition(
 ): "material" | "attention" | "information" {
   const scope = workScope(t);
   if (
+    isGeneralSpecification(t) ||
     (t.destination ?? "Materials") !== "Materials" ||
     (t.itemRole && t.itemRole !== "Construction item") ||
     t.status === "Rejected" ||

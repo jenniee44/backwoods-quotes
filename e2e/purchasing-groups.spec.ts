@@ -92,21 +92,24 @@ test("purchasing categories retain separate beam, joist and hanger assemblies wi
   const list = page.locator(".preliminary-materials");
   await expect(list.locator("tbody>tr")).toHaveCount(3);
   await expect(list.locator('td[data-label="Quantity"] strong')).toHaveText([
-    "Quantity to confirm",
-    "Quantity to confirm",
-    "Quantity to confirm",
+    "To confirm",
+    "To confirm",
+    "To confirm",
   ]);
   await expect(list).not.toContainText("Existing house");
   const beam = list.locator("#summary-b1");
-  await expect(beam).toContainText("beam lengths");
-  await beam.getByText("Source observations (2)", { exact: true }).click();
-  await expect(
-    beam.getByText("Synthetic separate beam line B-2", { exact: true }),
-  ).toBeVisible();
-  await expect(beam).not.toContainText("6 runs");
+  await expect(beam).not.toContainText("beam lengths");
   await beam
+    .getByRole("button", { name: "Review details", exact: true })
+    .click();
+  const context = page.locator("#takeoff-b1 .purchasing-review-context");
+  await expect(context).toContainText("beam lengths");
+  await expect(
+    context.getByText("Synthetic separate beam line B-2", { exact: true }),
+  ).toBeVisible();
+  await expect(context).not.toContainText("6 runs");
+  await context
     .getByRole("button", { name: "Review this observation" })
-    .nth(1)
     .click();
   await expect(page.locator("#takeoff-b2")).toHaveClass(
     /material-navigation-highlight/,

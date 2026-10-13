@@ -93,10 +93,10 @@ for (const width of [1366, 390])
         "Deck joists",
       );
       await expect(region.locator("#summary-joist")).toContainText(
-        "Quantity to confirm",
+        "To confirm",
       );
       await expect(region.locator("#summary-unknown")).toContainText(
-        "Quantity to confirm",
+        "To confirm",
       );
       await expect(region.locator("#summary-excluded")).toHaveCount(0);
       await expect(
