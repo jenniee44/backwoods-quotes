@@ -147,7 +147,7 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
   await expect(posts).toHaveCount(1);
   await expect(posts).toContainText("4");
   await expect(list).toContainText("192");
-  await expect(list).toContainText("Quantity needed");
+  await expect(list).toContainText("Quantity to confirm");
   await expect(
     list.locator("tr[id]").filter({ hasText: "3-ply 2x10 PT" }),
   ).toHaveCount(1);

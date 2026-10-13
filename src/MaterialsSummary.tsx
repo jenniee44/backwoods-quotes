@@ -1,5 +1,5 @@
-import { unresolvedOverlaps } from "./takeoffOverlap";
-import { Fragment, useEffect, useState } from "react";
+import { purchasingGroups } from "./purchasingGroups";
+import { useEffect, useState } from "react";
 import type { Quote, TakeoffItem } from "./model";
 import {
   prepareMaterialsSummary,
@@ -65,16 +65,14 @@ export default function MaterialsSummary({
   const attention = unresolvedMaterials(q, materials);
   const shown =
     view === "shopping" ? approved : unresolvedOnly ? attention : materials;
-  const preliminary = shown
-    .filter((t) => preliminaryDisposition(t, q) !== "information")
-    .sort(
-      (a, b) =>
-        Number(preliminaryDisposition(a, q) === "attention") -
-        Number(preliminaryDisposition(b, q) === "attention"),
-    );
-  const preliminaryAttention = preliminary.filter(
-    (t) => preliminaryDisposition(t, q) === "attention",
-  );
+  const allPreliminary = purchasingGroups(q, materials);
+  const preliminary = allPreliminary
+    .filter((g) => !unresolvedOnly || g.quantity === null)
+    .sort((a, b) => Number(a.quantity === null) - Number(b.quantity === null));
+  const attentionCount =
+    view === "preliminary"
+      ? allPreliminary.filter((g) => g.quantity === null).length
+      : attention.length;
   const informationCount = materials.filter(
     (t) => preliminaryDisposition(t, q) === "information",
   ).length;
@@ -122,7 +120,7 @@ export default function MaterialsSummary({
           aria-pressed={view === "preliminary"}
           onClick={() => setView("preliminary")}
         >
-          Preliminary Shopping List ({materials.length})
+          Preliminary Shopping List ({purchasingGroups(q, materials).length})
         </button>
         <button
           className={"button " + (view === "summary" ? "" : "secondary")}
@@ -146,15 +144,16 @@ export default function MaterialsSummary({
             aria-pressed={!unresolvedOnly}
             onClick={() => setUnresolvedOnly(false)}
           >
-            All materials ({materials.length})
+            All materials (
+            {view === "preliminary" ? allPreliminary.length : materials.length})
           </button>
           <button
             className="button secondary"
             aria-pressed={unresolvedOnly}
             onClick={() => setUnresolvedOnly(true)}
           >
-            Needs Attention — {attention.length} material
-            {attention.length === 1 ? "" : "s"}
+            Needs Attention — {attentionCount} material
+            {attentionCount === 1 ? "" : "s"}
           </button>
         </nav>
       )}
@@ -165,6 +164,33 @@ export default function MaterialsSummary({
           is added to the estimate. {informationCount} existing/excluded or note
           record(s) are kept in Advanced Review, outside the shopping list.
         </p>
+      )}
+      {view === "preliminary" && (
+        <details>
+          <summary>
+            Reference and excluded work (
+            {
+              q.takeoff.filter(
+                (t) => preliminaryDisposition(t, q) === "information",
+              ).length
+            }
+            )
+          </summary>
+          {q.takeoff
+            .filter((t) => preliminaryDisposition(t, q) === "information")
+            .map((t) => (
+              <div key={t.id}>
+                <strong>{t.description}</strong>
+                <p>
+                  {t.specification} · {workScope(t)}
+                </p>
+                <p>{t.sourceFacts?.join("; ")}</p>
+                <small>
+                  Full technical review remains available in Advanced Review.
+                </small>
+              </div>
+            ))}
+        </details>
       )}
       {view === "summary" && (
         <>
@@ -210,42 +236,44 @@ export default function MaterialsSummary({
             </tr>
           </thead>
           <tbody>
-            {preliminary.map((t) => (
-              <Fragment key={t.id}>
-                {!unresolvedOnly && t.id === preliminaryAttention[0]?.id && (
-                  <tr className="shopping-attention-heading">
-                    <th colSpan={6}>
-                      Needs Attention ({preliminaryAttention.length}) — confirm
-                      quantities, scope or alternatives before purchasing
-                    </th>
-                  </tr>
-                )}
+            {preliminary.map((group) => {
+              const t = group.items[0];
+              return (
                 <tr
+                  key={t.id}
                   id={"summary-" + t.id}
-                  data-disposition={preliminaryDisposition(t, q)}
+                  data-disposition={
+                    group.quantity === null ? "attention" : "material"
+                  }
                 >
                   <td data-label="Material">
-                    <strong>{friendlyMaterialName(t)}</strong>
+                    <strong>{group.name}</strong>
+                    {group.items.slice(1).map((observation) => (
+                      <span
+                        key={observation.id}
+                        id={"summary-" + observation.id}
+                      />
+                    ))}
+                    <small>{group.items.length} source record(s)</small>
                   </td>
                   <td data-label="Specifications">
                     {t.specification || "Specification needed"}
                   </td>
                   <td data-label="Quantity">
-                    {t.quantity === null
-                      ? "Quantity needed"
-                      : formatQuantity(t.quantity, t.unit)}
-                    {t.quantity !== null && (
-                      <small>{quantityLabel(q, t)}</small>
-                    )}
-                    {unresolvedOverlaps(q, t).length > 0 && (
-                      <small>
-                        Compare possible duplicates or foundation alternatives
-                        in Review details
-                      </small>
-                    )}
+                    <strong>
+                      {group.quantity === null
+                        ? "Quantity to confirm"
+                        : formatQuantity(group.quantity, group.unit)}
+                    </strong>
+                    <small>
+                      {group.quantity === null ? "Needs Attention — " : ""}
+                      {group.reason}
+                    </small>
                   </td>
                   <td data-label="Unit / stock length">
-                    {t.unit || "Unit needed"}
+                    {group.quantity === null
+                      ? "Purchase unit / stock to confirm"
+                      : group.unit}
                     {materialStockLength(t) !== null && (
                       <small>
                         Stock: {formatFeet(materialStockLength(t)!)}
@@ -253,9 +281,7 @@ export default function MaterialsSummary({
                     )}
                   </td>
                   <td data-label="Scope">
-                    {includedScope(t) && t.status !== "Rejected"
-                      ? "Included for review"
-                      : "Excluded / scope required"}
+                    Contractor review required; separate scopes retained
                   </td>
                   <td data-label="Review">
                     <button
@@ -264,10 +290,47 @@ export default function MaterialsSummary({
                     >
                       Review details
                     </button>
+                    <details>
+                      <summary>
+                        Source observations ({group.items.length})
+                      </summary>
+                      {group.items.map((observation) => (
+                        <div key={observation.id}>
+                          <strong>{observation.description}</strong>
+                          <p>
+                            {observation.location || "Location to confirm"} ·{" "}
+                            {observation.documentId || "Source unknown"} · Page{" "}
+                            {observation.page ?? "unknown"}
+                          </p>
+                          <p>
+                            Observed:{" "}
+                            {observation.quantity === null
+                              ? "Quantity to confirm"
+                              : formatQuantity(
+                                  observation.quantity,
+                                  observation.unit,
+                                )}{" "}
+                            — not an added purchase quantity
+                          </p>
+                          <p>
+                            {observation.specification} ·{" "}
+                            {workScope(observation)} ·{" "}
+                            {observation.alternativeOption}
+                          </p>
+                          <p>{observation.sourceFacts?.join("; ")}</p>
+                          <button
+                            className="button secondary"
+                            onClick={() => onAdvanced(observation.id)}
+                          >
+                            Review this observation
+                          </button>
+                        </div>
+                      ))}
+                    </details>
                   </td>
                 </tr>
-              </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       ) : (

@@ -127,16 +127,13 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
     await expect(region.locator("#summary-" + id)).toHaveCount(0);
   await expect(region.locator("#summary-beam")).toContainText("3 runs");
   await expect(region.locator("#summary-joists")).toContainText(
-    "Quantity needed",
+    "Quantity to confirm",
   );
   await expect(region.locator("#summary-hanger")).toContainText(
-    "Quantity needed",
+    "Quantity to confirm",
   );
   await expect(region.locator("#summary-concrete")).toBeVisible();
   await expect(region.locator("#summary-helical")).toBeVisible();
-  await expect(region.locator(".shopping-attention-heading")).toContainText(
-    "Needs Attention",
-  );
   await region
     .locator("#summary-beam")
     .getByRole("button", { name: "Review details" })

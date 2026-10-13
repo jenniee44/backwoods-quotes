@@ -88,20 +88,17 @@ for (const width of [1366, 390])
         .click();
       await expect(
         region.locator(".preliminary-materials tbody tr"),
-      ).toHaveCount(3);
+      ).toHaveCount(2);
       await expect(region.locator("#summary-joist")).toContainText(
         "Deck joists",
       );
       await expect(region.locator("#summary-joist")).toContainText(
-        "Needs verification",
+        "Quantity to confirm",
       );
       await expect(region.locator("#summary-unknown")).toContainText(
-        "Quantity needed",
+        "Quantity to confirm",
       );
       await expect(region.locator("#summary-excluded")).toHaveCount(0);
-      await expect(region.locator(".shopping-attention-heading")).toContainText(
-        "Needs Attention (1)",
-      );
       await expect(
         region.locator("tbody input,tbody textarea,tbody select"),
       ).toHaveCount(0);
@@ -111,9 +108,9 @@ for (const width of [1366, 390])
         }),
       ).toHaveCount(0);
       await region
-        .getByRole("button", { name: /Needs Attention — 1 material/ })
+        .getByRole("button", { name: /Needs Attention — 2 material/ })
         .click();
-      await expect(region.locator("tbody tr")).toHaveCount(1);
+      await expect(region.locator("tbody tr")).toHaveCount(2);
       await expect(region.locator("#summary-unknown")).toBeVisible();
       await region
         .locator("#summary-unknown")
