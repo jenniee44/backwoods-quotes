@@ -79,6 +79,38 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
         warnings: ["Contractor Input Required"],
       },
     ];
+    const beam = {
+      ...p,
+      description: "Built-up beams",
+      specification: "3-ply 2x10 PT",
+      quantity: 3,
+      unit: "runs",
+      scopeGroup: "Beams",
+    };
+    const joist = {
+      ...p,
+      description: "Deck joists",
+      specification: "2x6 PT at 16 in O/C",
+      quantity: null,
+      unit: "boards",
+      scopeGroup: "Joists",
+      confidence: "Low" as const,
+    };
+    const hanger = {
+      ...joist,
+      description: "Simpson LUS26 joist hangers",
+      specification: "Simpson LUS26",
+      unit: "each",
+      scopeGroup: "Connectors",
+    };
+    r.suggestions.push(
+      beam,
+      { ...beam, page: 2, scopeGroup: "Deck Framing", unit: "beam runs" },
+      joist,
+      { ...joist, page: 2, scopeGroup: "Deck Framing" },
+      hanger,
+      { ...hanger, page: 3, scopeGroup: "Hangers / connectors" },
+    );
     await route.fulfill({ json: r });
   });
   await page.goto("/");
@@ -116,6 +148,15 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
   await expect(posts).toContainText("4");
   await expect(list).toContainText("192");
   await expect(list).toContainText("Quantity needed");
+  await expect(
+    list.locator("tr[id]").filter({ hasText: "3-ply 2x10 PT" }),
+  ).toHaveCount(1);
+  await expect(
+    list.locator("tr[id]").filter({ hasText: "2x6 PT at 16 in O/C" }),
+  ).toHaveCount(1);
+  await expect(
+    list.locator("tr[id]").filter({ hasText: "Simpson LUS26" }),
+  ).toHaveCount(1);
   await expect(page.locator(".advanced-review")).not.toHaveAttribute("open");
   await expect(page.getByText(/Submitted detail views:/).first()).toBeVisible();
 });

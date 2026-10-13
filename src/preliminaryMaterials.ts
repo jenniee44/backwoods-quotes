@@ -1,3 +1,4 @@
+import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
 import { readyForEstimate } from "./takeoffReview";
 import { summaryApprovalProblem } from "./materialsSummary";
@@ -77,4 +78,39 @@ export function unresolvedMaterials(q: Quote, items: TakeoffItem[]) {
       (includedScope(t) || workScope(t) === "Requires scope confirmation") &&
       !!summaryApprovalProblem(q, t),
   );
+}
+
+export function preliminaryDisposition(
+  t: TakeoffItem,
+  q?: Quote,
+): "material" | "attention" | "information" {
+  const scope = workScope(t);
+  if (
+    (t.destination ?? "Materials") !== "Materials" ||
+    (t.itemRole && t.itemRole !== "Construction item") ||
+    t.status === "Rejected" ||
+    (t.included === false && scope !== "Requires scope confirmation") ||
+    scope === "Existing work to remain" ||
+    ((scope === "By others" || scope === "By others / excluded") &&
+      (!t.scopeVerified || !includedScope(t))) ||
+    /^(?:general (?:construction )?notes?|construction notes?|(?:material )?specifications?|design criteria|do not scale)\b/i.test(
+      t.description,
+    ) ||
+    /^existing (?:house|building|structure|deck)(?:\s+(?:structure|to remain|to retain))?[ .]*$/i.test(
+      t.description,
+    )
+  )
+    return "information";
+  if (
+    (q && unresolvedOverlaps(q, t).length > 0) ||
+    t.quantity === null ||
+    !t.specification?.trim() ||
+    /unreadable|unknown|conflict|alternative/i.test(
+      [t.specification, ...(t.warnings ?? [])].join(" "),
+    ) ||
+    scope === "Requires scope confirmation" ||
+    /^(?:beam )?runs?|locations|symbols$/i.test(t.unit)
+  )
+    return "attention";
+  return "material";
 }

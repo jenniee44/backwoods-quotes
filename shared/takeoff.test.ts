@@ -376,3 +376,17 @@ it("conflicting repeated cross-page counts stay unknown rather than summed or se
     "Conflicting source count: 4",
   );
 });
+it("conflicting cross-view counts stay unknown even with different default review headings", () => {
+  const p = component({
+    description: "6x6 PT posts",
+    specification: "6x6 PT",
+    quantity: 4,
+    notes: "New work",
+    warnings: [],
+    scopeGroup: "Posts & Beams",
+  });
+  const r = prepareConstructionAnalysis(
+    result([p, { ...p, page: 2, quantity: 5, scopeGroup: "Deck Framing" }]),
+  );
+  expect(r.suggestions.every((t) => t.quantity === null)).toBe(true);
+});

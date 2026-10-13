@@ -1,5 +1,8 @@
 import type { TakeoffItem } from "./model";
-import { equivalentComponentKey } from "../shared/componentIdentity";
+import {
+  repeatedMaterialKey as equivalentComponentKey,
+  repeatEvidenceEligible,
+} from "../shared/componentIdentity";
 import { materialCategoryFor } from "../shared/takeoff";
 import { semanticItemKey } from "../shared/takeoff";
 export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
@@ -32,28 +35,13 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
             ].sort(),
           ]
         : []),
-      // Broad locations such as "Rear deck" cannot erase distinct assembly
-      // labels in the descriptions during automatic grouping.
-      ...(automatic
-        ? [
-            [
-              ...new Set(
-                item.description
-                  .toLowerCase()
-                  .match(
-                    /\b(?:inner|outer|interior|exterior|middle|central|centre|center|perimeter|main|secondary|first|second|third)\b|\b(?:beam|post|footing|joist|guard|railing)\s+(?:(?:run|line|section|assembly)\s+)?\d+\b/g,
-                  ) ?? [],
-              ),
-            ].sort(),
-          ]
-        : []),
     ]);
     const existing = seen.get(key);
     if (
       (automatic &&
         (item.origin !== "ai" ||
           !item.documentId ||
-          ["Low", "Unspecified"].includes(item.confidence) ||
+          !repeatEvidenceEligible(item) ||
           /possibly|may be|unconfirmed|uncertain|could be|alternative/i.test(
             [item.description, item.notes, ...(item.warnings ?? [])].join(" "),
           ) ||
@@ -71,7 +59,7 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
         (!automatic ||
           (item.origin === "ai" &&
             !!item.documentId &&
-            !["Low", "Unspecified"].includes(item.confidence) &&
+            !!repeatEvidenceEligible(item) &&
             !/possibly|may be|unconfirmed|uncertain|could be|alternative/i.test(
               [item.description, item.notes, ...(item.warnings ?? [])].join(
                 " ",

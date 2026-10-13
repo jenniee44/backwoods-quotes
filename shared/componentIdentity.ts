@@ -102,7 +102,7 @@ export function equivalentComponentKey(
           .join(" ")
           .toLowerCase()
           .match(
-            /\b(?:inner|outer|interior|exterior|main|secondary|middle|central|first|second|third)\b|\b(?:beam|post|footing|joist|guard|railing)\s+(?:(?:run|line|section|assembly)\s+)?\d+\b|\b[BPFJG]-?\d+\b/gi,
+            /\b(?:inner|outer|interior|exterior|main|secondary|middle|central|centre|center|perimeter|first|second|third)\b|\b(?:beam|post|footing|joist|guard|railing)\s+(?:(?:run|line|section|assembly)\s+)?\d+\b|\b[BPFJG]-?\d+\b/gi,
           ) ?? [],
       ),
     ].sort(),
@@ -143,4 +143,76 @@ export function purchaseQuantityProblem(item: {
   )
     return "Verify beam purchase quantities from lengths, plies, stock lengths and approved cut/splice layout. Beam-run counts alone cannot be purchased as boards.";
   return "";
+}
+
+/** Identity aliases for repeated observations, never fuzzy dimensions/locations. */
+export function repeatedMaterialKey(
+  item: AnalysisSuggestion,
+  category?: string,
+) {
+  const scope = item.scopeGroup?.trim().toLowerCase();
+  const generic =
+    /^(?:deck framing|deck structure|framing|posts & beams|hardware & connectors|deck joists|structural framing|beams?|joists?|posts?|hangers? \/ connectors|connectors?|footings? & foundations|footings? \/ concrete)$/i;
+  const boundaries = [
+    ...new Set(
+      (item.sourceFacts ?? []).flatMap((f) =>
+        [
+          ...f.matchAll(
+            /\b(?:assembly|beam line|joist layout|connection type|support group)\s*(?:id|number)?\s*[:# -]\s*([a-z][a-z0-9-]*\d[a-z0-9-]*|\d+)\b/gi,
+          ),
+        ].map((m) => m[0].toLowerCase().replace(/\s+/g, " ")),
+      ),
+    ),
+  ].sort();
+  const key = equivalentComponentKey(
+    {
+      ...item,
+      specification: item.specification
+        ?.replace(/@/g, " at ")
+        .replace(/(\d+(?:\.\d+)?)\s*(?:["″]|\binches\b)/g, "$1 in")
+        .replace(/\bo\s*[./]?\s*c\b\.?/gi, "on centre")
+        .replace(/\bon center\b/gi, "on centre"),
+      unit: item.unit
+        .trim()
+        .toLowerCase()
+        .replace(/^(runs|beam runs|beam run)$/, "run")
+        .replace(/^(pieces|pcs|ea)$/, "each"),
+      scopeGroup: scope && generic.test(scope) ? undefined : item.scopeGroup,
+    },
+    category,
+  );
+  const interfaces =
+    category === "Hangers / connectors"
+      ? [
+          ...new Set(
+            [item.description, item.location]
+              .join(" ")
+              .toLowerCase()
+              .match(/\b(?:ledger|beam|rim|wall|post|stringer|stair)\b/g) ?? [],
+          ),
+        ].sort()
+      : [];
+  return key ? JSON.stringify([key, boundaries, interfaces]) : "";
+}
+export function repeatEvidenceEligible(item: AnalysisSuggestion) {
+  const text = [item.description, item.notes, ...(item.warnings ?? [])].join(
+    " ",
+  );
+  return (
+    !!item.specification?.trim() &&
+    !!item.location?.trim() &&
+    !/possibly|may be|unconfirmed|uncertain|could be|alternative|conflict/i.test(
+      text,
+    ) &&
+    !/unreadable|unknown|not specified|requires contractor input|\?/i.test(
+      item.specification,
+    ) &&
+    (item.confidence === "High" ||
+      item.confidence === "Medium" ||
+      (item.confidence === "Low" &&
+        item.quantity === null &&
+        !/unreadable|specification (?:needed|missing)|location (?:unknown|missing)/i.test(
+          text,
+        )))
+  );
 }

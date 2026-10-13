@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { unresolvedOverlaps } from "./takeoffOverlap";
+import { Fragment, useEffect, useState } from "react";
 import type { Quote, TakeoffItem } from "./model";
 import {
   prepareMaterialsSummary,
@@ -18,6 +19,7 @@ import { readyForEstimate } from "./takeoffReview";
 import { includedScope, workScope } from "./takeoffScope";
 import {
   friendlyMaterialName,
+  preliminaryDisposition,
   quantityLabel,
   unresolvedMaterials,
 } from "./preliminaryMaterials";
@@ -63,6 +65,19 @@ export default function MaterialsSummary({
   const attention = unresolvedMaterials(q, materials);
   const shown =
     view === "shopping" ? approved : unresolvedOnly ? attention : materials;
+  const preliminary = shown
+    .filter((t) => preliminaryDisposition(t, q) !== "information")
+    .sort(
+      (a, b) =>
+        Number(preliminaryDisposition(a, q) === "attention") -
+        Number(preliminaryDisposition(b, q) === "attention"),
+    );
+  const preliminaryAttention = preliminary.filter(
+    (t) => preliminaryDisposition(t, q) === "attention",
+  );
+  const informationCount = materials.filter(
+    (t) => preliminaryDisposition(t, q) === "information",
+  ).length;
   const eligible = shown.filter((t) => !summaryApprovalProblem(q, t));
   function change(
     t: TakeoffItem,
@@ -147,7 +162,8 @@ export default function MaterialsSummary({
         <p className="preliminary-notice">
           Preliminary Shopping List — informational only. Proposed quantities
           need contractor verification; unknown quantities stay blank. Nothing
-          is added to the estimate.
+          is added to the estimate. {informationCount} existing/excluded or note
+          record(s) are kept in Advanced Review, outside the shopping list.
         </p>
       )}
       {view === "summary" && (
@@ -194,40 +210,63 @@ export default function MaterialsSummary({
             </tr>
           </thead>
           <tbody>
-            {shown.map((t) => (
-              <tr key={t.id} id={"summary-" + t.id}>
-                <td data-label="Material">
-                  <strong>{friendlyMaterialName(t)}</strong>
-                </td>
-                <td data-label="Specifications">
-                  {t.specification || "Specification needed"}
-                </td>
-                <td data-label="Quantity">
-                  {t.quantity === null
-                    ? "Quantity needed"
-                    : formatQuantity(t.quantity, t.unit)}
-                  {t.quantity !== null && <small>{quantityLabel(q, t)}</small>}
-                </td>
-                <td data-label="Unit / stock length">
-                  {t.unit || "Unit needed"}
-                  {materialStockLength(t) !== null && (
-                    <small>Stock: {formatFeet(materialStockLength(t)!)}</small>
-                  )}
-                </td>
-                <td data-label="Scope">
-                  {includedScope(t) && t.status !== "Rejected"
-                    ? "Included for review"
-                    : "Excluded / scope required"}
-                </td>
-                <td data-label="Review">
-                  <button
-                    className="button secondary"
-                    onClick={() => onAdvanced(t.id)}
-                  >
-                    Review details
-                  </button>
-                </td>
-              </tr>
+            {preliminary.map((t) => (
+              <Fragment key={t.id}>
+                {!unresolvedOnly && t.id === preliminaryAttention[0]?.id && (
+                  <tr className="shopping-attention-heading">
+                    <th colSpan={6}>
+                      Needs Attention ({preliminaryAttention.length}) — confirm
+                      quantities, scope or alternatives before purchasing
+                    </th>
+                  </tr>
+                )}
+                <tr
+                  id={"summary-" + t.id}
+                  data-disposition={preliminaryDisposition(t, q)}
+                >
+                  <td data-label="Material">
+                    <strong>{friendlyMaterialName(t)}</strong>
+                  </td>
+                  <td data-label="Specifications">
+                    {t.specification || "Specification needed"}
+                  </td>
+                  <td data-label="Quantity">
+                    {t.quantity === null
+                      ? "Quantity needed"
+                      : formatQuantity(t.quantity, t.unit)}
+                    {t.quantity !== null && (
+                      <small>{quantityLabel(q, t)}</small>
+                    )}
+                    {unresolvedOverlaps(q, t).length > 0 && (
+                      <small>
+                        Compare possible duplicates or foundation alternatives
+                        in Review details
+                      </small>
+                    )}
+                  </td>
+                  <td data-label="Unit / stock length">
+                    {t.unit || "Unit needed"}
+                    {materialStockLength(t) !== null && (
+                      <small>
+                        Stock: {formatFeet(materialStockLength(t)!)}
+                      </small>
+                    )}
+                  </td>
+                  <td data-label="Scope">
+                    {includedScope(t) && t.status !== "Rejected"
+                      ? "Included for review"
+                      : "Excluded / scope required"}
+                  </td>
+                  <td data-label="Review">
+                    <button
+                      className="button secondary"
+                      onClick={() => onAdvanced(t.id)}
+                    >
+                      Review details
+                    </button>
+                  </td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>

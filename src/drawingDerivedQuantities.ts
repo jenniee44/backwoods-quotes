@@ -1,3 +1,4 @@
+import { derivePurchaseQuantities } from "./drawingPurchaseQuantities";
 import type { AnalysisDocument, PlanAnalysisResult } from "../shared/analysis";
 import { evidenceScope } from "../shared/componentIdentity";
 import { formatFeet, formatQuantity } from "../shared/measurementFormatting";
@@ -88,5 +89,5 @@ export function deriveDrawingQuantities(
       ];
     }
   }
-  return next;
+  return derivePurchaseQuantities(next, documents);
 }

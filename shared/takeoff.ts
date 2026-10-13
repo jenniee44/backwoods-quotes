@@ -1,4 +1,7 @@
-import { equivalentComponentKey } from "./componentIdentity";
+import {
+  repeatedMaterialKey,
+  repeatEvidenceEligible,
+} from "./componentIdentity";
 import type {
   AnalysisSuggestion,
   PlanAnalysisResult,
@@ -418,9 +421,9 @@ export function prepareConstructionAnalysis(
     const existing = retained.find(
       (candidate) =>
         (semanticItemKey(candidate) === semanticItemKey(item) ||
-          (!!equivalentComponentKey(item, materialCategoryFor(item)) &&
-            !["Low", "Unspecified"].includes(item.confidence) &&
-            !["Low", "Unspecified"].includes(candidate.confidence) &&
+          (!!repeatedMaterialKey(item, materialCategoryFor(item)) &&
+            repeatEvidenceEligible(item) &&
+            repeatEvidenceEligible(candidate) &&
             !/possibly|may be|unconfirmed|uncertain|alternative/i.test(
               [
                 item.notes,
@@ -429,10 +432,8 @@ export function prepareConstructionAnalysis(
                 ...(candidate.warnings ?? []),
               ].join(" "),
             ) &&
-            equivalentComponentKey(
-              candidate,
-              materialCategoryFor(candidate),
-            ) === equivalentComponentKey(item, materialCategoryFor(item)))) &&
+            repeatedMaterialKey(candidate, materialCategoryFor(candidate)) ===
+              repeatedMaterialKey(item, materialCategoryFor(item)))) &&
         ![...(candidate.warnings ?? []), ...(item.warnings ?? [])].some(
           (warning) => warning.startsWith("Conflicting quantities"),
         ),
@@ -481,10 +482,7 @@ export function prepareConstructionAnalysis(
   // Compare cross-page observations of the same known physical component without merging them.
   const originalCounts = new Map(retained.map((item) => [item, item.quantity]));
   const physicalCountIdentity = (item: AnalysisSuggestion) =>
-    equivalentComponentKey(
-      { ...item, quantity: null },
-      materialCategoryFor(item),
-    );
+    repeatedMaterialKey({ ...item, quantity: null }, materialCategoryFor(item));
   // Keep conflicting quantities/specifications visible; do not silently select one.
   for (let i = 0; i < retained.length; i++) {
     for (let j = i + 1; j < retained.length; j++) {

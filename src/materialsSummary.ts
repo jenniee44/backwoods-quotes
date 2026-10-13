@@ -9,6 +9,19 @@ import { editTakeoff } from "./planAnalysis";
 
 export function prepareMaterialsSummary(items: TakeoffItem[]) {
   return consolidateTakeoff(items, true).map((t) => {
+    if (
+      t.origin === "ai" &&
+      t.status === "Proposed" &&
+      !t.convertedLineId &&
+      /^(?:general (?:construction )?notes?|construction notes?|(?:material )?specifications?|design criteria|do not scale)\b/i.test(
+        t.description,
+      )
+    )
+      return {
+        ...t,
+        destination: "Informational" as const,
+        itemRole: "Document observation" as const,
+      };
     // Only an explicitly verified, complete recipe can produce a quantity.
     // Extracted measurements alone do not authorize engineering/purchase assumptions.
     if (

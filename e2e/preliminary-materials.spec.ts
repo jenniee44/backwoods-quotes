@@ -98,8 +98,9 @@ for (const width of [1366, 390])
       await expect(region.locator("#summary-unknown")).toContainText(
         "Quantity needed",
       );
-      await expect(region.locator("#summary-excluded")).toContainText(
-        "Excluded",
+      await expect(region.locator("#summary-excluded")).toHaveCount(0);
+      await expect(region.locator(".shopping-attention-heading")).toContainText(
+        "Needs Attention (1)",
       );
       await expect(
         region.locator("tbody input,tbody textarea,tbody select"),

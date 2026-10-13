@@ -169,7 +169,7 @@ it("consolidating additional evidence resets prior verifications without deletin
     scopeVerified: true,
     purchaseVerified: true,
     conflictsVerified: true,
-    warnings: ["Conflicting counts previously reconciled"],
+    warnings: ["Verify actual site conditions before ordering"],
   });
   const grouped = consolidateTakeoff([a, item({ id: "other", page: 2 })], true);
   expect(grouped).toHaveLength(1);
@@ -187,4 +187,13 @@ it("automatic grouping does not combine differently named assemblies within a br
     expect(
       consolidateTakeoff([a, item({ id: "other", description })], true),
     ).toHaveLength(2);
+});
+it("past conflict verification never silently combines new conflicting evidence", () => {
+  const a = item({
+    conflictsVerified: true,
+    warnings: ["Conflicting counts previously reconciled"],
+  });
+  expect(
+    consolidateTakeoff([a, item({ id: "other", page: 2 })], true),
+  ).toHaveLength(2);
 });
