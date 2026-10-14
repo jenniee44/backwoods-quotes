@@ -1,3 +1,4 @@
+import { expandSummaryEditors } from "./summaryEditorHelpers";
 import { expect, test } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -75,6 +76,7 @@ async function setup(page: import("@playwright/test").Page) {
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await expandSummaryEditors(page);
   return q.takeoff;
 }
 for (const width of [1366, 390])

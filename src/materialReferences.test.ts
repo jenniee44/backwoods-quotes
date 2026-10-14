@@ -93,3 +93,25 @@ it("reference classification precedes consolidation so a requirement cannot swal
   expect(next.find((t) => t.id === "product")?.destination).toBe("Materials");
   expect(next.find((t) => t.id === "note")?.destination).toBe("Informational");
 });
+it("summary presentation mode retains every separate observation and its approval state", () => {
+  const a = {
+    ...reference,
+    id: "a",
+    description: "Galvanized screws",
+    quantity: 12,
+    specification: "SDWS screws",
+    category: "Fasteners",
+    status: "Proposed" as const,
+  };
+  const b = {
+    ...a,
+    id: "b",
+    page: 2,
+    sourceFacts: ["Second source observation"],
+  };
+  const before = structuredClone([a, b]);
+  const next = prepareMaterialsSummary([a, b], true);
+  expect(next.map((t) => t.id)).toEqual(["a", "b"]);
+  expect(next.map((t) => t.quantity)).toEqual([12, 12]);
+  expect([a, b]).toEqual(before);
+});

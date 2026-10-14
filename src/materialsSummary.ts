@@ -8,7 +8,10 @@ import { readyForEstimate } from "./takeoffReview";
 import { calculateMaterial } from "../shared/materialCalculators";
 import { editTakeoff } from "./planAnalysis";
 
-export function prepareMaterialsSummary(items: TakeoffItem[]) {
+export function prepareMaterialsSummary(
+  items: TakeoffItem[],
+  preserveObservations = false,
+) {
   const referenceItems = items.map((t) => {
     if (
       t.origin === "ai" &&
@@ -26,7 +29,10 @@ export function prepareMaterialsSummary(items: TakeoffItem[]) {
       };
     return t;
   });
-  return consolidateTakeoff(referenceItems, true).map((t) => {
+  const prepared = preserveObservations
+    ? referenceItems
+    : consolidateTakeoff(referenceItems, true);
+  return prepared.map((t) => {
     // Only an explicitly verified, complete recipe can produce a quantity.
     // Extracted measurements alone do not authorize engineering/purchase assumptions.
     if (

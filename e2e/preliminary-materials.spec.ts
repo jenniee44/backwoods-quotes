@@ -1,3 +1,5 @@
+import { consolidateTakeoff } from "../src/consolidateTakeoff";
+import { expandSummaryEditors } from "./summaryEditorHelpers";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -56,6 +58,7 @@ async function setup(page: import("@playwright/test").Page) {
       location: "Existing",
     },
   ];
+  q.takeoff = consolidateTakeoff(q.takeoff, true);
   const lines = q.lines;
   await page.goto("/");
   await page.evaluate(
@@ -98,7 +101,9 @@ for (const width of [1366, 390])
       await expect(region.locator("#summary-unknown")).toContainText(
         "To confirm",
       );
-      await expect(region.locator("#summary-excluded")).toHaveCount(0);
+      await expect(
+        region.locator(".preliminary-materials #summary-excluded"),
+      ).toHaveCount(0);
       await expect(
         region.locator("tbody input,tbody textarea,tbody select"),
       ).toHaveCount(0);
@@ -110,7 +115,11 @@ for (const width of [1366, 390])
       await region
         .getByRole("button", { name: /Needs Attention — 2 material/ })
         .click();
-      await expect(region.locator("tbody tr")).toHaveCount(2);
+      await expect(
+        region.locator(
+          ".material-category-row, .preliminary-materials > tbody > tr",
+        ),
+      ).toHaveCount(2);
       await expect(region.locator("#summary-unknown")).toBeVisible();
       await region
         .locator("#summary-unknown")
@@ -129,11 +138,16 @@ for (const width of [1366, 390])
       await region
         .getByRole("button", { name: "Materials Summary", exact: true })
         .click();
+      await expandSummaryEditors(page);
       await page.getByLabel("Quantity: unknown", { exact: true }).fill("4");
       await region
         .getByRole("heading", { name: "Materials Summary", exact: true })
         .click();
-      await expect(region.locator("tbody tr")).toHaveCount(0);
+      await expect(
+        region.locator(
+          ".material-category-row, .preliminary-materials > tbody > tr",
+        ),
+      ).toHaveCount(0);
       await region.getByRole("button", { name: /All materials/ }).click();
       const desc = page.getByLabel("Material description: joist", {
         exact: true,

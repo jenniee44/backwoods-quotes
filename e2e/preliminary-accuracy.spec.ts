@@ -124,7 +124,9 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
     "existing",
     "notes",
   ])
-    await expect(region.locator("#summary-" + id)).toHaveCount(0);
+    await expect(
+      region.locator(".preliminary-materials #summary-" + id),
+    ).toHaveCount(0);
   await expect(region.locator("#summary-beam")).toContainText("To confirm");
   await expect(region.locator("#summary-joists")).toContainText("To confirm");
   await expect(region.locator("#summary-hanger")).toContainText("To confirm");

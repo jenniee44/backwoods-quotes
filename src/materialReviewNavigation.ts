@@ -5,6 +5,14 @@ export function revealMaterial(id: string, container?: HTMLElement | null) {
     throw new Error(
       "This material could not be located. Return to Materials Summary and select it again.",
     );
+  for (
+    let parent = element.parentElement;
+    parent;
+    parent = parent.parentElement
+  ) {
+    if (parent.tagName === "DETAILS")
+      (parent as HTMLDetailsElement).open = true;
+  }
   const reduced = window.matchMedia?.(
     "(prefers-reduced-motion: reduce)",
   ).matches;

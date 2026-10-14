@@ -2765,3 +2765,87 @@ details[open] > summary {
     grid-column: 1 / -1;
   }
 }
+.material-category-grid {
+  display: grid;
+  grid-template-columns: 22fr 22fr 12fr 14fr 13fr 17fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem;
+}
+.material-category-grid > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.material-category-grid .purchasing-specification {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.material-category-grid .button {
+  padding: 0.3rem 0.45rem;
+  font-size: 0.8rem;
+}
+.grouped-materials-editor .material-category-row > td {
+  padding: 0.3rem;
+}
+.summary-material-category > summary {
+  cursor: pointer;
+}
+.assembly-editor {
+  margin: 0.4rem 0;
+}
+@media (max-width: 720px) {
+  .material-category-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem 0.6rem;
+  }
+  .material-category-grid > strong,
+  .material-category-grid > .purchasing-specification {
+    grid-column: 1/-1;
+  }
+  .grouped-materials-editor .material-category-row {
+    display: block;
+  }
+  .grouped-materials-editor .material-category-row > td {
+    display: block;
+    width: 100%;
+  }
+  .grouped-materials-editor .material-category-row > td::before {
+    display: none;
+  }
+}
+.summary-material-category {
+  margin: 0;
+}
+.summary-material-category[open] > summary {
+  margin-bottom: 0.4rem;
+}
+.material-category-grid {
+  width: 100%;
+}
+.grouped-materials-editor > thead th:nth-child(1),
+.grouped-materials-editor > thead th:nth-child(2) {
+  width: 22%;
+}
+.grouped-materials-editor > thead th:nth-child(3) {
+  width: 12%;
+}
+.grouped-materials-editor > thead th:nth-child(4) {
+  width: 14%;
+}
+.grouped-materials-editor > thead th:nth-child(5) {
+  width: 13%;
+}
+.grouped-materials-editor > thead th:nth-child(6) {
+  width: 17%;
+}
+.summary-material-category > summary .material-category-grid > strong::before {
+  content: "▸ ";
+}
+.summary-material-category[open]
+  > summary
+  .material-category-grid
+  > strong::before {
+  content: "▾ ";
+}

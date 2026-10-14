@@ -1,3 +1,5 @@
+import { consolidateTakeoff } from "../src/consolidateTakeoff";
+import { expandSummaryEditors } from "./summaryEditorHelpers";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -44,6 +46,7 @@ async function setup(page: import("@playwright/test").Page) {
       location: "Rear framing",
     },
   ];
+  q.takeoff = consolidateTakeoff(q.takeoff, true);
   await page.goto("/");
   await page.evaluate(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
@@ -54,6 +57,7 @@ async function setup(page: import("@playwright/test").Page) {
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await expandSummaryEditors(page);
   return q.lines;
 }
 async function saved(page: import("@playwright/test").Page) {
@@ -73,7 +77,7 @@ test("default consolidated table edits inline, gates bulk approval and sends fin
   const summary = page.getByRole("region", { name: "Materials Summary" });
   await expect(summary).toBeVisible();
   await expect(page.locator(".advanced-review")).not.toHaveAttribute("open");
-  await expect(summary.locator("tbody tr")).toHaveCount(2);
+  await expect(summary.locator(".material-category-row")).toHaveCount(2);
   await summary.screenshot({
     path: "/tmp/backwoods-materials-summary-desktop.png",
   });
@@ -82,13 +86,15 @@ test("default consolidated table edits inline, gates bulk approval and sends fin
   );
   await expect(
     page.getByLabel("Quantity: unknown", { exact: true }),
-  ).toHaveAttribute("placeholder", "Quantity needed");
+  ).toHaveAttribute("placeholder", "To confirm");
   await summary
     .getByText("Needs Attention — 1 material", { exact: true })
     .click();
-  await expect(summary.locator("tbody tr")).toHaveCount(1);
+  await expect(summary.locator(".material-category-row")).toHaveCount(1);
+  await expandSummaryEditors(page);
   await expect(page.locator("#summary-unknown")).toBeVisible();
   await summary.getByRole("button", { name: /All materials/ }).click();
+  await expandSummaryEditors(page);
   await page
     .getByLabel("Specifications: flash", { exact: true })
     .fill("Contractor-selected aluminum Z flashing");
@@ -111,8 +117,12 @@ test("default consolidated table edits inline, gates bulk approval and sends fin
     )
     .toBe("Contractor-selected aluminum Z flashing");
   await page.getByLabel("Include: flash", { exact: true }).selectOption("No");
+  await expandSummaryEditors(page);
   await expect(page.locator("#summary-flash")).toContainText("Excluded");
-  await page.getByLabel("Include: flash", { exact: true }).selectOption("Yes");
+  await page
+    .locator("#summary-flash")
+    .getByRole("button", { name: "Include in quote" })
+    .click();
   await summary
     .getByRole("button", { name: /Select eligible materials/ })
     .click();

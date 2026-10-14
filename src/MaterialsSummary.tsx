@@ -1,3 +1,4 @@
+import GroupedMaterialsEditor from "./GroupedMaterialsEditor";
 import { relevantSpecifications } from "./materialReferences";
 import { purchasingGroups } from "./purchasingGroups";
 import { useEffect, useState } from "react";
@@ -12,10 +13,8 @@ import {
   quickMaterialDraft,
   quickMaterialChanges,
   applyQuickMaterialChanges,
-  needsStockLength,
   materialStockLength,
 } from "./quickMaterialEdit";
-import { materialNextAction } from "./materialReviewPresentation";
 import { readyForEstimate } from "./takeoffReview";
 import { includedScope, workScope } from "./takeoffScope";
 import {
@@ -48,7 +47,7 @@ export default function MaterialsSummary({
   const [verified, setVerified] = useState(false);
   useEffect(() => {
     if (locked) return;
-    const takeoff = prepareMaterialsSummary(q.takeoff);
+    const takeoff = prepareMaterialsSummary(q.takeoff, true);
     if (JSON.stringify(takeoff) !== JSON.stringify(q.takeoff))
       onChange({ ...q, takeoff });
   }, [q, locked, onChange]);
@@ -73,7 +72,7 @@ export default function MaterialsSummary({
   const attentionCount =
     view === "preliminary"
       ? allPreliminary.filter((g) => g.quantity === null).length
-      : attention.length;
+      : purchasingGroups(q, attention).length;
   const eligible = shown.filter((t) => !summaryApprovalProblem(q, t));
   function change(
     t: TakeoffItem,
@@ -91,6 +90,128 @@ export default function MaterialsSummary({
       onError((e as Error).message);
       setRevision((n) => n + 1);
     }
+  }
+  function renderEditableItem(t: TakeoffItem) {
+    const disabled = locked || !!t.convertedLineId;
+    const problem = summaryApprovalProblem(q, t);
+    return (
+      <tr key={t.id} id={"summary-" + t.id}>
+        <td data-label="Material description">
+          {view === "summary" && (
+            <label className="check-options">
+              <input
+                type="checkbox"
+                aria-label={"Select " + t.description}
+                checked={selected.includes(t.id)}
+                disabled={disabled || !!problem}
+                onChange={(e) =>
+                  setSelected((ids) =>
+                    e.target.checked
+                      ? [...ids, t.id]
+                      : ids.filter((id) => id !== t.id),
+                  )
+                }
+              />
+            </label>
+          )}
+          <textarea
+            rows={1}
+            aria-label={"Material description: " + t.id}
+            defaultValue={friendlyMaterialName(t)}
+            key={String(t.description) + revision}
+            disabled={disabled}
+            onBlur={(e) => {
+              if (e.target.value !== friendlyMaterialName(t))
+                change(t, { description: e.target.value });
+            }}
+          />
+        </td>
+        <td data-label="Specifications">
+          <textarea
+            rows={1}
+            aria-label={"Specifications: " + t.id}
+            defaultValue={t.specification ?? ""}
+            key={String(t.specification) + revision}
+            disabled={disabled}
+            onBlur={(e) => {
+              if (e.target.value !== (t.specification ?? ""))
+                change(t, { specification: e.target.value });
+            }}
+          />
+        </td>
+        <td data-label="Quantity">
+          {t.quantity === null && <small>To confirm</small>}
+          <input
+            type="number"
+            min="0"
+            step="any"
+            inputMode="decimal"
+            placeholder="To confirm"
+            aria-label={"Quantity: " + t.id}
+            defaultValue={t.quantity ?? ""}
+            key={String(String(t.quantity)) + revision}
+            disabled={disabled}
+            onBlur={(e) => {
+              const n = e.target.value === "" ? null : Number(e.target.value);
+              if (n !== t.quantity) change(t, { quantity: n });
+            }}
+          />
+          {t.quantity !== null && <small>{quantityLabel(q, t)}</small>}
+        </td>
+        <td data-label="Unit / stock length">
+          <input
+            aria-label={"Unit: " + t.id}
+            defaultValue={t.unit}
+            key={String(t.unit) + revision}
+            disabled={disabled}
+            onBlur={(e) => {
+              if (e.target.value !== t.unit)
+                change(t, { unit: e.target.value });
+            }}
+          />
+        </td>
+        <td data-label="Include / Exclude">
+          <select
+            aria-label={"Include: " + t.id}
+            value={includedScope(t) && t.status !== "Rejected" ? "Yes" : "No"}
+            disabled={disabled}
+            onChange={(e) => change(t, { included: e.target.value === "Yes" })}
+          >
+            <option
+              disabled={[
+                "Existing work to remain",
+                "Requires scope confirmation",
+              ].includes(workScope(t))}
+            >
+              Yes
+            </option>
+            <option>No</option>
+          </select>
+        </td>
+        <td data-label="Status">
+          <strong>
+            {t.convertedLineId
+              ? "Added to estimate"
+              : t.status === "Approved"
+                ? "Approved"
+                : !includedScope(t) || t.status === "Rejected"
+                  ? "Excluded"
+                  : problem
+                    ? "Needs attention"
+                    : "Ready for review"}
+          </strong>
+
+          {!!problem && !t.convertedLineId && t.status !== "Approved" && (
+            <button
+              className="button secondary"
+              onClick={() => onAdvanced(t.id)}
+            >
+              Review details
+            </button>
+          )}
+        </td>
+      </tr>
+    );
   }
   function approve() {
     try {
@@ -142,8 +263,7 @@ export default function MaterialsSummary({
             aria-pressed={!unresolvedOnly}
             onClick={() => setUnresolvedOnly(false)}
           >
-            All materials (
-            {view === "preliminary" ? allPreliminary.length : materials.length})
+            All materials ({allPreliminary.length})
           </button>
           <button
             className="button secondary"
@@ -161,8 +281,8 @@ export default function MaterialsSummary({
           Summary, then send the Final Shopping List to the estimate.
         </p>
       )}
-      {view === "preliminary" && (
-        <details>
+      {view !== "shopping" && (
+        <details className="material-reference-section">
           <summary>
             Reference and excluded work (
             {
@@ -175,15 +295,35 @@ export default function MaterialsSummary({
           {q.takeoff
             .filter((t) => preliminaryDisposition(t, q) === "information")
             .map((t) => (
-              <div key={t.id}>
+              <div key={t.id} id={"summary-" + t.id}>
                 <strong>{t.description}</strong>
                 <p>
                   {t.specification} · {workScope(t)}
+                  {t.included === false || t.status === "Rejected"
+                    ? " · Excluded"
+                    : ""}
                 </p>
                 <p>{t.sourceFacts?.join("; ")}</p>
                 <small>
                   Full technical review remains available in Advanced Review.
                 </small>
+                {t.destination === "Materials" &&
+                  (!t.itemRole || t.itemRole === "Construction item") &&
+                  workScope(t) !== "Existing work to remain" && (
+                    <button
+                      className="button secondary"
+                      disabled={locked || !!t.convertedLineId}
+                      onClick={() => change(t, { included: true })}
+                    >
+                      Include in quote
+                    </button>
+                  )}
+                <button
+                  className="button secondary"
+                  onClick={() => onAdvanced(t.id)}
+                >
+                  Review details
+                </button>
               </div>
             ))}
         </details>
@@ -295,6 +435,13 @@ export default function MaterialsSummary({
             })}
           </tbody>
         </table>
+      ) : view === "summary" ? (
+        <GroupedMaterialsEditor
+          quote={q}
+          items={shown}
+          renderItem={renderEditableItem}
+          onReview={onAdvanced}
+        />
       ) : (
         <table className="materials-summary-table">
           <caption className="sr-only">
@@ -312,177 +459,7 @@ export default function MaterialsSummary({
               <th>Status</th>
             </tr>
           </thead>
-          <tbody>
-            {shown.map((t) => {
-              const disabled = locked || !!t.convertedLineId;
-              const problem = summaryApprovalProblem(q, t);
-              return (
-                <tr key={t.id} id={"summary-" + t.id}>
-                  <td data-label="Material description">
-                    {view === "summary" && (
-                      <label className="check-options">
-                        <input
-                          type="checkbox"
-                          aria-label={"Select " + t.description}
-                          checked={selected.includes(t.id)}
-                          disabled={disabled || !!problem}
-                          onChange={(e) =>
-                            setSelected((ids) =>
-                              e.target.checked
-                                ? [...ids, t.id]
-                                : ids.filter((id) => id !== t.id),
-                            )
-                          }
-                        />
-                      </label>
-                    )}
-                    <textarea
-                      rows={1}
-                      aria-label={"Material description: " + t.id}
-                      defaultValue={friendlyMaterialName(t)}
-                      key={String(t.description) + revision}
-                      disabled={disabled}
-                      onBlur={(e) => {
-                        if (e.target.value !== friendlyMaterialName(t))
-                          change(t, { description: e.target.value });
-                      }}
-                    />
-                  </td>
-                  <td data-label="Specifications">
-                    <textarea
-                      rows={1}
-                      aria-label={"Specifications: " + t.id}
-                      defaultValue={t.specification ?? ""}
-                      key={String(t.specification) + revision}
-                      disabled={disabled}
-                      onBlur={(e) => {
-                        if (e.target.value !== (t.specification ?? ""))
-                          change(t, { specification: e.target.value });
-                      }}
-                    />
-                  </td>
-                  <td data-label="Quantity">
-                    {t.quantity === null && <small>Quantity needed</small>}
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
-                      placeholder="Quantity needed"
-                      aria-label={"Quantity: " + t.id}
-                      defaultValue={t.quantity ?? ""}
-                      key={String(String(t.quantity)) + revision}
-                      disabled={disabled}
-                      onBlur={(e) => {
-                        const n =
-                          e.target.value === "" ? null : Number(e.target.value);
-                        if (n !== t.quantity) change(t, { quantity: n });
-                      }}
-                    />
-                    {t.quantity !== null && (
-                      <small>{quantityLabel(q, t)}</small>
-                    )}
-                    {t.calculation && (
-                      <small>
-                        {t.calculation.verified
-                          ? "Calculated from verified inputs"
-                          : "Calculator inputs need verification"}
-                      </small>
-                    )}
-                  </td>
-                  <td data-label="Unit / stock length">
-                    <input
-                      aria-label={"Unit: " + t.id}
-                      defaultValue={t.unit}
-                      key={String(t.unit) + revision}
-                      disabled={disabled}
-                      onBlur={(e) => {
-                        if (e.target.value !== t.unit)
-                          change(t, { unit: e.target.value });
-                      }}
-                    />
-                    {needsStockLength(t) && (
-                      <label>
-                        Stock length (ft)
-                        <input
-                          type="number"
-                          step="any"
-                          min="0"
-                          aria-label={"Stock length: " + t.id}
-                          placeholder="Length needed"
-                          defaultValue={materialStockLength(t) ?? ""}
-                          key={
-                            String(String(materialStockLength(t))) + revision
-                          }
-                          disabled={disabled}
-                          onBlur={(e) => {
-                            const n =
-                              e.target.value === ""
-                                ? null
-                                : Number(e.target.value);
-                            if (n !== materialStockLength(t))
-                              change(t, { stockLength: n });
-                          }}
-                        />
-                      </label>
-                    )}
-                  </td>
-                  <td data-label="Include / Exclude">
-                    <select
-                      aria-label={"Include: " + t.id}
-                      value={
-                        includedScope(t) && t.status !== "Rejected"
-                          ? "Yes"
-                          : "No"
-                      }
-                      disabled={disabled}
-                      onChange={(e) =>
-                        change(t, { included: e.target.value === "Yes" })
-                      }
-                    >
-                      <option
-                        disabled={[
-                          "Existing work to remain",
-                          "Requires scope confirmation",
-                        ].includes(workScope(t))}
-                      >
-                        Yes
-                      </option>
-                      <option>No</option>
-                    </select>
-                  </td>
-                  <td data-label="Status">
-                    <strong>
-                      {t.convertedLineId
-                        ? "Added to estimate"
-                        : t.status === "Approved"
-                          ? "Approved"
-                          : !includedScope(t) || t.status === "Rejected"
-                            ? "Excluded"
-                            : problem
-                              ? "Needs attention"
-                              : "Ready for review"}
-                    </strong>
-                    {!t.convertedLineId &&
-                      t.status !== "Approved" &&
-                      includedScope(t) && (
-                        <small>{materialNextAction(q, t)}</small>
-                      )}
-                    {!!problem &&
-                      !t.convertedLineId &&
-                      t.status !== "Approved" && (
-                        <button
-                          className="button secondary"
-                          onClick={() => onAdvanced(t.id)}
-                        >
-                          Review details
-                        </button>
-                      )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+          <tbody>{shown.map(renderEditableItem)}</tbody>
         </table>
       )}
       {!shown.length && (
