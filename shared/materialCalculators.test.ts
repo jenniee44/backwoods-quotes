@@ -90,7 +90,7 @@ cases.push(
   ],
   ["hardware", { count: 6, pieces: 2, waste: 0 }, 12],
 );
-it.each(calculators)(
+it.each(calculators.filter((c) => c.kind !== "beam-runs"))(
   "$kind leaves unknown dimensions/waste as contractor input",
   ({ kind }) => {
     expect(
@@ -228,4 +228,81 @@ it("rectangular footing volume and hardware require verified schedules", () => {
       verified: true,
     }).quantity,
   ).toBe(27);
+});
+
+const beamRuns = {
+  kind: "beam-runs",
+  verified: true,
+  inputs: {
+    runs: 2,
+    waste: 0,
+    length1: 12,
+    plies1: 3,
+    stock1: 12,
+    pieces1: 1,
+    layout1: 1,
+    length2: 20,
+    plies2: 3,
+    stock2: 10,
+    pieces2: 2,
+    layout2: 1,
+  },
+  arrangements: {
+    "1": "One continuous 12 ft board per ply, verified bearing.",
+    "2": "Two 10 ft pieces per ply; splice/support plan verified against approved requirements.",
+  },
+};
+it("individual beam runs calculate confirmed stock counts without engineering or offcut reuse", () => {
+  const result = calculateMaterial(beamRuns);
+  expect(result.quantity).toBe(9);
+  expect(result.steps).toHaveLength(2);
+  expect(
+    calculateMaterial({
+      ...beamRuns,
+      inputs: { ...beamRuns.inputs, waste: 10 },
+    }).quantity,
+  ).toBe(10);
+  expect(
+    calculateMaterial({ ...beamRuns, verified: false }).quantity,
+  ).toBeNull();
+  expect(
+    calculateMaterial({ ...beamRuns, inputs: { ...beamRuns.inputs, runs: 1 } })
+      .quantity,
+  ).toBe(3);
+});
+it("beam run purchasing requires every length, ply, stock, cut plan and explicit arrangement confirmation", () => {
+  for (const key of [
+    "length1",
+    "plies1",
+    "stock1",
+    "pieces1",
+    "layout1",
+    "waste",
+    "runs",
+  ])
+    expect(
+      calculateMaterial({
+        ...beamRuns,
+        inputs: { ...beamRuns.inputs, [key]: null },
+      }).quantity,
+    ).toBeNull();
+  expect(
+    calculateMaterial({ ...beamRuns, arrangements: {} }).quantity,
+  ).toBeNull();
+  expect(
+    calculateMaterial({
+      ...beamRuns,
+      inputs: { ...beamRuns.inputs, stock2: 8 },
+    }).quantity,
+  ).toBeNull();
+  expect(
+    calculateMaterial({ ...beamRuns, inputs: { ...beamRuns.inputs, runs: 21 } })
+      .quantity,
+  ).toBeNull();
+  expect(validCalculation({ ...beamRuns, arrangements: { "1": 42 } })).toBe(
+    false,
+  );
+  expect(
+    validCalculation({ ...beamRuns, arrangements: { "1": "x".repeat(2001) } }),
+  ).toBe(false);
 });

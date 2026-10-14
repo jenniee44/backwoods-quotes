@@ -102,6 +102,25 @@ for (const width of [1366, 390])
         await expect(page.locator(".advanced-review")).toHaveAttribute("open");
         const row = page.locator("#takeoff-" + id);
         await expect(row.locator(".takeoff-evidence")).toHaveAttribute("open");
+        await expect(row.locator(".takeoff-advanced")).not.toHaveAttribute(
+          "open",
+        );
+        await expect(
+          row.getByRole("group", { name: "Material purchasing calculator" }),
+        ).toBeVisible();
+        await expect(row).toHaveClass(/material-navigation-highlight/);
+        await expect
+          .poll(() => row.evaluate((e) => document.activeElement === e))
+          .toBe(true);
+        await expect
+          .poll(() =>
+            row.evaluate((e) => {
+              const r = e.getBoundingClientRect();
+              return r.top < innerHeight && r.bottom > 0;
+            }),
+          )
+          .toBe(true);
+        await row.locator(".takeoff-advanced > summary").click();
         await expect(row.locator(".takeoff-advanced")).toHaveAttribute("open");
         await expect(
           row.getByLabel("Takeoff quantity", { exact: true }),
@@ -115,18 +134,6 @@ for (const width of [1366, 390])
         await expect(
           row.getByRole("textbox", { name: "Source facts", exact: true }),
         ).toHaveValue(/Synthetic drawing observation/);
-        await expect(row).toHaveClass(/material-navigation-highlight/);
-        await expect
-          .poll(() => row.evaluate((e) => document.activeElement === e))
-          .toBe(true);
-        await expect
-          .poll(() =>
-            row.evaluate((e) => {
-              const r = e.getBoundingClientRect();
-              return r.top < innerHeight && r.bottom > 0;
-            }),
-          )
-          .toBe(true);
         if (id === "joist")
           await expect(
             row.getByRole("heading", { name: "Review possible duplicates" }),
@@ -175,7 +182,7 @@ test("Needs Attention filter reveals the same exact material and repeated naviga
       .getByRole("button", { name: "Review details", exact: true })
       .click();
     const row = page.locator("#takeoff-missing");
-    await expect(row.locator(".takeoff-advanced")).toHaveAttribute("open");
+    await expect(row.locator(".takeoff-advanced")).not.toHaveAttribute("open");
     await expect
       .poll(() => row.evaluate((e) => document.activeElement === e))
       .toBe(true);

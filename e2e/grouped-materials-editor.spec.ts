@@ -139,7 +139,7 @@ for (const width of [1366, 390])
       .click();
     await expect(
       page.locator("#takeoff-beam-b .takeoff-advanced"),
-    ).toHaveAttribute("open");
+    ).not.toHaveAttribute("open");
     await table.getByLabel("Edit assemblies: beam-a", { exact: true }).click();
     await expect(page.locator("#summary-beam-b")).not.toBeVisible();
     await page

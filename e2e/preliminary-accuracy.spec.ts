@@ -139,9 +139,9 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
   await expect(page.locator("#takeoff-beam")).toContainText(
     "Same three beam runs in elevation page 2",
   );
-  await expect(page.locator("#takeoff-beam .takeoff-advanced")).toHaveAttribute(
-    "open",
-  );
+  await expect(
+    page.locator("#takeoff-beam .takeoff-advanced"),
+  ).not.toHaveAttribute("open");
   await page.waitForTimeout(1500);
   const stored = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)!),

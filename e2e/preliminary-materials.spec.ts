@@ -127,7 +127,7 @@ for (const width of [1366, 390])
         .click();
       await expect(
         page.locator("#takeoff-unknown .takeoff-advanced"),
-      ).toHaveAttribute("open");
+      ).not.toHaveAttribute("open");
       await page
         .locator("#takeoff-unknown")
         .getByRole("button", { name: "Back to Materials Summary" })

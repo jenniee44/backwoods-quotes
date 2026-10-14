@@ -1,3 +1,5 @@
+import { relevantSpecifications } from "./materialReferences";
+import SimpleMaterialCalculator from "./SimpleMaterialCalculator";
 import PurchasingReviewContext from "./PurchasingReviewContext";
 import { revealMaterial } from "./materialReviewNavigation";
 import { applyQuickMaterialChanges } from "./quickMaterialEdit";
@@ -110,17 +112,19 @@ export default function TakeoffTable({
   const shown = q.takeoff.filter(
     (t) => !filter || matchesFilter(t, filter) || editing.includes(t.id),
   );
+  const openedReview = useRef<object | null>(null);
   useEffect(() => {
-    if (!reviewTarget) return;
+    if (!reviewTarget || openedReview.current === reviewTarget) return;
     if (!q.takeoff.some((t) => t.id === reviewTarget.id)) {
       onError(
         "This material could not be located. Return to Materials Summary and select it again.",
       );
       return;
     }
+    openedReview.current = reviewTarget;
     setFilter(null);
     setExpanded((ids) => [...new Set([...ids, reviewTarget.id])]);
-    setAdvanced((ids) => [...new Set([...ids, reviewTarget.id])]);
+    setAdvanced([]);
   }, [reviewTarget, q.takeoff, onError]);
   const navigated = useRef<object | null>(null);
   useEffect(() => {
@@ -128,8 +132,7 @@ export default function TakeoffTable({
       !reviewTarget ||
       navigated.current === reviewTarget ||
       filter ||
-      !expanded.includes(reviewTarget.id) ||
-      !advanced.includes(reviewTarget.id)
+      !expanded.includes(reviewTarget.id)
     )
       return;
     try {
@@ -180,7 +183,9 @@ export default function TakeoffTable({
       quantityMethod: result.quantity === null ? "Unknown" : "Calculated",
       calculationBasis: `${result.formula}; ${Object.entries(recipe.inputs)
         .map(([key, value]) => `${key}=${value ?? "missing"}`)
-        .join(", ")}`,
+        .join(
+          ", ",
+        )}; ${recipe.arrangements ? JSON.stringify(recipe.arrangements) : ""}`,
     });
   };
   const potentialAlternatives =
@@ -333,13 +338,6 @@ export default function TakeoffTable({
                 .filter((t) => groupFor(t) === group)
                 .map((t) => {
                   const disabled = locked || !!t.convertedLineId;
-                  const recipe = t.calculation;
-                  const definition = calculators.find(
-                    (d) => d.kind === recipe?.kind,
-                  );
-                  const preview = recipe
-                    ? calculateMaterial(recipe, false)
-                    : null;
                   return (
                     <tbody
                       className="line-card"
@@ -506,10 +504,21 @@ export default function TakeoffTable({
                               </button>
                             )}
                             {expanded.includes(t.id) && (
-                              <PurchasingReviewContext
-                                quote={q}
+                              <SimpleMaterialCalculator
                                 item={t}
-                                onReview={onReviewMaterial}
+                                requirements={relevantSpecifications(q, [
+                                  t,
+                                ]).map(
+                                  (ref) => ref.specification || ref.description,
+                                )}
+                                disabled={disabled}
+                                onCalculate={(r) => calculate(t, r)}
+                                onPatch={(d) => patch(t, d)}
+                                onEdit={(d) =>
+                                  updateItem(t, (item) =>
+                                    applyQuickMaterialChanges(item, d),
+                                  )
+                                }
                               />
                             )}
                             {!!overlappingItems(q, t).length && (
@@ -545,13 +554,7 @@ export default function TakeoffTable({
                                       {peer.alternativeOption ||
                                         "Method unspecified"}
                                     </p>
-                                    <details
-                                      open={
-                                        reviewTarget?.id === t.id
-                                          ? true
-                                          : undefined
-                                      }
-                                    >
+                                    <details>
                                       <summary>View evidence</summary>
                                       <p>
                                         This item: {t.documentId || "manual"},
@@ -627,6 +630,14 @@ export default function TakeoffTable({
                               >
                                 Advanced details
                               </summary>
+                              {expanded.includes(t.id) && (
+                                <PurchasingReviewContext
+                                  quote={q}
+                                  item={t}
+                                  onReview={onReviewMaterial}
+                                />
+                              )}
+
                               <p className="tiny">
                                 {t.classification ?? "Contractor entry"} ·{" "}
                                 {t.sourceDocumentName || "Manual source"} ·
@@ -1007,270 +1018,6 @@ export default function TakeoffTable({
                                       }
                                     />
                                   </Field>
-                                </div>
-                                {t.origin === "ai" &&
-                                  t.destination === "Materials" &&
-                                  (t.category === "Beams" ||
-                                    /\bbeams?\b/i.test(t.description)) &&
-                                  !t.calculation && (
-                                    <label className="check-options">
-                                      <input
-                                        type="checkbox"
-                                        checked={!!t.purchaseVerified}
-                                        onChange={(e) =>
-                                          patch(t, {
-                                            purchaseVerified: e.target.checked,
-                                          })
-                                        }
-                                      />
-                                      I verified beam purchase quantities,
-                                      lengths, plies, stock and approved
-                                      cut/splice layout. Run counts are not
-                                      purchase boards.
-                                    </label>
-                                  )}
-                                <div className="material-calculator">
-                                  <h4>
-                                    2. Verified measurements & calculated
-                                    quantity
-                                  </h4>
-                                  <p className="tiny">
-                                    Extracted specifications and source facts
-                                    remain above. Calculator fields require
-                                    verified values; missing dimensions, stock
-                                    choices and waste stay contractor input
-                                    required.
-                                  </p>
-                                  <Field label="Material calculator">
-                                    <select
-                                      value={recipe?.kind ?? ""}
-                                      disabled={
-                                        t.destination === "Labour" ||
-                                        t.destination === "Subcontractor" ||
-                                        t.destination === "Other Costs"
-                                      }
-                                      onChange={(e) =>
-                                        e.target.value
-                                          ? calculate(t, {
-                                              kind: e.target.value,
-                                              inputs: {},
-                                              verified: false,
-                                            })
-                                          : patch(t, {
-                                              calculation: undefined,
-                                              quantity: null,
-                                              quantityMethod: "Unknown",
-                                            })
-                                      }
-                                    >
-                                      <option value="">
-                                        Manual verified quantity
-                                      </option>
-                                      {calculators.map((c) => (
-                                        <option key={c.kind} value={c.kind}>
-                                          {c.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </Field>
-                                  {recipe && definition && (
-                                    <>
-                                      <p>
-                                        <b>Formula:</b> {definition.formula}
-                                      </p>
-                                      <div className="fields compact">
-                                        {definition.fields.map((field) => (
-                                          <div key={field.key}>
-                                            <Field label={field.label}>
-                                              {field.options ? (
-                                                <select
-                                                  aria-label={field.label}
-                                                  value={
-                                                    recipe.inputs[field.key] ??
-                                                    ""
-                                                  }
-                                                  onChange={(e) =>
-                                                    calculate(t, {
-                                                      ...recipe,
-                                                      verified: false,
-                                                      inputs: {
-                                                        ...recipe.inputs,
-                                                        [field.key]:
-                                                          e.target.value === ""
-                                                            ? null
-                                                            : Number(
-                                                                e.target.value,
-                                                              ),
-                                                      },
-                                                    })
-                                                  }
-                                                >
-                                                  <option value="">
-                                                    Choose direction
-                                                  </option>
-                                                  {field.options.map(
-                                                    (option) => (
-                                                      <option
-                                                        key={option.value}
-                                                        value={option.value}
-                                                      >
-                                                        {option.label}
-                                                      </option>
-                                                    ),
-                                                  )}
-                                                </select>
-                                              ) : (
-                                                <NumberInput
-                                                  nullable
-                                                  value={
-                                                    recipe.inputs[field.key] ??
-                                                    null
-                                                  }
-                                                  step={
-                                                    field.integer ? "1" : "any"
-                                                  }
-                                                  onChange={(value) =>
-                                                    calculate(t, {
-                                                      ...recipe,
-                                                      verified: false,
-                                                      inputs: {
-                                                        ...recipe.inputs,
-                                                        [field.key]:
-                                                          Number.isNaN(value)
-                                                            ? null
-                                                            : value,
-                                                      },
-                                                    })
-                                                  }
-                                                />
-                                              )}
-                                            </Field>
-                                            {field.label.includes("(ft)") &&
-                                              recipe.inputs[field.key] !=
-                                                null && (
-                                                <p className="tiny">
-                                                  {formatFeet(
-                                                    recipe.inputs[field.key]!,
-                                                  )}
-                                                </p>
-                                              )}
-                                            {/\((?:ft|in)\)/.test(
-                                              field.label,
-                                            ) &&
-                                              !!drawingMeasurements(t)
-                                                .length && (
-                                                <label className="field">
-                                                  <span>
-                                                    Use written measurement for{" "}
-                                                    {field.label}
-                                                  </span>
-                                                  <select
-                                                    aria-label={`Use written measurement for ${field.label}`}
-                                                    value=""
-                                                    onChange={(e) => {
-                                                      if (!e.target.value)
-                                                        return;
-                                                      const m =
-                                                        drawingMeasurements(t)[
-                                                          Number(
-                                                            e.target.value,
-                                                          ) - 1
-                                                        ];
-                                                      if (!m) return;
-                                                      calculate(t, {
-                                                        ...recipe,
-                                                        verified: false,
-                                                        inputs: {
-                                                          ...recipe.inputs,
-                                                          [field.key]:
-                                                            field.label.includes(
-                                                              "(ft)",
-                                                            )
-                                                              ? m.inches / 12
-                                                              : m.inches,
-                                                        },
-                                                      });
-                                                    }}
-                                                  >
-                                                    <option value="">
-                                                      Choose a source
-                                                      observation — verify its
-                                                      role
-                                                    </option>
-                                                    {drawingMeasurements(t).map(
-                                                      (m, index) => (
-                                                        <option
-                                                          key={index}
-                                                          value={index + 1}
-                                                        >
-                                                          {m.written} · {m.fact}{" "}
-                                                          · page{" "}
-                                                          {m.page ?? "unknown"}{" "}
-                                                          · {m.confidence}
-                                                        </option>
-                                                      ),
-                                                    )}
-                                                  </select>
-                                                </label>
-                                              )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                      <p className="tiny">
-                                        {recipe.kind === "decking-layout"
-                                          ? "Rectangular section only; each row uses the approved number of equal-length pieces. Confirm joints, supports, end gaps and trimming. Calculate irregular sections separately; do not subtract openings that do not remove entire rows. Stock offcuts are reused within this section only."
-                                          : [
-                                                "post-stock",
-                                                "ledger",
-                                                "rim-joist",
-                                                "blocking",
-                                                "fascia",
-                                                "stair-riser",
-                                              ].includes(recipe.kind)
-                                            ? "Equal cut lengths within one run/section only. Kerf is included between cuts. No structural splice or offcut reuse between different sections is assumed."
-                                            : "Verify shape, openings, edge conditions and construction specifications. Calculate different sections or member lengths separately."}
-                                      </p>
-                                      <label className="check-options">
-                                        <input
-                                          type="checkbox"
-                                          checked={recipe.verified}
-                                          onChange={(e) =>
-                                            calculate(t, {
-                                              ...recipe,
-                                              verified: e.target.checked,
-                                            })
-                                          }
-                                        />
-                                        I verified all calculator inputs,
-                                        selected materials, cut layout and
-                                        specifications.
-                                      </label>
-                                      <p className="tiny">
-                                        {preview?.quantity !== null
-                                          ? `Calculated preview: ${preview?.quantity} ${preview?.unit}.`
-                                          : preview?.missing.join(" · ")}{" "}
-                                        {recipe.verified
-                                          ? "Review and approve before conversion."
-                                          : "Requires contractor verification before use."}
-                                      </p>
-                                      {!!preview?.steps?.length && (
-                                        <ul className="tiny">
-                                          {preview.steps.map((step) => (
-                                            <li key={step}>{step}</li>
-                                          ))}
-                                        </ul>
-                                      )}
-                                      <p className="tiny">
-                                        Counts and purchase allowances only: no
-                                        span, connection, stair-code, footing
-                                        design or splice engineering is
-                                        inferred. Openings, support layout and
-                                        product coverage must be verified. Edit
-                                        quantity directly to leave the
-                                        calculator and enter a manual count.
-                                      </p>
-                                    </>
-                                  )}
                                 </div>
                                 <div className="fields compact">
                                   <Field label="Source document">

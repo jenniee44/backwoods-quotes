@@ -95,6 +95,7 @@ for (const width of [1366, 390])
       await list
         .getByRole("button", { name: "Review details", exact: true })
         .click();
+      await page.locator("#takeoff-hanger .takeoff-advanced > summary").click();
       const review = page.locator("#takeoff-hanger .purchasing-review-context");
       await expect(review).toContainText(
         "SYNTHETIC_LONG_EVIDENCE_ONLY_IN_REVIEW",

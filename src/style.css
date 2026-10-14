@@ -2849,3 +2849,15 @@ details[open] > summary {
   > strong::before {
   content: "▾ ";
 }
+.simple-material-calculator {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+}
+.simple-material-calculator .fields {
+  gap: 0.6rem;
+}
+.simple-material-calculator h4 {
+  margin: 0 0 0.6rem;
+}

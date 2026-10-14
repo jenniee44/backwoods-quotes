@@ -1,4 +1,5 @@
 export type CalculatorField = {
+  run?: number;
   key: string;
   label: string;
   integer?: boolean;
@@ -9,6 +10,7 @@ export type MaterialCalculation = {
   kind: string;
   inputs: Record<string, number | null>;
   verified: boolean;
+  arrangements?: Record<string, string>;
 };
 const f = (
   key: string,
@@ -41,6 +43,46 @@ const cutFields = [
   waste,
 ];
 export const calculators = [
+  {
+    kind: "beam-runs",
+    name: "Beams — individual verified runs",
+    unit: "boards",
+    fields: [
+      f("runs", "Number of separate beam runs", { integer: true }),
+      waste,
+      ...Array.from({ length: 20 }, (_, i) => {
+        const n = i + 1;
+        return [
+          f("length" + n, `Run ${n} length (ft)`, { run: n }),
+          f("plies" + n, `Run ${n} plies`, { run: n, integer: true }),
+          f("stock" + n, `Run ${n} stock board length (ft)`, { run: n }),
+          f("pieces" + n, `Run ${n} approved pieces per ply`, {
+            run: n,
+            integer: true,
+          }),
+          f("layout" + n, `Run ${n} cut / splice arrangement`, {
+            run: n,
+            options: [
+              {
+                value: 1,
+                label: "Confirmed against approved construction requirements",
+              },
+            ],
+          }),
+        ];
+      }).flat(),
+    ],
+    formula:
+      "ceil(sum(each separate run's plies × confirmed stock pieces per ply) × (1 + waste / 100)); no offcut reuse or structural splice design is inferred",
+    run: (v: Record<string, number>) =>
+      Math.ceil(
+        Array.from(
+          { length: v.runs },
+          (_, i) => v["plies" + (i + 1)] * v["pieces" + (i + 1)],
+        ).reduce((a, b) => a + b, 0) *
+          (1 + v.waste / 100),
+      ),
+  },
   {
     kind: "decking-layout",
     name: "Deck boards — directional row / cut layout",
@@ -311,6 +353,15 @@ export const calculators = [
       ),
   },
 ];
+/** Show/require inputs only for the explicitly selected individual runs. */
+export function activeCalculatorFields(
+  definition: { fields: CalculatorField[] },
+  recipe: MaterialCalculation,
+) {
+  return definition.fields.filter(
+    (field) => !field.run || field.run <= (recipe.inputs.runs ?? 0),
+  );
+}
 export function validCalculation(value: unknown): value is MaterialCalculation {
   if (!value || typeof value !== "object") return false;
   const v = value as MaterialCalculation;
@@ -324,6 +375,16 @@ export function validCalculation(value: unknown): value is MaterialCalculation {
     Object.keys(v.inputs).every((key) =>
       definition.fields.some((f) => f.key === key),
     ) &&
+    (v.arrangements === undefined ||
+      (typeof v.arrangements === "object" &&
+        v.arrangements !== null &&
+        !Array.isArray(v.arrangements) &&
+        Object.entries(v.arrangements).every(
+          ([key, text]) =>
+            /^(?:[1-9]|1[0-9]|20)$/.test(key) &&
+            typeof text === "string" &&
+            text.length <= 2000,
+        ))) &&
     Object.values(v.inputs).every(
       (n) =>
         n === null ||
@@ -347,7 +408,7 @@ export function calculateMaterial(
       missing: ["Choose a valid calculator and inputs"],
       steps: [] as string[],
     };
-  const missing = definition.fields
+  const missing = activeCalculatorFields(definition, recipe)
     .filter(
       (f) =>
         recipe.inputs[f.key] === null ||
@@ -358,6 +419,24 @@ export function calculateMaterial(
     )
     .map((f) => f.label);
   const v = recipe.inputs as Record<string, number>;
+  if (recipe.kind === "beam-runs") {
+    if (!Number.isInteger(v.runs) || v.runs < 1 || v.runs > 20)
+      missing.push("Enter between 1 and 20 separate beam runs");
+    for (let n = 1; n <= Math.min(v.runs ?? 0, 20); n++) {
+      if (v["pieces" + n] * v["stock" + n] < v["length" + n])
+        missing.push(
+          `Run ${n}: approved stock arrangement does not cover the run length`,
+        );
+      if (!recipe.arrangements?.[String(n)]?.trim())
+        missing.push(
+          `Run ${n}: record the verified cutting / splice arrangement`,
+        );
+      if (v["layout" + n] !== 1)
+        missing.push(
+          `Run ${n}: confirm the cutting and structural splice arrangement; it is never inferred`,
+        );
+    }
+  }
   if (recipe.kind === "decking-layout") {
     const run = v.direction === 0 ? v.length : v.width;
     if (v.stock < run / v.pieces)
@@ -405,6 +484,12 @@ export function calculateMaterial(
   )
     missing.push("Calculated result is outside the supported range");
   const steps: string[] = [];
+  if (!missing.length && recipe.kind === "beam-runs") {
+    for (let n = 1; n <= v.runs; n++)
+      steps.push(
+        `Run ${n}: ${v["length" + n]} ft, ${v["plies" + n]} plies × ${v["pieces" + n]} confirmed pieces at ${v["stock" + n]} ft = ${v["plies" + n] * v["pieces" + n]} boards before waste. No cross-run offcut reuse.`,
+      );
+  }
   if (!missing.length && recipe.kind === "decking-layout") {
     const run = v.direction === 0 ? v.length : v.width;
     const cross = v.direction === 0 ? v.width : v.length;

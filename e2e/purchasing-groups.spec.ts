@@ -102,6 +102,7 @@ test("purchasing categories retain separate beam, joist and hanger assemblies wi
   await beam
     .getByRole("button", { name: "Review details", exact: true })
     .click();
+  await page.locator("#takeoff-b1 .takeoff-advanced > summary").click();
   const context = page.locator("#takeoff-b1 .purchasing-review-context");
   await expect(context).toContainText("beam lengths");
   await expect(
