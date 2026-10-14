@@ -14,6 +14,9 @@ export type MaterialCalculation = {
   arrangements?: Record<string, string>;
   specifications?: Record<string, string>;
   lengthSources?: Record<string, string>;
+  specificationSources?: Record<string, string>;
+  runLabels?: Record<string, string>;
+  availableStock?: number[];
 };
 const f = (
   key: string,
@@ -374,6 +377,26 @@ export function validCalculation(value: unknown): value is MaterialCalculation {
     !Array.isArray(v.inputs) &&
     Object.keys(v.inputs).every((key) =>
       definition.fields.some((f) => f.key === key),
+    ) &&
+    (v.availableStock === undefined ||
+      (Array.isArray(v.availableStock) &&
+        v.availableStock.length <= 20 &&
+        v.availableStock.every(
+          (n) =>
+            typeof n === "number" && Number.isFinite(n) && n > 0 && n <= 1000,
+        ))) &&
+    [v.specificationSources, v.runLabels].every(
+      (value) =>
+        value === undefined ||
+        (value !== null &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          Object.entries(value).every(
+            ([key, text]) =>
+              /^(?:[1-9]|1[0-9]|20)$/.test(key) &&
+              typeof text === "string" &&
+              text.length <= 2000,
+          )),
     ) &&
     (v.lengthSources === undefined ||
       (v.lengthSources !== null &&

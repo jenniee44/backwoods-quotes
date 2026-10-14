@@ -1,3 +1,4 @@
+import { proposedBeamRecipe } from "./beamPrefill";
 import { completenessProblem } from "./takeoffRequirements";
 import {
   equivalentComponentKey,
@@ -117,6 +118,7 @@ export function addAnalysisSuggestions(
     throw new Error(
       "These plans have already been analyzed in this quote. Review the existing results.",
     );
+  const drawingSuggestions = result.suggestions;
   result = prepareConstructionAnalysis(result);
   const analysisId = id();
   const suggestions = result.suggestions.map((item) => {
@@ -213,7 +215,40 @@ export function addAnalysisSuggestions(
   });
   return {
     ...q,
-    takeoff: [...q.takeoff, ...adopted],
+    takeoff: [
+      ...q.takeoff,
+      ...adopted.map((item) => {
+        const source = drawingSuggestions.find(
+          (s) =>
+            s.documentId === item.documentId &&
+            s.page === item.page &&
+            s.description === item.description &&
+            s.specification === item.specification &&
+            s.confidence === "High",
+        );
+        const calculation = proposedBeamRecipe(
+          source ? { ...item, confidence: source.confidence } : item,
+        );
+        return calculation
+          ? {
+              ...item,
+              calculation,
+              quantity: null,
+              unit: "boards",
+              quantityMethod: "Unknown" as const,
+              classification: "Contractor input required" as const,
+              notes: [
+                item.notes,
+                item.quantity !== null
+                  ? `Original proposed observation: ${item.quantity} ${item.unit}; not a verified purchase quantity.`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("\n"),
+            }
+          : item;
+      }),
+    ],
     analysisReports: [
       ...(q.analysisReports ?? []),
       {

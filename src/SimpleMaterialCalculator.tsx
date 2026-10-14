@@ -1,3 +1,4 @@
+import { proposedBeamRecipe } from "./beamPrefill";
 import { relevantCalculators } from "./calculatorSelection";
 import BeamRunsEditor from "./BeamRunsEditor";
 import { beamStockGroups } from "../shared/beamLumber";
@@ -98,7 +99,13 @@ export default function SimpleMaterialCalculator({
           type="button"
           className="button secondary"
           onClick={() =>
-            onCalculate({ kind: recommended, inputs: {}, verified: false })
+            onCalculate(
+              (recommended === "beam-runs" ? proposedBeamRecipe(t) : null) ?? {
+                kind: recommended,
+                inputs: {},
+                verified: false,
+              },
+            )
           }
         >
           Calculate purchasing quantity
@@ -311,7 +318,11 @@ export default function SimpleMaterialCalculator({
             <p className="tiny">
               {preview?.quantity !== null
                 ? `Calculated preview: ${preview?.quantity} ${preview?.unit}.`
-                : preview?.missing.join(" · ")}{" "}
+                : recipe.kind === "beam-runs"
+                  ? recipe.inputs.waste == null
+                    ? "Enter your waste allowance, then complete each beam’s next step."
+                    : "Complete each beam’s next step and verify the inputs."
+                  : preview?.missing.join(" · ")}{" "}
               {recipe.verified
                 ? "Review and approve before conversion."
                 : "Requires contractor verification before use."}

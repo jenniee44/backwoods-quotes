@@ -70,9 +70,24 @@ for (const width of [1366, 390])
     await expect(
       panel.getByLabel("Material calculator", { exact: true }),
     ).toHaveValue("beam-runs");
+    await expect(
+      panel.getByLabel("Number of separate beam runs", { exact: true }),
+    ).toHaveValue("2");
+    await expect(
+      panel
+        .getByRole("region", { name: "Beam 1", exact: true })
+        .getByLabel("Number of plies", { exact: true }),
+    ).toHaveValue("3");
+    await expect(panel.locator(".beam-advanced[open]")).toHaveCount(0);
+    await panel.getByText("Available stock sizes", { exact: true }).click();
     await panel
-      .getByLabel("Number of separate beam runs", { exact: true })
-      .fill("2");
+      .getByLabel("Available stock lengths", { exact: true })
+      .fill("12, 16, 24");
+    await panel.getByLabel("Waste allowance (%)", { exact: true }).click();
+    await expect(
+      panel.getByRole("region", { name: "Beam 1", exact: true }),
+    ).toContainText("Suggested available stock: 12 ft");
+    await expect(panel).toContainText("Purchase quantity: To confirm");
     await panel.getByLabel("Waste allowance (%)", { exact: true }).fill("0");
     for (const [n, length, stock, pieces] of [
       [1, 12, 12, 1],
@@ -82,6 +97,7 @@ for (const width of [1366, 390])
         name: `Beam ${n}`,
         exact: true,
       });
+      await beam.locator(".beam-advanced > summary").click();
       await beam
         .getByLabel(`Beam ${n} proposed drawing length`, { exact: true })
         .selectOption(String(n));
@@ -102,11 +118,6 @@ for (const width of [1366, 390])
           .getByLabel("Beam length — inches", { exact: true })
           .fill("0");
       }
-      await beam
-        .getByRole("button", {
-          name: "Use drawing specification and 3 plies — proposed",
-        })
-        .click();
       await expect(
         beam.getByLabel("Number of plies", { exact: true }),
       ).toHaveValue("3");

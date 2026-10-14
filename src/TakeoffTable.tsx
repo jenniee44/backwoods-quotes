@@ -207,7 +207,7 @@ export default function TakeoffTable({
         .map(([key, value]) => `${key}=${value ?? "missing"}`)
         .join(
           ", ",
-        )}; ${JSON.stringify({ arrangements: recipe.arrangements, specifications: recipe.specifications, lengthSources: recipe.lengthSources })}`,
+        )}; ${JSON.stringify({ arrangements: recipe.arrangements, specifications: recipe.specifications, lengthSources: recipe.lengthSources, specificationSources: recipe.specificationSources, runLabels: recipe.runLabels })}`,
     });
   };
   const potentialAlternatives =
