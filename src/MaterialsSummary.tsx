@@ -1,3 +1,4 @@
+import BeamShoppingList from "./BeamShoppingList";
 import GroupedMaterialsEditor from "./GroupedMaterialsEditor";
 import { relevantSpecifications } from "./materialReferences";
 import { purchasingGroups } from "./purchasingGroups";
@@ -471,6 +472,7 @@ export default function MaterialsSummary({
               : "Analyze drawings or add materials in Advanced Review to begin."}
         </p>
       )}
+      {view === "shopping" && <BeamShoppingList quote={q} />}
       {view === "shopping" && (
         <>
           <p>

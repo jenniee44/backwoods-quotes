@@ -1,3 +1,4 @@
+import { beamStockGroups } from "../shared/beamLumber";
 import { completenessProblem } from "./takeoffRequirements";
 import { purchaseQuantityProblem } from "../shared/componentIdentity";
 import { assertScope, validScope } from "./takeoffScope";
@@ -1115,9 +1116,22 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       warnings: structuredClone(item.warnings ?? []),
     },
   };
+  const stockGroups =
+    kind === "Materials" && item.calculation?.kind === "beam-runs"
+      ? beamStockGroups(item.calculation, item.specification ?? "")
+      : [];
+  const addedLines = stockGroups.length
+    ? stockGroups.map((group, index) => ({
+        ...l,
+        id: index === 0 ? l.id : id(),
+        description: `${group.specification} × ${group.stock} ft`,
+        quantity: group.quantity,
+        unit: "boards",
+      }))
+    : [l];
   return {
     ...q,
-    lines: [...q.lines, l],
+    lines: [...q.lines, ...addedLines],
     takeoff: q.takeoff.map((t) =>
       t.id === item.id ? { ...t, convertedLineId: l.id } : t,
     ),

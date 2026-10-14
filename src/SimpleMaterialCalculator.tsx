@@ -1,3 +1,6 @@
+import { relevantCalculators } from "./calculatorSelection";
+import BeamRunsEditor from "./BeamRunsEditor";
+import { beamStockGroups } from "../shared/beamLumber";
 import { useState } from "react";
 import type { TakeoffItem } from "./model";
 import NumberInput from "./NumberInput";
@@ -43,24 +46,14 @@ export default function SimpleMaterialCalculator({
   requirements?: string[];
 }) {
   const [error, setError] = useState("");
+  const [allCalculators, setAllCalculators] = useState(false);
   const recipe = t.calculation,
     definition = calculators.find((d) => d.kind === recipe?.kind),
     preview = recipe ? calculateMaterial(recipe, false) : null;
   const calculate = (_t: TakeoffItem, r: MaterialCalculation) => onCalculate(r);
   const patch = (_t: TakeoffItem, d: Partial<TakeoffItem>) => onPatch(d);
-  const recommended = /hanger|fastener|screw|bolt|connector/i.test(
-    t.description,
-  )
-    ? "hardware"
-    : /beam/i.test(t.description)
-      ? "beam-runs"
-      : /joist/i.test(t.description)
-        ? "joists"
-        : /deck(?:ing)? boards|decking/i.test(t.description)
-          ? "decking-layout"
-          : /post/i.test(t.description)
-            ? "post-stock"
-            : "";
+  const relevant = relevantCalculators(t),
+    recommended = relevant[0] ?? "";
   function edit(delta: Partial<ReturnType<typeof quickMaterialDraft>>) {
     try {
       setError("");
@@ -151,13 +144,31 @@ export default function SimpleMaterialCalculator({
             }
           >
             <option value="">Manual verified quantity</option>
-            {calculators.map((c) => (
-              <option key={c.kind} value={c.kind}>
-                {c.name}
-              </option>
-            ))}
+            {calculators
+              .filter(
+                (c) =>
+                  allCalculators ||
+                  c.kind === recipe?.kind ||
+                  relevant.includes(c.kind),
+              )
+              .map((c) => (
+                <option key={c.kind} value={c.kind}>
+                  {c.name}
+                </option>
+              ))}
           </select>
         </Field>
+        <details>
+          <summary>Advanced calculator selection</summary>
+          <label className="check-options">
+            <input
+              type="checkbox"
+              checked={allCalculators}
+              onChange={(e) => setAllCalculators(e.target.checked)}
+            />
+            Show all construction calculators
+          </label>
+        </details>
         {recipe && definition && (
           <>
             <details>
@@ -165,128 +176,108 @@ export default function SimpleMaterialCalculator({
               <p>{definition.formula}</p>
             </details>
             <div className="fields compact">
-              {recipe.kind === "beam-runs" &&
-                Array.from(
-                  {
-                    length: Math.min(
-                      Math.max(Math.floor(recipe.inputs.runs ?? 0), 0),
-                      20,
-                    ),
-                  },
-                  (_, i) => i + 1,
-                ).map((n) => (
-                  <label className="field" key={n}>
-                    <span>Run {n} verified cutting / splice plan</span>
-                    <textarea
-                      aria-label={`Run ${n} verified cutting / splice plan`}
-                      maxLength={2000}
-                      value={recipe.arrangements?.[String(n)] ?? ""}
-                      placeholder="Record cut lengths, stock pieces and the approved splice/support arrangement. Do not design or assume a splice."
-                      onChange={(e) =>
-                        calculate(t, {
-                          ...recipe,
-                          verified: false,
-                          arrangements: {
-                            ...recipe.arrangements,
-                            [String(n)]: e.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                ))}
-              {activeCalculatorFields(definition, recipe).map((field) => (
-                <div key={field.key}>
-                  <Field label={field.label}>
-                    {field.options ? (
-                      <select
-                        aria-label={field.label}
-                        value={recipe.inputs[field.key] ?? ""}
-                        onChange={(e) =>
-                          calculate(t, {
-                            ...recipe,
-                            verified: false,
-                            inputs: {
-                              ...recipe.inputs,
-                              [field.key]:
-                                e.target.value === ""
-                                  ? null
-                                  : Number(e.target.value),
-                            },
-                          })
-                        }
-                      >
-                        <option value="">Choose a confirmed value</option>
-                        {field.options.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <NumberInput
-                        nullable
-                        value={recipe.inputs[field.key] ?? null}
-                        step={field.integer ? "1" : "any"}
-                        onChange={(value) =>
-                          calculate(t, {
-                            ...recipe,
-                            verified: false,
-                            inputs: {
-                              ...recipe.inputs,
-                              [field.key]: Number.isNaN(value) ? null : value,
-                            },
-                          })
-                        }
-                      />
-                    )}
-                  </Field>
-                  {field.label.includes("(ft)") &&
-                    recipe.inputs[field.key] != null && (
-                      <p className="tiny">
-                        {formatFeet(recipe.inputs[field.key]!)}
-                      </p>
-                    )}
-                  {/\((?:ft|in)\)/.test(field.label) &&
-                    !!drawingMeasurements(t).length && (
-                      <label className="field">
-                        <span>Use written measurement for {field.label}</span>
+              {activeCalculatorFields(definition, recipe)
+                .filter((field) => recipe.kind !== "beam-runs" || !field.run)
+                .map((field) => (
+                  <div key={field.key}>
+                    <Field label={field.label}>
+                      {field.options ? (
                         <select
-                          aria-label={`Use written measurement for ${field.label}`}
-                          value=""
-                          onChange={(e) => {
-                            if (!e.target.value) return;
-                            const m =
-                              drawingMeasurements(t)[
-                                Number(e.target.value) - 1
-                              ];
-                            if (!m) return;
+                          aria-label={field.label}
+                          value={recipe.inputs[field.key] ?? ""}
+                          onChange={(e) =>
                             calculate(t, {
                               ...recipe,
                               verified: false,
                               inputs: {
                                 ...recipe.inputs,
-                                [field.key]: field.label.includes("(ft)")
-                                  ? m.inches / 12
-                                  : m.inches,
+                                [field.key]:
+                                  e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value),
                               },
-                            });
-                          }}
+                            })
+                          }
                         >
-                          <option value="">
-                            Choose an extracted measurement — confirm its use
-                          </option>
-                          {drawingMeasurements(t).map((m, index) => (
-                            <option key={index} value={index + 1}>
-                              {m.written}
+                          <option value="">Choose a confirmed value</option>
+                          {field.options.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
                             </option>
                           ))}
                         </select>
-                      </label>
-                    )}
-                </div>
-              ))}
+                      ) : (
+                        <NumberInput
+                          nullable
+                          value={recipe.inputs[field.key] ?? null}
+                          step={field.integer ? "1" : "any"}
+                          onChange={(value) =>
+                            calculate(t, {
+                              ...recipe,
+                              verified: false,
+                              inputs: {
+                                ...recipe.inputs,
+                                [field.key]: Number.isNaN(value) ? null : value,
+                              },
+                            })
+                          }
+                        />
+                      )}
+                    </Field>
+                    {field.label.includes("(ft)") &&
+                      recipe.inputs[field.key] != null && (
+                        <p className="tiny">
+                          {formatFeet(recipe.inputs[field.key]!)}
+                        </p>
+                      )}
+                    {/\((?:ft|in)\)/.test(field.label) &&
+                      !!drawingMeasurements(t).length && (
+                        <label className="field">
+                          <span>Use written measurement for {field.label}</span>
+                          <select
+                            aria-label={`Use written measurement for ${field.label}`}
+                            value=""
+                            onChange={(e) => {
+                              if (!e.target.value) return;
+                              const m =
+                                drawingMeasurements(t)[
+                                  Number(e.target.value) - 1
+                                ];
+                              if (!m) return;
+                              calculate(t, {
+                                ...recipe,
+                                verified: false,
+                                inputs: {
+                                  ...recipe.inputs,
+                                  [field.key]: field.label.includes("(ft)")
+                                    ? m.inches / 12
+                                    : m.inches,
+                                },
+                              });
+                            }}
+                          >
+                            <option value="">
+                              Choose an extracted measurement — confirm its use
+                            </option>
+                            {drawingMeasurements(t).map((m, index) => (
+                              <option key={index} value={index + 1}>
+                                {m.written}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                  </div>
+                ))}
             </div>
+            {recipe.kind === "beam-runs" && (
+              <BeamRunsEditor
+                disabled={disabled}
+                item={t}
+                recipe={recipe}
+                onChange={onCalculate}
+              />
+            )}
             <p className="tiny">
               {recipe.kind === "decking-layout"
                 ? "Rectangular section only; each row uses the approved number of equal-length pieces. Confirm joints, supports, end gaps and trimming. Calculate irregular sections separately; do not subtract openings that do not remove entire rows. Stock offcuts are reused within this section only."
@@ -390,6 +381,22 @@ export default function SimpleMaterialCalculator({
           </label>
         )}
       {error && <p role="alert">{error}</p>}
+      {recipe?.kind === "beam-runs" &&
+        recipe.verified &&
+        calculateMaterial(recipe).quantity !== null && (
+          <section aria-label="Beam lumber shopping list">
+            <h4>Lumber to purchase</h4>
+            {beamStockGroups(recipe, t.specification ?? "").map((g, i) => (
+              <p key={i}>
+                {g.specification} × {g.stock} ft — {g.quantity} boards{" "}
+                <small>
+                  ({g.base} base boards + {g.waste}% waste, rounded up per stock
+                  group)
+                </small>
+              </p>
+            ))}
+          </section>
+        )}
       <p>
         <b>Purchase quantity:</b>{" "}
         {t.quantity === null ? "To confirm" : `${t.quantity} ${t.unit}`}

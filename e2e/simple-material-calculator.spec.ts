@@ -26,7 +26,11 @@ for (const width of [1366, 390])
       destination: "Materials",
       workScope: "New work",
       included: true,
-      sourceFacts: ["Synthetic verified drawing beam specification"],
+      sourceFacts: [
+        "Beam B1 length: 12 ft",
+        "Beam B1 length: 12 ft",
+        "Beam B2 length: 20 ft",
+      ],
       evidenceType: "Written specification",
       location: "Rear deck beam assembly",
     };
@@ -74,24 +78,51 @@ for (const width of [1366, 390])
       [1, 12, 12, 1],
       [2, 20, 10, 2],
     ]) {
-      await panel
-        .getByLabel(`Run ${n} length (ft)`, { exact: true })
-        .fill(String(length));
-      await panel.getByLabel(`Run ${n} plies`, { exact: true }).fill("3");
-      await panel
-        .getByLabel(`Run ${n} stock board length (ft)`, { exact: true })
+      const beam = panel.getByRole("region", {
+        name: `Beam ${n}`,
+        exact: true,
+      });
+      await beam
+        .getByLabel(`Beam ${n} proposed drawing length`, { exact: true })
+        .selectOption(String(n));
+      await expect(
+        beam.getByLabel("Beam length — feet", { exact: true }),
+      ).toHaveValue(String(length));
+      await expect(beam).toContainText(`Drawing reference: Beam B${n}`);
+      if (n === 1) {
+        await beam
+          .getByLabel("Beam length — inches", { exact: true })
+          .fill("7.5");
+        await beam.getByLabel("Number of plies", { exact: true }).click();
+        await expect(
+          beam.getByLabel("Beam length — inches", { exact: true }),
+        ).toHaveValue("7.5");
+        await expect(beam).not.toContainText("Drawing reference:");
+        await beam
+          .getByLabel("Beam length — inches", { exact: true })
+          .fill("0");
+      }
+      await beam
+        .getByRole("button", {
+          name: "Use drawing specification and 3 plies — proposed",
+        })
+        .click();
+      await expect(
+        beam.getByLabel("Number of plies", { exact: true }),
+      ).toHaveValue("3");
+      await beam
+        .getByLabel("Stock board length (ft)", { exact: true })
         .fill(String(stock));
-      await panel
-        .getByLabel(`Run ${n} approved pieces per ply`, { exact: true })
+      await beam
+        .getByLabel("Number of boards per ply", { exact: true })
         .fill(String(pieces));
-      await panel
-        .getByLabel(`Run ${n} verified cutting / splice plan`, { exact: true })
-        .fill(
-          "Synthetic contractor-confirmed cut schedule and approved bearing/splice requirements.",
-        );
-      await panel
-        .getByLabel(`Run ${n} cut / splice arrangement`, { exact: true })
-        .selectOption("1");
+      if (pieces > 1)
+        await beam
+          .getByLabel(`Beam ${n} approved arrangement`, { exact: true })
+          .fill("Synthetic approved support and cutting layout");
+      await beam
+        .getByLabel(`Beam ${n} arrangement confirmed`, { exact: true })
+        .check();
     }
     await expect(panel).toContainText("Purchase quantity: To confirm");
     await expect(
@@ -99,19 +130,34 @@ for (const width of [1366, 390])
     ).toBeDisabled();
     await panel.getByLabel("I verified all calculator inputs").check();
     await expect(panel).toContainText("Purchase quantity: 9 boards");
+    await expect(
+      panel.getByRole("region", { name: "Beam lumber shopping list" }),
+    ).toContainText("2x10 PT × 12 ft — 3 boards");
+    await expect(
+      panel.getByRole("region", { name: "Beam lumber shopping list" }),
+    ).toContainText("2x10 PT × 10 ft — 6 boards");
     await panel.screenshot({ path: `/tmp/backwoods-simple-beam-${width}.png` });
     page.on("dialog", (d) => d.accept());
     await row
       .getByRole("button", { name: "Approve material", exact: true })
       .click();
     await expect(row).toContainText("Approved");
-    await panel.getByLabel("Run 2 length (ft)", { exact: true }).fill("24");
-    await panel.getByLabel("Run 1 length (ft)", { exact: true }).click();
+    await panel
+      .getByRole("region", { name: "Beam 2", exact: true })
+      .getByLabel("Beam length — feet", { exact: true })
+      .fill("24");
+    await panel
+      .getByRole("region", { name: "Beam 1", exact: true })
+      .getByLabel("Beam length — feet", { exact: true })
+      .click();
     await expect(panel).toContainText("Purchase quantity: To confirm");
     await expect(
       row.getByRole("button", { name: "Approve material", exact: true }),
     ).toBeDisabled();
-    await panel.getByLabel("Run 2 length (ft)", { exact: true }).fill("20");
+    await panel
+      .getByRole("region", { name: "Beam 2", exact: true })
+      .getByLabel("Beam length — feet", { exact: true })
+      .fill("20");
     await panel.getByLabel("I verified all calculator inputs").check();
     await row
       .getByRole("button", { name: "Approve material", exact: true })
@@ -120,6 +166,9 @@ for (const width of [1366, 390])
       .getByRole("button", { name: "Back to Materials Summary" })
       .click();
     await page.getByRole("button", { name: /Final Shopping List/ }).click();
+    await expect(
+      page.getByRole("region", { name: "Approved beam lumber" }),
+    ).toContainText("2x10 PT × 12 ft — 3 boards");
     await page
       .getByRole("button", { name: "Send approved materials to estimate" })
       .click();
@@ -133,7 +182,7 @@ for (const width of [1366, 390])
           storageKey,
         ),
       )
-      .toBe(original.length + 1);
+      .toBe(original.length + 2);
     const saved = await page.evaluate(
       (key) =>
         JSON.parse(localStorage.getItem(key)!).quotes.find(
@@ -143,7 +192,7 @@ for (const width of [1366, 390])
     );
     expect(saved.lines.slice(0, original.length)).toEqual(original);
     expect(saved.lines.at(-1)).toMatchObject({
-      quantity: 9,
+      quantity: 6,
       cost: 0,
       takeoffId: "beam",
     });

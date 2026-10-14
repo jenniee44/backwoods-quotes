@@ -2861,3 +2861,16 @@ details[open] > summary {
 .simple-material-calculator h4 {
   margin: 0 0 0.6rem;
 }
+.beam-run-sections {
+  display: grid;
+  gap: 0.75rem;
+}
+.beam-run-section {
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  border-radius: 8px;
+}
+.beam-run-section h5 {
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+}

@@ -1,3 +1,4 @@
+import { beamStockGroups } from "./beamLumber";
 export type CalculatorField = {
   run?: number;
   key: string;
@@ -11,6 +12,8 @@ export type MaterialCalculation = {
   inputs: Record<string, number | null>;
   verified: boolean;
   arrangements?: Record<string, string>;
+  specifications?: Record<string, string>;
+  lengthSources?: Record<string, string>;
 };
 const f = (
   key: string,
@@ -73,14 +76,11 @@ export const calculators = [
       }).flat(),
     ],
     formula:
-      "ceil(sum(each separate run's plies × confirmed stock pieces per ply) × (1 + waste / 100)); no offcut reuse or structural splice design is inferred",
+      "sum(ceil(each specification/stock group's boards × (1 + waste / 100))); no offcut reuse or structural splice design is inferred",
     run: (v: Record<string, number>) =>
-      Math.ceil(
-        Array.from(
-          { length: v.runs },
-          (_, i) => v["plies" + (i + 1)] * v["pieces" + (i + 1)],
-        ).reduce((a, b) => a + b, 0) *
-          (1 + v.waste / 100),
+      beamStockGroups({ kind: "beam-runs", inputs: v, verified: true }).reduce(
+        (sum, g) => sum + g.quantity,
+        0,
       ),
   },
   {
@@ -375,6 +375,26 @@ export function validCalculation(value: unknown): value is MaterialCalculation {
     Object.keys(v.inputs).every((key) =>
       definition.fields.some((f) => f.key === key),
     ) &&
+    (v.lengthSources === undefined ||
+      (v.lengthSources !== null &&
+        typeof v.lengthSources === "object" &&
+        !Array.isArray(v.lengthSources) &&
+        Object.entries(v.lengthSources).every(
+          ([key, text]) =>
+            /^(?:[1-9]|1[0-9]|20)$/.test(key) &&
+            typeof text === "string" &&
+            text.length <= 2000,
+        ))) &&
+    (v.specifications === undefined ||
+      (v.specifications !== null &&
+        typeof v.specifications === "object" &&
+        !Array.isArray(v.specifications) &&
+        Object.entries(v.specifications).every(
+          ([key, text]) =>
+            /^(?:[1-9]|1[0-9]|20)$/.test(key) &&
+            typeof text === "string" &&
+            text.length <= 300,
+        ))) &&
     (v.arrangements === undefined ||
       (typeof v.arrangements === "object" &&
         v.arrangements !== null &&
@@ -427,6 +447,15 @@ export function calculateMaterial(
         missing.push(
           `Run ${n}: approved stock arrangement does not cover the run length`,
         );
+      if (
+        recipe.specifications &&
+        String(n) in recipe.specifications &&
+        (!recipe.specifications[String(n)].trim() ||
+          /unreadable|illegible|unknown|to confirm|not specified|\btbd\b|\btbc\b/i.test(
+            recipe.specifications[String(n)],
+          ))
+      )
+        missing.push(`Beam ${n}: confirm lumber specification`);
       if (!recipe.arrangements?.[String(n)]?.trim())
         missing.push(
           `Run ${n}: record the verified cutting / splice arrangement`,
@@ -477,7 +506,11 @@ export function calculateMaterial(
     missing.push("Exclusions must be smaller than the surface area");
   if (requireVerified && !recipe.verified)
     missing.push("Verify all inputs, specifications and layout");
-  const amount = missing.length ? null : definition.run(v);
+  const amount = missing.length
+    ? null
+    : recipe.kind === "beam-runs"
+      ? beamStockGroups(recipe).reduce((sum, g) => sum + g.quantity, 0)
+      : definition.run(v);
   if (
     amount !== null &&
     (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000)

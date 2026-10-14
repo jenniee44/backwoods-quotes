@@ -1,0 +1,23 @@
+import type { TakeoffItem } from "./model";
+export function relevantCalculators(item: TakeoffItem) {
+  const text = [item.description, item.category].join(" ");
+  if (/hanger|fastener|screw|bolt|connector/i.test(text)) return ["hardware"];
+  if (/beam/i.test(text)) return ["beam-runs", "beams"];
+  if (/rim|band joist/i.test(text)) return ["rim-joist"];
+  if (/joist/i.test(text)) return ["joists"];
+  if (/deck(?:ing)? boards?|decking/i.test(text))
+    return ["decking-layout", "decking", "area"];
+  if (/footing|concrete|foundation/i.test(text))
+    return ["concrete", "rectangular-concrete", "posts"];
+  if (/post/i.test(text)) return ["post-stock", "posts"];
+  if (/ledger/i.test(text)) return ["ledger"];
+  if (/blocking/i.test(text)) return ["blocking"];
+  if (/fascia/i.test(text)) return ["fascia"];
+  if (/railing|guard|trim/i.test(text)) return ["railing"];
+  if (/drywall|sheathing|sheet/i.test(text)) return ["sheets"];
+  if (/flooring/i.test(text)) return ["coverage", "area"];
+  if (/stud/i.test(text)) return ["studs"];
+  if (/tread/i.test(text)) return ["treads"];
+  if (/stringer/i.test(text)) return ["stringers"];
+  return [];
+}

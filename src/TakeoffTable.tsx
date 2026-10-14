@@ -165,7 +165,29 @@ export default function TakeoffTable({
       ? ["Existing/new/by-others verification"]
       : []),
   ];
-  const calculate = (t: TakeoffItem, recipe: MaterialCalculation) => {
+  const calculate = (t: TakeoffItem, provided: MaterialCalculation) => {
+    const recipe =
+      provided.kind === "beam-runs"
+        ? {
+            ...provided,
+            specifications: Object.fromEntries(
+              Array.from(
+                {
+                  length: Math.min(
+                    20,
+                    Math.max(0, Math.floor(provided.inputs.runs ?? 0)),
+                  ),
+                },
+                (_, i) => [
+                  String(i + 1),
+                  provided.specifications?.[String(i + 1)] ??
+                    t.specification ??
+                    "",
+                ],
+              ),
+            ),
+          }
+        : provided;
     const result = calculateMaterial(recipe);
     patch(t, {
       calculation: recipe,
@@ -185,7 +207,7 @@ export default function TakeoffTable({
         .map(([key, value]) => `${key}=${value ?? "missing"}`)
         .join(
           ", ",
-        )}; ${recipe.arrangements ? JSON.stringify(recipe.arrangements) : ""}`,
+        )}; ${JSON.stringify({ arrangements: recipe.arrangements, specifications: recipe.specifications, lengthSources: recipe.lengthSources })}`,
     });
   };
   const potentialAlternatives =

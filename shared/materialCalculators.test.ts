@@ -261,7 +261,7 @@ it("individual beam runs calculate confirmed stock counts without engineering or
       ...beamRuns,
       inputs: { ...beamRuns.inputs, waste: 10 },
     }).quantity,
-  ).toBe(10);
+  ).toBe(11);
   expect(
     calculateMaterial({ ...beamRuns, verified: false }).quantity,
   ).toBeNull();
