@@ -1,3 +1,4 @@
+import { repairBeamReview } from "./repairBeamReview";
 import BeamShoppingList from "./BeamShoppingList";
 import GroupedMaterialsEditor from "./GroupedMaterialsEditor";
 import { relevantSpecifications } from "./materialReferences";
@@ -48,7 +49,8 @@ export default function MaterialsSummary({
   const [verified, setVerified] = useState(false);
   useEffect(() => {
     if (locked) return;
-    const takeoff = prepareMaterialsSummary(q.takeoff, true);
+    const repaired = repairBeamReview(q);
+    const takeoff = prepareMaterialsSummary(repaired.takeoff, true);
     if (JSON.stringify(takeoff) !== JSON.stringify(q.takeoff))
       onChange({ ...q, takeoff });
   }, [q, locked, onChange]);

@@ -13,7 +13,13 @@ export function beamLengthSuggestions(item: TakeoffItem) {
     }
   >();
   if (
-    item.confidence !== "High" ||
+    !(
+      item.confidence === "High" ||
+      item.confidence === "Medium" ||
+      (item.confidence === "Low" &&
+        item.classification === "Contractor input required" &&
+        (item.quantity === null || /^(?:beam )?runs?$/i.test(item.unit)))
+    ) ||
     item.warnings?.some((w) => /conflict|unreadable|uncertain/i.test(w))
   )
     return [];
@@ -60,15 +66,19 @@ export function proposedBeamRecipe(
     item.origin !== "ai" ||
     item.destination !== "Materials" ||
     !(/beam/i.test(item.description) || item.category === "Beams") ||
-    item.confidence !== "High" ||
+    item.confidence === "Unspecified" ||
+    (item.confidence === "Low" &&
+      item.classification !== "Contractor input required" &&
+      supportedBeamRunCount(item) === null) ||
     item.classification === "Estimating suggestion" ||
     !hasReadableSpecification(item) ||
     !includedScope(item) ||
     workScope(item) === "Existing work to remain" ||
     (requiresScopeVerification(item) && !item.scopeVerified) ||
-    item.assumptions?.length ||
     item.warnings?.some((w) =>
-      /conflict|uncertain|unreadable|alternative/i.test(w),
+      /conflicting (?:beam )?counts|alternative (?:beam|assembly)|unreadable specification/i.test(
+        w,
+      ),
     )
   )
     return null;
@@ -86,14 +96,21 @@ export function proposedBeamRecipe(
       labels.set(key, m[0]);
     }
   }
-  if (!labels.size || labels.size > 20) return null;
+  const proposedCount = supportedBeamRunCount(item);
+  if (labels.size > 20) return null;
+  const count =
+    labels.size && proposedCount !== null && proposedCount !== labels.size
+      ? null
+      : labels.size || proposedCount;
+  if (!count) return null;
   const suggestions = beamLengthSuggestions(item),
     plies =
       Number(item.specification!.match(/\b(\d+)\s*[- ]?ply\b/i)?.[1]) || null;
   const recipe: MaterialCalculation = {
     kind: "beam-runs",
     verified: false,
-    inputs: { runs: labels.size },
+    inputs: { runs: count },
+    runCountSource: `${labels.size ? "Distinct drawing labels" : "AI-proposed distinct beam run count"}: ${count}; ${item.sourceDocumentName || item.documentId}, page ${item.page ?? "to confirm"}. Verify physical layout; never add repeated views.`,
     specifications: {},
     lengthSources: {},
     specificationSources: {},
@@ -101,9 +118,12 @@ export function proposedBeamRecipe(
     arrangements: {},
   };
   let n = 0;
-  for (const [key, label] of labels) {
+  const runs = labels.size
+    ? [...labels]
+    : Array.from({ length: count }, () => ["", ""]);
+  for (const [key, label] of runs) {
     n++;
-    recipe.runLabels![String(n)] = label;
+    if (label) recipe.runLabels![String(n)] = label;
     recipe.specifications![String(n)] = item.specification!;
     recipe.specificationSources![String(n)] =
       `${item.specification} · ${item.sourceDocumentName || item.documentId} · page ${item.page ?? "to confirm"}`.slice(
@@ -122,6 +142,7 @@ export function proposedBeamRecipe(
         /continuous|unspliced/i.test(f) &&
         /\b(?:boards?|plies|lumber)\b/i.test(f) &&
         !/\bnot\b|joist|decking|ledger|railing|\bsplices?\b/i.test(f) &&
+        !!label &&
         f.toUpperCase().includes(label.toUpperCase()) &&
         !/uncertain|assum|unreadable|existing|by others/i.test(f),
     );
@@ -131,6 +152,103 @@ export function proposedBeamRecipe(
     }
   }
   return recipe;
+}
+export function supportedBeamRunCount(item: TakeoffItem): number | null {
+  const words: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+  };
+  const counts = new Set<number>();
+  for (const fact of item.sourceFacts ?? []) {
+    if (
+      /conflict|uncertain|possibly|may be|by others|existing|excluded/i.test(
+        fact,
+      )
+    )
+      continue;
+    for (const m of fact.matchAll(
+      /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:(?:distinct|separate|physical)\s+)?beam\s*(?:runs?|lines?)\b|\bbeam\s*(?:runs?|lines?)\s*(?:count|:|=)?\s*(\d+)\b/gi,
+    )) {
+      counts.add(Number(m[1] ?? m[2]) || words[(m[1] ?? "").toLowerCase()]);
+    }
+  }
+  if (
+    item.quantity !== null &&
+    /^(?:beam )?runs?$/i.test(item.unit) &&
+    item.sourceFacts?.some((f) => /beam/i.test(f))
+  )
+    counts.add(item.quantity);
+  const archived = item.notes.match(
+    /Original proposed observation:\s*(\d+)\s+(?:beam )?runs?\b/i,
+  );
+  if (archived) counts.add(Number(archived[1]));
+  const valid = [...counts].filter(
+    (n) => Number.isInteger(n) && n > 0 && n <= 20,
+  );
+  return valid.length === 1 ? valid[0] : null;
+}
+/** Fill only never-entered values. Explicit nulls and contractor values stay intact. */
+export function enrichBeamRecipe(
+  item: TakeoffItem,
+  recipe: MaterialCalculation,
+): MaterialCalculation {
+  if (
+    recipe.kind !== "beam-runs" ||
+    recipe.verified ||
+    !hasReadableSpecification(item)
+  )
+    return recipe;
+  const proposed = proposedBeamRecipe(item),
+    inputs = { ...recipe.inputs };
+  if (inputs.runs === undefined && proposed?.inputs.runs != null)
+    inputs.runs = proposed.inputs.runs;
+  const plies =
+    Number(item.specification?.match(/\b(\d+)\s*[- ]?ply\b/i)?.[1]) || null;
+  const specifications = { ...recipe.specifications },
+    specificationSources = { ...recipe.specificationSources },
+    lengthSources = { ...recipe.lengthSources },
+    runLabels = { ...recipe.runLabels };
+  for (
+    let n = 1;
+    n <= Math.min(20, Math.max(0, Math.floor(inputs.runs ?? 0)));
+    n++
+  ) {
+    if (inputs["plies" + n] === undefined && plies) inputs["plies" + n] = plies;
+    if (specifications[String(n)] === undefined)
+      specifications[String(n)] = item.specification!;
+    if (specificationSources[String(n)] === undefined)
+      specificationSources[String(n)] =
+        `Saved specification: ${item.specification}; verify applicability against ${item.sourceDocumentName || item.documentId}, page ${item.page ?? "to confirm"}`;
+    if (proposed?.inputs.runs === inputs.runs) {
+      if (runLabels[String(n)] === undefined && proposed.runLabels?.[String(n)])
+        runLabels[String(n)] = proposed.runLabels[String(n)];
+      if (
+        inputs["length" + n] === undefined &&
+        proposed.inputs["length" + n] != null
+      ) {
+        inputs["length" + n] = proposed.inputs["length" + n];
+        lengthSources[String(n)] = proposed.lengthSources![String(n)];
+      }
+    }
+  }
+  return {
+    ...recipe,
+    inputs,
+    specifications,
+    specificationSources,
+    lengthSources,
+    runLabels,
+    runCountSource: recipe.runCountSource ?? proposed?.runCountSource,
+    verified: false,
+  };
 }
 export function suggestedStock(recipe: MaterialCalculation, n: number) {
   const length = recipe.inputs["length" + n];

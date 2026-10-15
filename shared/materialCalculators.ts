@@ -17,6 +17,7 @@ export type MaterialCalculation = {
   specificationSources?: Record<string, string>;
   runLabels?: Record<string, string>;
   availableStock?: number[];
+  runCountSource?: string;
 };
 const f = (
   key: string,
@@ -378,6 +379,9 @@ export function validCalculation(value: unknown): value is MaterialCalculation {
     Object.keys(v.inputs).every((key) =>
       definition.fields.some((f) => f.key === key),
     ) &&
+    (v.runCountSource === undefined ||
+      (typeof v.runCountSource === "string" &&
+        v.runCountSource.length <= 2000)) &&
     (v.availableStock === undefined ||
       (Array.isArray(v.availableStock) &&
         v.availableStock.length <= 20 &&

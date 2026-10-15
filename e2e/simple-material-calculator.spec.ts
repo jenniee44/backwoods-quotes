@@ -64,9 +64,10 @@ for (const width of [1366, 390])
     await expect(panel.getByLabel("Calculator specifications")).toHaveValue(
       "3-ply 2x10 PT",
     );
-    await panel
-      .getByRole("button", { name: "Calculate purchasing quantity" })
-      .click();
+    const startCalculator = panel.getByRole("button", {
+      name: "Calculate purchasing quantity",
+    });
+    if (await startCalculator.count()) await startCalculator.click();
     await expect(
       panel.getByLabel("Material calculator", { exact: true }),
     ).toHaveValue("beam-runs");

@@ -1,3 +1,4 @@
+import { enrichBeamRecipe } from "./beamPrefill";
 import { relevantSpecifications } from "./materialReferences";
 import SimpleMaterialCalculator from "./SimpleMaterialCalculator";
 import PurchasingReviewContext from "./PurchasingReviewContext";
@@ -166,6 +167,7 @@ export default function TakeoffTable({
       : []),
   ];
   const calculate = (t: TakeoffItem, provided: MaterialCalculation) => {
+    provided = enrichBeamRecipe(t, provided);
     const recipe =
       provided.kind === "beam-runs"
         ? {
@@ -616,7 +618,7 @@ export default function TakeoffTable({
                                       onClick={() => {
                                         if (
                                           window.confirm(
-                                            "Consolidate this matching material without adding quantities? The other item is retained as rejected source evidence. Review and approve the retained item again.",
+                                            "I verified these observations describe the same physical assembly, specification, location and construction method. Consolidate without adding quantities? The other record remains as rejected source evidence. Review and approve again.",
                                           )
                                         ) {
                                           try {

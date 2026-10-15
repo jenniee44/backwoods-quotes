@@ -123,6 +123,13 @@ export default function SimpleMaterialCalculator({
       )}
       <div className="material-calculator">
         <h4>Measurements & purchasing quantity</h4>
+        {recipe?.kind === "beam-runs" && (
+          <p className="tiny">
+            {recipe.inputs.runs == null
+              ? "Confirm the number of distinct physical beam runs; repeated drawing views are not extra beams."
+              : `Proposed ${recipe.inputs.runs} distinct beam runs — verify against the physical layout before purchasing.`}
+          </p>
+        )}
         <p className="tiny">
           Confirm measurements and purchasing requirements. Missing inputs
           remain to confirm; calculations do not approve materials.

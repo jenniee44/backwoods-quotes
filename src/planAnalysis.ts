@@ -223,11 +223,17 @@ export function addAnalysisSuggestions(
             s.documentId === item.documentId &&
             s.page === item.page &&
             s.description === item.description &&
-            s.specification === item.specification &&
-            s.confidence === "High",
+            s.specification === item.specification,
         );
         const calculation = proposedBeamRecipe(
-          source ? { ...item, confidence: source.confidence } : item,
+          source
+            ? {
+                ...item,
+                confidence: source.confidence,
+                quantity: source.quantity,
+                unit: source.unit,
+              }
+            : item,
         );
         return calculation
           ? {
@@ -239,8 +245,8 @@ export function addAnalysisSuggestions(
               classification: "Contractor input required" as const,
               notes: [
                 item.notes,
-                item.quantity !== null
-                  ? `Original proposed observation: ${item.quantity} ${item.unit}; not a verified purchase quantity.`
+                (source?.quantity ?? item.quantity) !== null
+                  ? `Original proposed observation: ${source?.quantity ?? item.quantity} ${source?.unit ?? item.unit}; not a verified purchase quantity.`
                   : "",
               ]
                 .filter(Boolean)

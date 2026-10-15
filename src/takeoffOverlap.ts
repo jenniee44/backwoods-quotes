@@ -1,3 +1,4 @@
+import { sameBeamCalculator } from "./beamRecipeIdentity";
 import type { Quote, TakeoffItem } from "./model";
 const norm = (s?: string) =>
   (s ?? "")
@@ -108,15 +109,16 @@ export function consolidateCompared(
     norm(a.location) !== norm(b.location) ||
     a.quantity !== b.quantity ||
     (a.stockLength ?? null) !== (b.stockLength ?? null) ||
-    a.quantity === null ||
+    (a.quantity === null && !sameBeamCalculator(a, b)) ||
     norm(a.unit) !== norm(b.unit) ||
     a.workScope !== b.workScope ||
-    a.supportBasis !== b.supportBasis ||
+    (a.supportBasis !== b.supportBasis && !sameBeamCalculator(a, b)) ||
     a.subcontractorBasis !== b.subcontractorBasis ||
     a.included !== b.included ||
     a.alternativeGroup !== b.alternativeGroup ||
     a.alternativeOption !== b.alternativeOption ||
-    JSON.stringify(a.calculation) !== JSON.stringify(b.calculation)
+    (JSON.stringify(a.calculation) !== JSON.stringify(b.calculation) &&
+      !sameBeamCalculator(a, b))
   )
     throw new Error(
       "Only unreviewed items with matching verified specifications, location, scope, method and quantity can be consolidated. Keep distinct assemblies separate.",

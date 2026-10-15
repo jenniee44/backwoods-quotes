@@ -451,8 +451,10 @@ test("useful deck observations become specific estimate candidates while unknown
   for (const item of [posts, beam, joists, hardware, footing, labour])
     await openAdvancedMaterial(item);
   await expect(posts.getByLabel("Takeoff quantity")).toHaveValue("3");
-  await expect(beam.getByLabel("Takeoff quantity")).toHaveValue("4");
-  await expect(beam.getByLabel("Takeoff unit")).toHaveValue("runs");
+  await expect(beam.getByLabel("Takeoff quantity")).toHaveValue("");
+  await expect(beam.getByLabel("Takeoff unit")).toHaveValue("boards");
+  await expect(beam).toContainText("Proposed 4 distinct beam runs");
+  await expect(beam.getByLabel("Convert reviewed item to estimate")).toBeDisabled();
   for (const item of [joists, hardware, labour]) {
     await expect(item.getByLabel("Takeoff quantity")).toHaveValue("");
     await expect(
