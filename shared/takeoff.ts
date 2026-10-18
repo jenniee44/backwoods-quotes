@@ -2,6 +2,11 @@ import {
   repeatedMaterialKey,
   repeatEvidenceEligible,
 } from "./componentIdentity";
+import {
+  materialInputIdentity,
+  mergeMaterialInputs,
+  materialInputProblem,
+} from "./materialInputs";
 import type {
   AnalysisSuggestion,
   PlanAnalysisResult,
@@ -278,6 +283,11 @@ export function prepareConstructionAnalysis(
   let reduced = result.duplicatesReduced ?? 0;
   for (const item of [...result.suggestions, ...promoted]) {
     item.warnings = [...(item.warnings ?? [])];
+    const inputProblem = materialInputProblem(item.materialInputs);
+    if (inputProblem)
+      item.warnings.push(
+        "Conflicting/unconfirmed drawing input observations: " + inputProblem,
+      );
     const evidence = [
       ...(item.sourceFacts ?? []),
       item.notes,
@@ -420,6 +430,8 @@ export function prepareConstructionAnalysis(
     summary.siteVerification.push(...item.warnings);
     const existing = retained.find(
       (candidate) =>
+        materialInputIdentity(candidate.materialInputs) ===
+          materialInputIdentity(item.materialInputs) &&
         (semanticItemKey(candidate) === semanticItemKey(item) ||
           (!!repeatedMaterialKey(item, materialCategoryFor(item)) &&
             repeatEvidenceEligible(item) &&
@@ -454,6 +466,8 @@ export function prepareConstructionAnalysis(
         ])
       : [];
     const canPreserve =
+      mergeMaterialInputs(existing?.materialInputs, item.materialInputs)
+        .length <= 40 &&
       mergeFacts.length <= 20 &&
       mergeFacts.every((fact) => fact.length <= 1000) &&
       unique([...(existing?.warnings ?? []), ...item.warnings]).length <= 20 &&
@@ -462,6 +476,11 @@ export function prepareConstructionAnalysis(
     if (existing && canPreserve) {
       reduced++;
       existing.sourceFacts = mergeFacts;
+      if (existing.materialInputs || item.materialInputs)
+        existing.materialInputs = mergeMaterialInputs(
+          existing.materialInputs,
+          item.materialInputs,
+        );
       existing.assumptions = unique([
         ...(existing.assumptions ?? []),
         ...(item.assumptions ?? []),

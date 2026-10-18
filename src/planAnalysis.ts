@@ -1,4 +1,6 @@
 import { proposedBeamRecipe } from "./beamPrefill";
+import { proposedMaterialRecipe } from "./deckTakeoff";
+import { materialInputIdentity } from "../shared/materialInputs";
 import { completenessProblem } from "./takeoffRequirements";
 import {
   equivalentComponentKey,
@@ -142,6 +144,9 @@ export function addAnalysisSuggestions(
       specification: item.specification,
       location: item.location,
       sourceFacts: structuredClone(item.sourceFacts ?? []),
+      ...(item.materialInputs
+        ? { materialInputs: structuredClone(item.materialInputs) }
+        : {}),
       calculationBasis: item.calculationBasis,
       quantityMethod: item.quantityMethod,
       itemRole: item.itemRole,
@@ -197,7 +202,11 @@ export function addAnalysisSuggestions(
   });
   const candidateKey = (
     item: import("../shared/analysis").AnalysisSuggestion,
-  ) => equivalentComponentKey(item, item.category) || semanticItemKey(item);
+  ) =>
+    JSON.stringify([
+      equivalentComponentKey(item, item.category) || semanticItemKey(item),
+      materialInputIdentity(item.materialInputs),
+    ]);
   const semanticSeen = new Set(
     q.takeoff.filter((item) => item.origin === "ai").map(candidateKey),
   );
@@ -225,22 +234,23 @@ export function addAnalysisSuggestions(
             s.description === item.description &&
             s.specification === item.specification,
         );
-        const calculation = proposedBeamRecipe(
-          source
-            ? {
-                ...item,
-                confidence: source.confidence,
-                quantity: source.quantity,
-                unit: source.unit,
-              }
-            : item,
-        );
+        const calculation =
+          proposedBeamRecipe(
+            source
+              ? {
+                  ...item,
+                  confidence: source.confidence,
+                  quantity: source.quantity,
+                  unit: source.unit,
+                }
+              : item,
+          ) ?? proposedMaterialRecipe(item);
         return calculation
           ? {
               ...item,
               calculation,
               quantity: null,
-              unit: "boards",
+              unit: calculateMaterial(calculation, false).unit || item.unit,
               quantityMethod: "Unknown" as const,
               classification: "Contractor input required" as const,
               notes: [

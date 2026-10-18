@@ -93,6 +93,7 @@ export function preliminaryDisposition(
     t.status === "Rejected" ||
     (t.included === false && scope !== "Requires scope confirmation") ||
     scope === "Existing work to remain" ||
+    (scope === "Existing work to remove or modify" && !t.scopeVerified) ||
     ((scope === "By others" || scope === "By others / excluded") &&
       (!t.scopeVerified || !includedScope(t))) ||
     /^(?:general (?:construction )?notes?|construction notes?|(?:material )?specifications?|design criteria|do not scale)\b/i.test(

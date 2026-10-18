@@ -141,6 +141,10 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
   expect(sent[0].detailRegions!.length).toBeGreaterThan(0);
   expect(sent[0].detailRegions!.length).toBeLessThanOrEqual(8);
   expect(sent[0].detailRegions!.every((d) => d.dpi === 250)).toBe(true);
+  await expect(
+    page.getByRole("region", { name: "Material Takeoff Summary", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Preliminary Shopping List/ }).click();
   const list = page.locator(".preliminary-materials");
   await expect(list).toBeVisible();
   const posts = list.locator("tr").filter({ hasText: "6x6 PT" });

@@ -1,4 +1,8 @@
 import { sameBeamCalculator } from "./beamRecipeIdentity";
+import {
+  materialInputIdentity,
+  mergeMaterialInputs,
+} from "../shared/materialInputs";
 import type { Quote, TakeoffItem } from "./model";
 const norm = (s?: string) =>
   (s ?? "")
@@ -45,6 +49,7 @@ export function overlapKey(a: TakeoffItem, b: TakeoffItem) {
         t.page,
         t.sourceFacts,
         t.notes,
+        ...(t.materialInputs?.length ? [t.materialInputs] : []),
       ]),
   );
 }
@@ -108,6 +113,8 @@ export function consolidateCompared(
     norm(a.specification) !== norm(b.specification) ||
     norm(a.location) !== norm(b.location) ||
     a.quantity !== b.quantity ||
+    materialInputIdentity(a.materialInputs) !==
+      materialInputIdentity(b.materialInputs) ||
     (a.stockLength ?? null) !== (b.stockLength ?? null) ||
     (a.quantity === null && !sameBeamCalculator(a, b)) ||
     norm(a.unit) !== norm(b.unit) ||
@@ -130,7 +137,11 @@ export function consolidateCompared(
       `Compared source: ${b.documentId || "manual"}, page ${b.page ?? "unknown"}, detail ${b.sourceDetailView ?? "original"}; ${b.description}; ${b.notes}`,
     ]),
   ];
-  if (facts.length > 20 || facts.some((f) => f.length > 1000))
+  if (
+    facts.length > 20 ||
+    facts.some((f) => f.length > 1000) ||
+    mergeMaterialInputs(a.materialInputs, b.materialInputs).length > 40
+  )
     throw new Error(
       "Keep these items separate to preserve all source evidence.",
     );
@@ -142,6 +153,14 @@ export function consolidateCompared(
         ? {
             ...a,
             sourceFacts: facts,
+            ...(a.materialInputs || b.materialInputs
+              ? {
+                  materialInputs: mergeMaterialInputs(
+                    a.materialInputs,
+                    b.materialInputs,
+                  ),
+                }
+              : {}),
             warnings: [
               ...new Set([...(a.warnings ?? []), ...(b.warnings ?? [])]),
             ],

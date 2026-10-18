@@ -235,9 +235,11 @@ test("successful new analysis immediately returns to Materials Summary instead o
   ).toBeVisible();
   await expect(page.locator(".advanced-review")).not.toHaveAttribute("open");
   await expect(
-    page.getByRole("button", { name: /^Preliminary Shopping List/ }),
+    page.getByRole("button", { name: "Material Takeoff Summary", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
-    page.getByRole("region", { name: "Materials Summary" }).locator("tbody tr"),
+    page
+      .getByRole("region", { name: "Materials Summary" })
+      .locator(".takeoff-summary-card"),
   ).not.toHaveCount(0);
 });

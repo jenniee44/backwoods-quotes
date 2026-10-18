@@ -155,6 +155,7 @@ export type Quote = {
   details: QuoteDetails;
   documents: PlanDocument[];
   takeoff: TakeoffItem[];
+  takeoffPreferences?: { availableStock: number[]; waste: number | null };
   analysisReports?: {
     id: string;
     fingerprint: string;
@@ -1108,6 +1109,9 @@ export function takeoffToLine(q: Quote, item: TakeoffItem, kind: Kind): Quote {
       location: item.location,
       sourceFacts: structuredClone(item.sourceFacts ?? []),
       calculationBasis: item.calculationBasis,
+      ...(item.materialInputs
+        ? { materialInputs: structuredClone(item.materialInputs) }
+        : {}),
       quantityMethod: item.quantityMethod,
       itemRole: item.itemRole,
       subcontractorBasis: item.subcontractorBasis,
@@ -1177,6 +1181,26 @@ function validExtensions(v: unknown) {
   )
     return false;
   if (v.snapshot !== undefined && !estimate(v.snapshot)) return false;
+  if (v.takeoffPreferences !== undefined) {
+    const p = v.takeoffPreferences;
+    if (
+      !record(p) ||
+      !Array.isArray(p.availableStock) ||
+      p.availableStock.length > 20 ||
+      !p.availableStock.every(
+        (n) =>
+          typeof n === "number" && Number.isFinite(n) && n > 0 && n <= 1000,
+      ) ||
+      !(
+        p.waste === null ||
+        (typeof p.waste === "number" &&
+          Number.isFinite(p.waste) &&
+          p.waste >= 0 &&
+          p.waste <= 100)
+      )
+    )
+      return false;
+  }
   if (
     !v.documents.every(
       (d) =>

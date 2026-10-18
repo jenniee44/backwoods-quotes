@@ -1,6 +1,10 @@
 import type { TakeoffItem } from "./model";
 export function relevantCalculators(item: TakeoffItem) {
-  const text = [item.description, item.category].join(" ");
+  const specific = matchingCalculators(item.description);
+  return specific.length ? specific : matchingCalculators(item.category ?? "");
+}
+function matchingCalculators(text: string) {
+  if (/flashing|waterproof/i.test(text)) return ["railing"];
   if (/hanger|fastener|screw|bolt|connector/i.test(text)) return ["hardware"];
   if (/beam/i.test(text)) return ["beam-runs", "beams"];
   if (/rim|band joist/i.test(text)) return ["rim-joist"];

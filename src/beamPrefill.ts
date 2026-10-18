@@ -4,6 +4,14 @@ import { drawingMeasurements } from "../shared/constructionMeasurements";
 import { hasReadableSpecification } from "./takeoffRequirements";
 import { workScope, includedScope } from "./takeoffScope";
 import { requiresScopeVerification } from "../shared/takeoff";
+const beamFactRecords = (item: TakeoffItem) => [
+  ...(item.sourceFacts ?? []).map((fact) => ({ fact, page: item.page })),
+  ...(item.materialInputs ?? [])
+    .filter((f) => f.readable && f.page !== null)
+    .map((f) => ({ fact: f.evidence, page: f.page })),
+];
+const beamSourceFacts = (item: TakeoffItem) =>
+  beamFactRecords(item).map((f) => f.fact);
 export function beamLengthSuggestions(item: TakeoffItem) {
   const found = new Map<
     string,
@@ -23,7 +31,7 @@ export function beamLengthSuggestions(item: TakeoffItem) {
     item.warnings?.some((w) => /conflict|unreadable|uncertain/i.test(w))
   )
     return [];
-  for (const fact of item.sourceFacts ?? []) {
+  for (const { fact, page } of beamFactRecords(item)) {
     const label = fact.match(
       /\b(?:beam\s*(?:run\s*)?([A-Za-z]?\d+)|B-?(\d+))\b/i,
     )?.[0];
@@ -35,11 +43,15 @@ export function beamLengthSuggestions(item: TakeoffItem) {
       ].map((m) => labelKey(m[0])),
     );
     if (labelsInFact.size !== 1) continue;
-    const measures = drawingMeasurements({ ...item, sourceFacts: [fact] });
+    const measures = drawingMeasurements({
+      ...item,
+      page,
+      sourceFacts: [fact],
+    });
     if (measures.length !== 1) continue;
     const m = measures[0],
       key = labelKey(label) + ":" + m.inches,
-      ref = `${item.sourceDocumentName || item.documentId} · page ${item.page ?? "to confirm"}`;
+      ref = `${item.sourceDocumentName || item.documentId} · page ${page ?? "to confirm"}`;
     const prior = found.get(key);
     if (prior) prior.references.push(ref);
     else found.set(key, { ...m, label, references: [ref] });
@@ -83,7 +95,7 @@ export function proposedBeamRecipe(
   )
     return null;
   const labels = new Map<string, string>();
-  for (const fact of item.sourceFacts ?? []) {
+  for (const fact of beamSourceFacts(item)) {
     if (
       !/\bbeam\b/i.test(fact) ||
       /existing|by others|excluded|alternative/i.test(fact)
@@ -137,7 +149,7 @@ export function proposedBeamRecipe(
       recipe.lengthSources![String(n)] =
         `${m.label}: ${m.written} · ${m.references.join("; ")}`.slice(0, 2000);
     }
-    const arrangement = (item.sourceFacts ?? []).find(
+    const arrangement = beamSourceFacts(item).find(
       (f) =>
         /continuous|unspliced/i.test(f) &&
         /\b(?:boards?|plies|lumber)\b/i.test(f) &&
@@ -167,7 +179,7 @@ export function supportedBeamRunCount(item: TakeoffItem): number | null {
     ten: 10,
   };
   const counts = new Set<number>();
-  for (const fact of item.sourceFacts ?? []) {
+  for (const fact of beamSourceFacts(item)) {
     if (
       /conflict|uncertain|possibly|may be|by others|existing|excluded/i.test(
         fact,
@@ -183,7 +195,7 @@ export function supportedBeamRunCount(item: TakeoffItem): number | null {
   if (
     item.quantity !== null &&
     /^(?:beam )?runs?$/i.test(item.unit) &&
-    item.sourceFacts?.some((f) => /beam/i.test(f))
+    beamSourceFacts(item).some((f) => /beam/i.test(f))
   )
     counts.add(item.quantity);
   const archived = item.notes.match(

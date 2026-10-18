@@ -1,5 +1,9 @@
 import type { TakeoffItem } from "./model";
 import {
+  materialInputIdentity,
+  mergeMaterialInputs,
+} from "../shared/materialInputs";
+import {
   repeatedMaterialKey as equivalentComponentKey,
   repeatEvidenceEligible,
 } from "../shared/componentIdentity";
@@ -20,6 +24,7 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
       item.alternativeGroup,
       item.alternativeOption,
       item.calculation,
+      materialInputIdentity(item.materialInputs),
       item.stockLength ?? null,
       ...(automatic
         ? [
@@ -38,6 +43,8 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
     ]);
     const existing = seen.get(key);
     if (
+      mergeMaterialInputs(existing?.materialInputs, item.materialInputs)
+        .length > 40 ||
       (automatic &&
         (item.origin !== "ai" ||
           !item.documentId ||
@@ -98,6 +105,11 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
     // Additional evidence must be reviewed again; never inherit a verification
     // from only one of the observations being consolidated.
     existing.scopeVerified = false;
+    if (existing.materialInputs || item.materialInputs)
+      existing.materialInputs = mergeMaterialInputs(
+        existing.materialInputs,
+        item.materialInputs,
+      );
     existing.purchaseVerified = false;
     existing.conflictsVerified = false;
     existing.reviewAcknowledged = false;

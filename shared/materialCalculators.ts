@@ -18,6 +18,8 @@ export type MaterialCalculation = {
   runLabels?: Record<string, string>;
   availableStock?: number[];
   runCountSource?: string;
+  inputSources?: Record<string, string>;
+  geometryConfirmed?: boolean;
 };
 const f = (
   key: string,
@@ -382,6 +384,18 @@ export function validCalculation(value: unknown): value is MaterialCalculation {
     (v.runCountSource === undefined ||
       (typeof v.runCountSource === "string" &&
         v.runCountSource.length <= 2000)) &&
+    (v.geometryConfirmed === undefined ||
+      typeof v.geometryConfirmed === "boolean") &&
+    (v.inputSources === undefined ||
+      (v.inputSources !== null &&
+        typeof v.inputSources === "object" &&
+        !Array.isArray(v.inputSources) &&
+        Object.entries(v.inputSources).every(
+          ([key, source]) =>
+            definition.fields.some((f) => f.key === key) &&
+            typeof source === "string" &&
+            source.length <= 2000,
+        ))) &&
     (v.availableStock === undefined ||
       (Array.isArray(v.availableStock) &&
         v.availableStock.length <= 20 &&
@@ -466,6 +480,10 @@ export function calculateMaterial(
     )
     .map((f) => f.label);
   const v = recipe.inputs as Record<string, number>;
+  if (recipe.geometryConfirmed === false)
+    missing.push(
+      "Confirm the regular layout boundary, openings and required edge members before calculating",
+    );
   if (recipe.kind === "beam-runs") {
     if (!Number.isInteger(v.runs) || v.runs < 1 || v.runs > 20)
       missing.push("Enter between 1 and 20 separate beam runs");

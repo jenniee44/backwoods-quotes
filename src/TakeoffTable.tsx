@@ -1,4 +1,5 @@
 import { enrichBeamRecipe } from "./beamPrefill";
+import { materialInputProblem } from "../shared/materialInputs";
 import { relevantSpecifications } from "./materialReferences";
 import SimpleMaterialCalculator from "./SimpleMaterialCalculator";
 import PurchasingReviewContext from "./PurchasingReviewContext";
@@ -952,9 +953,10 @@ export default function TakeoffTable({
                                     </tr>
                                   </tbody>
                                 </table>
-                                {t.warnings?.some((w) =>
-                                  /conflicting/i.test(w),
-                                ) && (
+                                {(!!materialInputProblem(t.materialInputs) ||
+                                  t.warnings?.some((w) =>
+                                    /conflicting/i.test(w),
+                                  )) && (
                                   <label className="check-options">
                                     <input
                                       type="checkbox"

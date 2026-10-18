@@ -1,4 +1,6 @@
-import { repairBeamReview } from "./repairBeamReview";
+import { prepareDeckTakeoff } from "./deckTakeoff";
+import MaterialTakeoffSummary from "./MaterialTakeoffSummary";
+import { approvedPurchasingGroups } from "./materialShoppingList";
 import BeamShoppingList from "./BeamShoppingList";
 import GroupedMaterialsEditor from "./GroupedMaterialsEditor";
 import { relevantSpecifications } from "./materialReferences";
@@ -41,15 +43,15 @@ export default function MaterialsSummary({
   onAdvanced: (id: string) => void;
 }) {
   const [revision, setRevision] = useState(0);
-  const [view, setView] = useState<"summary" | "shopping" | "preliminary">(
-    q.analysisReports?.length ? "preliminary" : "summary",
-  );
+  const [view, setView] = useState<
+    "summary" | "shopping" | "preliminary" | "takeoff"
+  >(q.analysisReports?.length ? "takeoff" : "summary");
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [verified, setVerified] = useState(false);
   useEffect(() => {
     if (locked) return;
-    const repaired = repairBeamReview(q);
+    const repaired = prepareDeckTakeoff(q);
     const takeoff = prepareMaterialsSummary(repaired.takeoff, true);
     if (JSON.stringify(takeoff) !== JSON.stringify(q.takeoff))
       onChange({ ...q, takeoff });
@@ -238,6 +240,13 @@ export default function MaterialsSummary({
       </p>
       <div className="heading-actions">
         <button
+          className={"button " + (view === "takeoff" ? "" : "secondary")}
+          aria-pressed={view === "takeoff"}
+          onClick={() => setView("takeoff")}
+        >
+          Material Takeoff Summary
+        </button>
+        <button
           className={"button " + (view === "preliminary" ? "" : "secondary")}
           aria-pressed={view === "preliminary"}
           onClick={() => setView("preliminary")}
@@ -361,7 +370,16 @@ export default function MaterialsSummary({
           </div>
         </>
       )}
-      {view === "preliminary" ? (
+      {view === "takeoff" ? (
+        <MaterialTakeoffSummary
+          quote={q}
+          locked={locked}
+          unresolvedOnly={unresolvedOnly}
+          onChange={onChange}
+          onError={onError}
+          onAdvanced={onAdvanced}
+        />
+      ) : view === "preliminary" ? (
         <table className="materials-summary-table preliminary-materials">
           <caption className="sr-only">Preliminary Shopping List</caption>
           <thead>
@@ -475,6 +493,24 @@ export default function MaterialsSummary({
         </p>
       )}
       {view === "shopping" && <BeamShoppingList quote={q} />}
+      {view === "shopping" && approvedPurchasingGroups(q).length > 0 && (
+        <section aria-label="Grouped approved purchasing list">
+          <h4>Approved materials by specification and stock length</h4>
+          {approvedPurchasingGroups(q).map((g) => (
+            <p key={JSON.stringify([g.specification, g.stock, g.unit])}>
+              <strong>
+                {g.specification}
+                {g.stock !== null ? ` × ${formatFeet(g.stock)}` : ""}
+              </strong>{" "}
+              — {g.quantity} {g.unit}
+            </p>
+          ))}
+          <small>
+            Only separately reviewed and approved assemblies awaiting estimate
+            transfer. Unresolved or overlapping items are not totalled.
+          </small>
+        </section>
+      )}
       {view === "shopping" && (
         <>
           <p>

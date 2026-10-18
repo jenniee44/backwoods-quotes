@@ -7,6 +7,8 @@ import {
 } from "./pdf";
 import type { PdfTextLayer, PdfDetailRegion } from "./pdf";
 import { prepareConstructionAnalysis } from "./takeoff";
+import { materialInputSchema, validMaterialInputs } from "./materialInputs";
+import type { MaterialInput } from "./materialInputs";
 export const destinations = [
   "Labour",
   "Materials",
@@ -22,6 +24,7 @@ export const classifications = [
 ] as const;
 // Optional on saved V2 records; required (empty when unknown) in new provider output.
 export type ConstructionEvidence = {
+  materialInputs?: MaterialInput[];
   sourceDetailView?: number | null;
   supportBasis?:
     | "Not established"
@@ -107,6 +110,7 @@ export const materialCategories = [
   "Stairs / stringers",
 ];
 const evidenceProperties = {
+  materialInputs: materialInputSchema,
   sourceDetailView: {
     type: ["integer", "null"],
     minimum: 1,
@@ -162,6 +166,7 @@ export function validConstructionEvidence(v: Record<string, unknown>): boolean {
   return Object.entries(evidenceProperties).every(([key, schema]) => {
     const value = v[key];
     if (value === undefined) return true; // Existing saved quotes/older responses.
+    if (key === "materialInputs") return validMaterialInputs(value);
     if (key === "sourceDetailView")
       return (
         value === null ||

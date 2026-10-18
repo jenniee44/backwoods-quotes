@@ -2874,3 +2874,68 @@ details[open] > summary {
   font-size: 1rem;
   margin: 0 0 0.6rem;
 }
+
+.automatic-takeoff {
+  display: grid;
+  gap: 0.65rem;
+}
+.takeoff-summary-card {
+  border: 1px solid var(--border, #d9e0db);
+  border-radius: 0.65rem;
+  padding: 0.8rem;
+  background: var(--surface, #fff);
+}
+.takeoff-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.takeoff-card-heading span {
+  display: block;
+}
+.takeoff-status {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.takeoff-quantities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.2rem;
+  margin: 0.4rem 0;
+}
+.takeoff-next-step {
+  font-size: 0.85rem;
+  margin: 0.35rem 0;
+}
+.takeoff-summary-card .heading-actions {
+  margin: 0.5rem 0;
+}
+.takeoff-summary-card details {
+  margin-top: 0.4rem;
+}
+.takeoff-summary-card small {
+  color: var(--muted, #53635a);
+}
+.takeoff-quick-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+}
+.takeoff-quick-inputs label {
+  min-width: 0;
+}
+.takeoff-quick-inputs .check-options {
+  grid-column: 1 / -1;
+}
+@media (max-width: 650px) {
+  .takeoff-quick-inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .takeoff-card-heading {
+    flex-wrap: wrap;
+  }
+  .takeoff-summary-card {
+    padding: 0.65rem;
+  }
+}

@@ -1,4 +1,5 @@
 import type { TakeoffItem } from "./model";
+import { materialInputProblem } from "../shared/materialInputs";
 export function hasReadableSpecification(t: TakeoffItem) {
   return (
     !!t.specification?.trim() &&
@@ -8,6 +9,8 @@ export function hasReadableSpecification(t: TakeoffItem) {
   );
 }
 export function completenessProblem(t: TakeoffItem) {
+  if (!t.conflictsVerified && materialInputProblem(t.materialInputs))
+    return materialInputProblem(t.materialInputs);
   if (
     t.itemRole === "Document observation" ||
     t.itemRole === "Supporting evidence"

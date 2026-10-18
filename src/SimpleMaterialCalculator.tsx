@@ -314,6 +314,9 @@ export default function SimpleMaterialCalculator({
                   calculate(t, {
                     ...recipe,
                     verified: e.target.checked,
+                    ...(recipe.geometryConfirmed !== undefined
+                      ? { geometryConfirmed: e.target.checked }
+                      : {}),
                   })
                 }
               />
@@ -321,6 +324,8 @@ export default function SimpleMaterialCalculator({
               and specifications.{" "}
               {recipe.kind === "beam-runs" &&
                 "These are separate physical beam runs, not repeated drawing views."}
+              {recipe.geometryConfirmed !== undefined &&
+                " I confirmed the regular layout boundary, openings and required edge members."}
             </label>
             <p className="tiny">
               {preview?.quantity !== null

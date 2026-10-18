@@ -62,6 +62,9 @@ for (const width of [1366, 390])
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
     await page
+      .getByRole("button", { name: /Preliminary Shopping List/ })
+      .click();
+    await page
       .locator(".preliminary-materials")
       .getByRole("button", { name: "Review details" })
       .click();
