@@ -1,3 +1,4 @@
+import { isBeamMaterial } from "./beamMaterial";
 import { spatialBeamIdentity, mergeSpatialBeams } from "../shared/spatialBeams";
 import { sameBeamCalculator } from "./beamRecipeIdentity";
 import {
@@ -17,6 +18,7 @@ function family(t: TakeoffItem) {
   if (/ledger.*(?:screw|bolt)|(?:screw|bolt).*ledger/i.test(s))
     return "ledger-fasteners";
   if (/flashing/i.test(s)) return "flashing";
+  if (isBeamMaterial(t)) return "beams";
   for (const [key, pattern] of Object.entries({
     footings:
       /footing|foundation.*(?:concrete|pier)|concrete.*(?:foundation|pier|pads?)/i,

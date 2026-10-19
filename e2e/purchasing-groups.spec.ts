@@ -106,6 +106,12 @@ test("purchasing categories retain separate beam, joist and hanger assemblies wi
   const context = page.locator("#takeoff-b1 .purchasing-review-context");
   await expect(context).toContainText("beam lengths");
   await expect(
+    page.getByLabel("Material calculator", { exact: true }),
+  ).toHaveValue("beam-runs");
+  await expect(
+    page.getByLabel("Number of separate beam runs", { exact: true }),
+  ).toHaveValue("");
+  await expect(
     context.getByText("Synthetic separate beam line B-2", { exact: true }),
   ).toBeVisible();
   await expect(context).not.toContainText("6 runs");

@@ -1,5 +1,6 @@
 import type { Quote, TakeoffItem } from "./model";
-import { proposedBeamRecipe, enrichBeamRecipe } from "./beamPrefill";
+import { initializeBeamCalculator } from "./initializeBeamCalculator";
+import { isBeamMaterial } from "./beamMaterial";
 import { consolidateCompared } from "./takeoffOverlap";
 import { sameBeamCalculator } from "./beamRecipeIdentity";
 import {
@@ -27,16 +28,15 @@ export function repairBeamReview(q: Quote): Quote {
         t.status !== "Proposed" ||
         t.convertedLineId ||
         t.reviewAcknowledged ||
-        !(t.category === "Beams" || /beam/i.test(t.description))
+        !isBeamMaterial(t)
       )
         return t;
       if (t.calculation?.verified) return t;
       if (t.calculation && t.calculation.kind !== "beam-runs") return t;
-      const calculation = t.calculation
-        ? enrichBeamRecipe(t, t.calculation)
-        : proposedBeamRecipe(t);
+      const calculation = initializeBeamCalculator(t);
       if (
         !calculation ||
+        (!t.calculation && Object.keys(calculation.inputs).length === 0) ||
         JSON.stringify(calculation) === JSON.stringify(t.calculation)
       )
         return t;
@@ -67,7 +67,7 @@ export function repairBeamReview(q: Quote): Quote {
       !t.convertedLineId &&
       !t.reviewAcknowledged &&
       !t.calculation?.verified &&
-      (t.category === "Beams" || /beam/i.test(t.description)),
+      isBeamMaterial(t),
   );
   for (let i = 0; i < candidates.length; i++)
     for (let j = i + 1; j < candidates.length; j++) {

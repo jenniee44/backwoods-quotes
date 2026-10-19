@@ -1,3 +1,4 @@
+import { isBeamMaterial } from "./beamMaterial";
 import { spatialBeamRecipe } from "./spatialBeamPrefill";
 import type { TakeoffItem } from "./model";
 import type { MaterialCalculation } from "../shared/materialCalculators";
@@ -78,7 +79,7 @@ export function proposedBeamRecipe(
   if (
     item.origin !== "ai" ||
     item.destination !== "Materials" ||
-    !(/beam/i.test(item.description) || item.category === "Beams") ||
+    !isBeamMaterial(item) ||
     item.confidence === "Unspecified" ||
     (item.confidence === "Low" &&
       item.classification !== "Contractor input required" &&

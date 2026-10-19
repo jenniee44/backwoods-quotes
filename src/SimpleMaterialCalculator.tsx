@@ -1,5 +1,6 @@
+import { initializeBeamCalculator } from "./initializeBeamCalculator";
+import { enrichBeamRecipe, proposedBeamRecipe } from "./beamPrefill";
 import BeamAssemblySummary from "./BeamAssemblySummary";
-import { proposedBeamRecipe } from "./beamPrefill";
 import { relevantCalculators } from "./calculatorSelection";
 import BeamRunsEditor from "./BeamRunsEditor";
 import { beamStockGroups } from "../shared/beamLumber";
@@ -49,7 +50,7 @@ export default function SimpleMaterialCalculator({
 }) {
   const [error, setError] = useState("");
   const [allCalculators, setAllCalculators] = useState(false);
-  const recipe = t.calculation,
+  const recipe = t.calculation ?? initializeBeamCalculator(t),
     definition = calculators.find((d) => d.kind === recipe?.kind),
     preview = recipe ? calculateMaterial(recipe, false) : null;
   const calculate = (_t: TakeoffItem, r: MaterialCalculation) => onCalculate(r);
@@ -146,15 +147,25 @@ export default function SimpleMaterialCalculator({
             }
             onChange={(e) =>
               e.target.value
-                ? calculate(t, {
-                    kind: e.target.value,
-                    inputs: {},
-                    verified: false,
-                  })
+                ? calculate(
+                    t,
+                    e.target.value === "beam-runs"
+                      ? enrichBeamRecipe(
+                          t,
+                          proposedBeamRecipe(t) ?? {
+                            kind: "beam-runs",
+                            inputs: {},
+                            verified: false,
+                          },
+                        )
+                      : { kind: e.target.value, inputs: {}, verified: false },
+                  )
                 : patch(t, {
                     calculation: undefined,
                     quantity: null,
                     quantityMethod: "Unknown",
+                    calculationBasis:
+                      "Manual calculator selection; contractor verification required",
                   })
             }
           >

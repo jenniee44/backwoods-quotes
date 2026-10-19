@@ -1,5 +1,7 @@
+import { isBeamMaterial } from "./beamMaterial";
 import type { TakeoffItem } from "./model";
 export function relevantCalculators(item: TakeoffItem) {
+  if (isBeamMaterial(item)) return ["beam-runs", "beams"];
   const specific = matchingCalculators(item.description);
   return specific.length ? specific : matchingCalculators(item.category ?? "");
 }
