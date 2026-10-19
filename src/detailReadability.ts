@@ -1,3 +1,4 @@
+import { drawingAnnotation } from "./drawingAnnotations";
 import type { PDFPageProxy } from "pdfjs-dist";
 import type { PdfDetailRegion, PdfRotation } from "../shared/pdf";
 import { normalizeRotation } from "../shared/pdf";
@@ -66,7 +67,7 @@ export function chooseDetailOrientation(
     rotation: rotation as PdfRotation,
     weight: 0,
   }));
-  let unsupported = false;
+  let unsupportedWeight = 0;
   let total = 0;
   const seen = new Set<string>();
   for (const item of items) {
@@ -75,32 +76,28 @@ export function chooseDetailOrientation(
     if (seen.has(identity)) continue;
     seen.add(identity);
     if (
+      !drawingAnnotation(item.str).meaningful ||
       !item.str.trim() ||
       (administrativeText.test(item.str) &&
         !criticalDrawingWarning.test(item.str))
     )
       continue;
-    // Reflected or degenerate text cannot be made reliably upright by a quarter turn.
+    const angle =
+      (Math.atan2(item.transform[1], item.transform[0]) * 180) / Math.PI;
+    const weight =
+      Math.min(40, item.str.replace(/\s/g, "").length) *
+      drawingAnnotation(item.str).weight *
+      (item.coverage ?? 1) *
+      (item.height <= 10 ? 1.5 : 1);
+    total += weight;
     if (
       item.transform[0] * item.transform[3] -
         item.transform[1] * item.transform[2] <=
       0
     ) {
-      unsupported = true;
+      unsupportedWeight += weight;
       continue;
     }
-    const angle =
-      (Math.atan2(item.transform[1], item.transform[0]) * 180) / Math.PI;
-    const weight =
-      Math.min(40, item.str.replace(/\s/g, "").length) *
-      (memberAnnotation.test(item.str)
-        ? 8
-        : constructionText.test(item.str)
-          ? 2
-          : 1) *
-      (item.coverage ?? 1) *
-      (item.height <= 10 ? 1.5 : 1);
-    total += weight;
     for (const score of scores) {
       const distance = Math.abs(((angle - score.rotation + 540) % 360) - 180);
       if (distance <= 12) score.weight += weight;
@@ -108,12 +105,14 @@ export function chooseDetailOrientation(
   }
   const ranked = [...scores].sort((a, b) => b.weight - a.weight);
   const reliable =
-    !unsupported && total >= 12 && ranked[0].weight / total >= 0.75;
+    unsupportedWeight / Math.max(1, total) < 0.25 &&
+    total >= 12 &&
+    ranked[0].weight / total >= 0.75;
   const matched = scores.reduce((sum, score) => sum + score.weight, 0);
   // A supported majority may offer a useful view without being claimed reliable.
   // Ties, scans, reflections and oblique text keep the source orientation.
   const suggested =
-    !unsupported &&
+    unsupportedWeight / Math.max(1, total) < 0.25 &&
     total >= 12 &&
     matched / total >= 0.9 &&
     ranked[0].weight / total >= 0.55 &&

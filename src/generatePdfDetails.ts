@@ -109,13 +109,15 @@ export async function generatePdfDetails(
         region,
         content.items.flatMap((i) => ("str" in i ? [i] : [])),
       );
-      if (pageTurns[region.page] !== undefined) {
+      if ((pageTurns[region.page] ?? 0) !== 0) {
         // An explicit viewer override is authoritative for future captures.
         Object.assign(oriented, region, {
           rotation: region.rotation,
           inspectionNote:
             "Manual viewer orientation applied. Inspect the submitted image for legibility.",
-          orientationUncertain: true,
+          orientationUncertain:
+            oriented.orientationUncertain ||
+            oriented.rotation !== region.rotation,
         });
       }
       const capture = await renderPdfDetail(p, oriented, oriented.rotation);

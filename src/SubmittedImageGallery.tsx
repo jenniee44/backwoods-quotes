@@ -1,4 +1,9 @@
-import { useEffect, useState } from "react";
+import RotatableSubmittedImage from "./RotatableSubmittedImage";
+import { overlap } from "./autoDetailRegions";
+import { rotateDetailBounds } from "./pdfOrientation";
+import { normalizeRotation, type PdfRotation } from "../shared/pdf";
+import { renderPdfDetail } from "./pdfSource";
+import { useEffect, useRef, useState } from "react";
 import {
   archiveKey,
   readImages,
@@ -97,6 +102,10 @@ export default function SubmittedImageGallery({
   ) => void;
 }) {
   const [replace, setReplace] = useState(true);
+  const [inspectionTurn, setInspectionTurn] = useState<PdfRotation>(0),
+    [preparing, setPreparing] = useState(false),
+    [prepareMessage, setPrepareMessage] = useState("");
+  const operation = useRef(0);
   const [open, setOpen] = useState(false),
     [archive, setArchive] = useState<ImageArchive>(),
     [loaded, setLoaded] = useState(false),
@@ -121,6 +130,7 @@ export default function SubmittedImageGallery({
   const image = active === null ? undefined : archive?.images[active];
   useEffect(() => {
     let cancelled = false;
+    operation.current++;
     setSource(undefined);
     setCorrect(false);
     if (!image) return;
@@ -131,8 +141,72 @@ export default function SubmittedImageGallery({
       });
     return () => {
       cancelled = true;
+      operation.current++;
     };
   }, [image, documents]);
+  async function prepareRotation() {
+    if (!image || !source || !archive || !inspectionTurn || locked || preparing)
+      return;
+    const token = ++operation.current;
+    setPreparing(true);
+    setPrepareMessage("");
+    let task: Awaited<ReturnType<typeof loadPdfSource>> | undefined;
+    try {
+      let candidate = image.region;
+      for (let step = 0; step < inspectionTurn / 90; step++)
+        candidate = rotateDetailBounds(candidate, 90);
+      task = await loadPdfSource(source.data);
+      const pdf = await task.promise;
+      const page = await pdf.getPage(candidate.page);
+      const capture = await renderPdfDetail(
+        page,
+        candidate,
+        candidate.rotation,
+      );
+      if (token === operation.current) {
+        onSupplement(
+          source.id,
+          {
+            ...capture,
+            label: image.region.label,
+            orientationUncertain: false,
+            cropNeedsReview: false,
+            inspectionNote:
+              "Manually rotated replacement from the original PDF. Inspect before a future analysis; no construction quantity is verified.",
+          },
+          archive.images
+            .filter(
+              (i) =>
+                i.documentId === source.id &&
+                i.sourceHash === image.sourceHash &&
+                i !== image,
+            )
+            .map((i) => i.region),
+        );
+        setPrepareMessage(
+          "Rotated replacement prepared for a future analysis. Historical submitted pixels are unchanged. Inspect the prepared package and explicitly Analyze Plans when ready.",
+        );
+      }
+    } catch (e) {
+      if (token === operation.current) setPrepareMessage((e as Error).message);
+    } finally {
+      await task?.destroy();
+      setPreparing(false);
+    }
+  }
+  const related = image
+    ? (archive?.images ?? []).flatMap((other, index) =>
+        other !== image &&
+        other.documentId === image.documentId &&
+        other.region.page === image.region.page &&
+        overlap(
+          { ...other.region, label: "", score: 0 },
+          { ...image.region, label: "", score: 0 },
+        ) > 0.02
+          ? [index]
+          : [],
+      )
+    : [];
   async function flag(index: number) {
     if (!archive) return;
     const next = {
@@ -207,6 +281,8 @@ export default function SubmittedImageGallery({
                       onClick={() => {
                         setActive(n);
                         setZoom(100);
+                        setInspectionTurn(0);
+                        setPrepareMessage("");
                       }}
                       aria-label={`Inspect submitted image ${n + 1}`}
                     >
@@ -263,19 +339,70 @@ export default function SubmittedImageGallery({
                     <button onClick={() => setZoom(Math.min(400, zoom + 25))}>
                       Zoom in submitted image
                     </button>
+                    <button
+                      onClick={() =>
+                        setInspectionTurn(
+                          normalizeRotation(inspectionTurn - 90),
+                        )
+                      }
+                    >
+                      Rotate inspection left
+                    </button>
+                    <button
+                      onClick={() =>
+                        setInspectionTurn(
+                          normalizeRotation(inspectionTurn + 90),
+                        )
+                      }
+                    >
+                      Rotate inspection right
+                    </button>
+                    <button
+                      disabled={
+                        locked || preparing || !source || inspectionTurn === 0
+                      }
+                      onClick={() => void prepareRotation()}
+                    >
+                      Prepare rotated replacement for next analysis
+                    </button>
                     <button onClick={() => setActive(null)}>Close image</button>
                   </div>
-                  <div
-                    className="submitted-image-pan"
-                    tabIndex={0}
-                    aria-label="Scroll to pan submitted image"
-                  >
-                    <img
-                      src={image.region.data}
-                      alt="Exact submitted detail enlarged"
-                      style={{ width: `${zoom}%`, maxWidth: "none" }}
-                    />
-                  </div>
+                  <p className="tiny" role="status">
+                    Inspection rotation: {inspectionTurn}°. Submitted
+                    orientation remains {image.region.rotation ?? 0}°.
+                    Inspection controls do not change the historical image or
+                    call AI.
+                  </p>
+                  <RotatableSubmittedImage
+                    data={image.region.data}
+                    pixelWidth={image.region.pixelWidth}
+                    pixelHeight={image.region.pixelHeight}
+                    zoom={zoom}
+                    turn={inspectionTurn}
+                  />
+                  {prepareMessage && <p role="status">{prepareMessage}</p>}
+                  {!!related.length && (
+                    <details className="analysis-report">
+                      <summary>Related source views ({related.length})</summary>
+                      <p>
+                        These images overlap the same original page. They are
+                        additional observations, not additional material counts.
+                        Different assemblies still need separate evidence.
+                      </p>
+                      {related.map((index) => (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            setActive(index);
+                            setInspectionTurn(0);
+                            setZoom(100);
+                          }}
+                        >
+                          Inspect related image {index + 1}
+                        </button>
+                      ))}
+                    </details>
+                  )}
                   <p className="tiny">
                     {image.region.inspectionNote ||
                       "Inspect dimensions and notes; readable pixels alone do not verify construction scope or quantities."}{" "}

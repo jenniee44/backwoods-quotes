@@ -207,3 +207,33 @@ it("one long reversed note does not silently dominate multiple local member anno
   expect(result.reliable).toBe(false);
   expect(result.rotation).toBe(180);
 });
+it("an irrelevant reflected title item cannot veto a clearly readable construction note", () => {
+  const junk = text(180, 0, 0, "POSTAL CODE AND PROJECT NAME");
+  junk.transform[3] = 6;
+  expect(
+    chooseDetailOrientation(180, [
+      text(90, 300, 300, "BEAM B1 3PLY 2X10 PT"),
+      junk,
+    ]),
+  ).toMatchObject({ rotation: 90, reliable: true });
+});
+it("mixed construction text still stays uncertain when the reflected annotation is significant", () => {
+  const mirrored = text(0, 200, 200, "JOISTS 2X6 PT AT 16 IN O/C");
+  mirrored.transform[3] = -6;
+  expect(chooseDetailOrientation(180, [text(90), mirrored])).toMatchObject({
+    rotation: 180,
+    reliable: false,
+  });
+});
+it("title-heavy mixed-direction sheets favor meaningful annotations, not generic construction headings", () => {
+  const headings = Array.from({ length: 20 }, (_, i) =>
+    text(180, 700, i * 20, "FOUNDATION AND DECK FRAMING PLAN"),
+  );
+  expect(
+    chooseDetailOrientation(180, [
+      ...headings,
+      text(0, 300, 300, "BEAM B1 3PLY 2X10 PT"),
+      text(0, 300, 400, "JOISTS 2X6 PT 16 IN O/C"),
+    ]),
+  ).toMatchObject({ rotation: 0, reliable: true });
+});

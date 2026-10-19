@@ -77,3 +77,75 @@ it("allows a bounded larger reading budget without an unbounded image package", 
   expect(selectAnalysisRegions(candidates, 4)).toHaveLength(4);
   expect(selectAnalysisRegions(candidates, 99)).toHaveLength(12);
 });
+it("does not spend the image budget on a title block containing construction headings and weak dimensions", () => {
+  const titles = Array.from({ length: 14 }, (_, i) => ({
+    text:
+      i % 2
+        ? "FOUNDATION AND DECK FRAMING PLAN"
+        : "PROJECT NAME AND POSTAL CODE",
+    x: 2100,
+    y: 1300 + i * 10,
+    width: 200,
+    height: 6,
+  }));
+  const marks = [
+    ...titles,
+    { text: "24'-3\"", x: 2140, y: 1350, width: 60, height: 6 },
+    { text: "3PLY 2X10 PT", x: 500, y: 600, width: 120, height: 6 },
+    {
+      text: "JOISTS 2X6 AT 16 IN O/C",
+      x: 1100,
+      y: 1000,
+      width: 160,
+      height: 6,
+    },
+  ];
+  const selected = selectAnalysisRegions(
+    analysisPageRegions(1, 2592, 1728, marks, survey),
+  );
+  expect(selected.length).toBeGreaterThan(0);
+  expect(selected.every((r) => r.x < 1800)).toBe(true);
+});
+it("suppresses redundant annotation windows even where geometry overlap alone was previously allowed", () => {
+  const first = {
+    page: 1,
+    x: 0,
+    y: 0,
+    width: 420,
+    height: 340,
+    label: "Beam",
+    score: 30,
+    evidenceKeys: ["same-annotation"],
+  };
+  const duplicate = { ...first, x: 300, score: 29 };
+  const separate = {
+    ...first,
+    x: 900,
+    evidenceKeys: ["separate-assembly-note"],
+    score: 28,
+  };
+  expect(selectAnalysisRegions([first, duplicate, separate], 8)).toEqual([
+    first,
+    separate,
+  ]);
+});
+it("sideways note bounds receive enough source context for a 250 DPI render without upscaling", () => {
+  const [r] = analysisPageRegions(
+    1,
+    2592,
+    1728,
+    [
+      {
+        text: "BEAM CONNECTION SPECIFICATIONS",
+        x: 600,
+        y: 300,
+        width: 6,
+        height: 520,
+      },
+    ],
+    survey,
+  );
+  expect(r.height).toBeGreaterThanOrEqual(520);
+  expect(r.height).toBeLessThanOrEqual(700);
+  expect(() => detailRenderSize(r.width, r.height)).not.toThrow();
+});
