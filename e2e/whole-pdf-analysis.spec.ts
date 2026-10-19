@@ -147,6 +147,15 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
   await page.getByRole("button", { name: /Preliminary Shopping List/ }).click();
   const list = page.locator(".preliminary-materials");
   await expect(list).toBeVisible();
+  for (const d of sent)
+    for (const crop of d.detailRegions ?? []) {
+      expect(crop.sourcePageRotation).toBe(0);
+      expect(Math.max(crop.width, crop.height)).toBeLessThanOrEqual(700);
+      expect(crop.dpi).toBe(250);
+      expect(crop.pixelWidth).toBe(Math.ceil((crop.width * 250) / 72));
+      expect(crop.page).toBeGreaterThanOrEqual(1);
+      expect(crop.page).toBeLessThanOrEqual(3);
+    }
   const posts = list.locator("tr").filter({ hasText: "6x6 PT" });
   await expect(posts).toHaveCount(1);
   await expect(posts).toContainText("To confirm");

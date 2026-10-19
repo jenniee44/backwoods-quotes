@@ -1,3 +1,4 @@
+import { detailSourceMapping } from "../shared/detailCoordinates";
 import { planAnalysisInstructions } from "./instructions";
 import { analysisSchema, validateAnalysis } from "../shared/analysis";
 import type { AnalysisDocument, PlanAnalysisResult } from "../shared/analysis";
@@ -55,6 +56,7 @@ export function openAIProvider(
               physicalPdfPage: region.page,
               clockwiseOrientationDegrees: region.rotation ?? 0,
               rotatedPageTopLeftPoints: location,
+              originalPageMapping: detailSourceMapping(region),
               note: "Orientation is the absolute clockwise PDF viewport rotation, including the PDF page’s intrinsic rotation. 250 DPI detail rendered directly from original PDF, not a preview thumbnail. Coordinates locate the region only; never infer site dimensions from pixels. Cite the original source ID and page.",
             }),
           });

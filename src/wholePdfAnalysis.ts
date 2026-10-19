@@ -44,6 +44,7 @@ export async function supplementWholePdfs(
         capacity,
         [],
         progress,
+        "analysis",
       );
       const included = [];
       let skipped = 0;

@@ -1,3 +1,7 @@
+import {
+  analysisPageRegions,
+  selectAnalysisRegions,
+} from "./analysisDetailRegions";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { renderPdfDetail } from "./pdfSource";
 import { selectDetailRegions } from "./autoDetailRegions";
@@ -13,6 +17,7 @@ export async function generatePdfDetails(
   limit: number,
   existing: PdfDetailRegion[] = [],
   progress: (s: string) => void = () => {},
+  purpose: "review" | "analysis" = "review",
 ) {
   if (pdf.numPages > 50)
     throw new Error("PDF exceeds the 50-page analysis limit.");
@@ -56,7 +61,13 @@ export async function generatePdfDetails(
         context.getImageData(0, 0, canvas.width, canvas.height).data,
       );
       candidates.push(
-        ...contentRegions(page, v.width, v.height, marks, survey).map((r) => ({
+        ...(purpose === "analysis" ? analysisPageRegions : contentRegions)(
+          page,
+          v.width,
+          v.height,
+          marks,
+          survey,
+        ).map((r) => ({
           ...r,
           rotation: orientation.rotation,
           pageWidth: v.width,
@@ -75,7 +86,9 @@ export async function generatePdfDetails(
     label: "Existing",
     score: 0,
   }));
-  const selected = selectDetailRegions(candidates, limit, prior);
+  const selected = (
+    purpose === "analysis" ? selectAnalysisRegions : selectDetailRegions
+  )(candidates, limit, prior);
   const views: PreparedDetail[] = [];
   const errors: string[] = [];
   for (const region of selected) {
@@ -95,6 +108,8 @@ export async function generatePdfDetails(
       if (oriented.rotation !== region.rotation) detailCorrected++;
       views.push({
         ...capture,
+        sourcePageRotation: (((p.rotate % 360) + 360) % 360) as
+          0 | 90 | 180 | 270,
         label: region.label,
         reviewGroup: oriented.reviewGroup,
         orientationUncertain: oriented.orientationUncertain,

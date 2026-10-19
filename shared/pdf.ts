@@ -30,6 +30,8 @@ export type PdfTextLayer = {
   truncated: boolean;
 };
 export type PdfDetailRegion = {
+  // Intrinsic original page viewport orientation, used to map reading crops back.
+  sourcePageRotation?: PdfRotation;
   label?: string;
   // Absolute clockwise PDF.js viewport orientation, including intrinsic /Rotate.
   rotation?: PdfRotation;
@@ -120,6 +122,9 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     (value.label !== undefined &&
       (typeof value.label !== "string" || value.label.length > 120)) ||
     !pageNumber(value.page) ||
+    (value.sourcePageRotation !== undefined &&
+      (typeof value.sourcePageRotation !== "number" ||
+        ![0, 90, 180, 270].includes(value.sourcePageRotation))) ||
     (value.rotation !== undefined &&
       ![0, 90, 180, 270].includes(Number(value.rotation))) ||
     (value.rotation !== undefined && typeof value.rotation !== "number") ||
@@ -205,6 +210,9 @@ export function validatePdfRegion(value: unknown): PdfDetailRegion {
     return fail();
   // Explicit projection; ignore client-only properties and arbitrary metadata.
   return {
+    ...(value.sourcePageRotation !== undefined
+      ? { sourcePageRotation: value.sourcePageRotation as PdfRotation }
+      : {}),
     ...(value.rotation !== undefined
       ? { rotation: value.rotation as PdfRotation }
       : {}),

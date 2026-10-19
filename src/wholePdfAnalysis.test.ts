@@ -69,6 +69,7 @@ it("retains complete original bytes and selectable text with bounded original-re
     8,
     [],
     expect.anything(),
+    "analysis",
   );
   expect(source.detailRegions).toBeUndefined();
   expect(destroy).toHaveBeenCalled();
