@@ -1,3 +1,7 @@
+import {
+  positionedPdfText,
+  maxPositionedTextChars,
+} from "../shared/pdfPositions";
 import { encodeDetailCanvas } from "./optimizeAnalysisPackage";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -14,7 +18,7 @@ export async function loadPdfSource(data: string) {
 }
 export async function extractPdfText(
   document: PDFDocumentProxy,
-  budget = maxPdfTextChars,
+  budget = maxPdfTextChars + maxPositionedTextChars,
   signal?: AbortSignal,
 ): Promise<PdfTextLayer> {
   const result: PdfTextLayer = {
@@ -22,6 +26,10 @@ export async function extractPdfText(
     pages: [],
     truncated: false,
   };
+  let positionedRemaining = Math.min(
+    maxPositionedTextChars,
+    Math.max(0, budget - Math.min(maxPdfTextChars, budget)),
+  );
   let remaining = Math.min(maxPdfTextChars, Math.max(0, budget));
   for (let page = 1; page <= document.numPages; page++) {
     signal?.throwIfAborted();
@@ -40,6 +48,12 @@ export async function extractPdfText(
         )
         .join("")
         .trim();
+      const positions = positionedPdfText(
+        content.items,
+        viewport,
+        positionedRemaining,
+      );
+      positionedRemaining -= positions.used;
       const limit = Math.min(8000, remaining);
       const text = readable.slice(0, limit);
       const truncated = readable.length > limit;
@@ -48,6 +62,8 @@ export async function extractPdfText(
         width: viewport.width,
         height: viewport.height,
         text,
+        positions: positions.runs,
+        positionsTruncated: positions.truncated,
         status: truncated
           ? "Truncated"
           : text

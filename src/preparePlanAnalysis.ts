@@ -22,7 +22,10 @@ export async function preparePlanAnalysis(
         throw new Error("Split drawings into files of 50 pages or fewer.");
       source.pdfText = await extractPdfText(pdf, budget, signal);
       budget -= source.pdfText.pages.reduce(
-        (sum, page) => sum + page.text.length,
+        (sum, page) =>
+          sum +
+          page.text.length +
+          (page.positions ?? []).reduce((n, r) => n + r.text.length, 0),
         0,
       );
     } finally {

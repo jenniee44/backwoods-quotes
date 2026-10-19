@@ -1,3 +1,8 @@
+import {
+  validTextPositions,
+  maxPositionedTextChars,
+  type PositionedPdfText,
+} from "./pdfPositions";
 // Physical PDF coordinates in the rotated page viewport, top-left origin, at
 // scale=1 (72 points/inch). These identify a detail region, NOT site measurements.
 export type PdfRotation = 0 | 90 | 180 | 270;
@@ -11,6 +16,8 @@ export const maxDetailRegions = 24;
 export const maxPdfTextChars = 60_000;
 export const maxAnalysisTextChars = 120_000;
 export type PdfTextPage = {
+  positions?: PositionedPdfText[];
+  positionsTruncated?: boolean;
   page: number;
   width: number;
   height: number;
@@ -73,13 +80,17 @@ export function validPdfText(value: unknown): value is PdfTextLayer {
   )
     return false;
   const seen = new Set<number>();
-  let chars = 0;
+  let chars = 0,
+    positionedChars = 0;
   for (const p of value.pages) {
     if (
       !record(p) ||
       !pageNumber(p.page) ||
       Number(p.page) > Number(value.pageCount) ||
       seen.has(Number(p.page)) ||
+      (p.positions !== undefined && !validTextPositions(p.positions)) ||
+      (p.positionsTruncated !== undefined &&
+        typeof p.positionsTruncated !== "boolean") ||
       !positive(p.width) ||
       !positive(p.height) ||
       typeof p.text !== "string" ||
@@ -91,8 +102,12 @@ export function validPdfText(value: unknown): value is PdfTextLayer {
       return false;
     seen.add(Number(p.page));
     chars += p.text.length;
+    positionedChars += ((p.positions ?? []) as PositionedPdfText[]).reduce(
+      (sum, r) => sum + r.text.length,
+      0,
+    );
   }
-  return chars <= maxPdfTextChars;
+  return chars <= maxPdfTextChars && positionedChars <= maxPositionedTextChars;
 }
 export function validatePdfRegion(value: unknown): PdfDetailRegion {
   const fail = () => {

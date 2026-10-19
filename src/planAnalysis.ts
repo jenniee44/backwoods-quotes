@@ -1,3 +1,4 @@
+import { spatialBeamIdentity } from "../shared/spatialBeams";
 import { proposedBeamRecipe } from "./beamPrefill";
 import { proposedMaterialRecipe } from "./deckTakeoff";
 import { materialInputIdentity } from "../shared/materialInputs";
@@ -147,6 +148,9 @@ export function addAnalysisSuggestions(
       ...(item.materialInputs
         ? { materialInputs: structuredClone(item.materialInputs) }
         : {}),
+      ...(item.beamAssemblies
+        ? { beamAssemblies: structuredClone(item.beamAssemblies) }
+        : {}),
       calculationBasis: item.calculationBasis,
       quantityMethod: item.quantityMethod,
       itemRole: item.itemRole,
@@ -206,6 +210,9 @@ export function addAnalysisSuggestions(
     JSON.stringify([
       equivalentComponentKey(item, item.category) || semanticItemKey(item),
       materialInputIdentity(item.materialInputs),
+      ...(item.beamAssemblies?.length
+        ? [spatialBeamIdentity(item.beamAssemblies)]
+        : []),
     ]);
   const semanticSeen = new Set(
     q.takeoff.filter((item) => item.origin === "ai").map(candidateKey),

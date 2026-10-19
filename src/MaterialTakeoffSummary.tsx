@@ -1,3 +1,4 @@
+import BeamAssemblySummary from "./BeamAssemblySummary";
 import { useState } from "react";
 import type { Quote, TakeoffItem } from "./model";
 import {
@@ -250,6 +251,7 @@ function MaterialRow({ item: t, ...props }: Props & { item: TakeoffItem }) {
                 : "Proposed"}
         </span>
       </div>
+      <BeamAssemblySummary item={t} />
       <div className="takeoff-quantities">
         <span>
           Material quantity:{" "}

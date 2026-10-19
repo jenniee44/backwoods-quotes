@@ -320,6 +320,10 @@ export default function PlansTakeoff({
             const notes = [
               `${d.name}: unchanged original PDF + selectable text from ${layer?.pages.filter((p) => p.text).length ?? 0} page(s) + ${d.detailRegions?.length ?? 0} full-resolution detail view(s).`,
             ];
+            if (layer?.pages.some((p) => p.positionsTruncated))
+              notes.push(
+                `${d.name}: supplemental text positions are incomplete at the processing limit. The complete original PDF remains included; unknown associations require contractor review.`,
+              );
             if (layer?.truncated)
               notes.push(
                 `${d.name}: supplemental text was truncated at the request limit. Full original PDF is still sent; select fewer files or targeted detail views for missing notes.`,

@@ -1,3 +1,4 @@
+import { spatialBeamIdentity, mergeSpatialBeams } from "./spatialBeams";
 import {
   repeatedMaterialKey,
   repeatEvidenceEligible,
@@ -64,6 +65,9 @@ export function semanticItemKey(item: AnalysisSuggestion): string {
     item.quantity,
     item.supportBasis ?? "Not established",
     words(item.unit),
+    ...(item.beamAssemblies?.length
+      ? [spatialBeamIdentity(item.beamAssemblies)]
+      : []),
   ]);
 }
 const metadataDescription =
@@ -283,6 +287,11 @@ export function prepareConstructionAnalysis(
   let reduced = result.duplicatesReduced ?? 0;
   for (const item of [...result.suggestions, ...promoted]) {
     item.warnings = [...(item.warnings ?? [])];
+    if (item.beamAssemblies?.length && /beam/i.test(item.description)) {
+      // Spatial line count is proposed later, independently from purchase boards.
+      item.quantity = null;
+      item.quantityMethod = "Unknown";
+    }
     const inputProblem = materialInputProblem(item.materialInputs);
     if (inputProblem)
       item.warnings.push(
@@ -430,6 +439,8 @@ export function prepareConstructionAnalysis(
     summary.siteVerification.push(...item.warnings);
     const existing = retained.find(
       (candidate) =>
+        spatialBeamIdentity(candidate.beamAssemblies) ===
+          spatialBeamIdentity(item.beamAssemblies) &&
         materialInputIdentity(candidate.materialInputs) ===
           materialInputIdentity(item.materialInputs) &&
         (semanticItemKey(candidate) === semanticItemKey(item) ||
@@ -466,6 +477,8 @@ export function prepareConstructionAnalysis(
         ])
       : [];
     const canPreserve =
+      mergeSpatialBeams(existing?.beamAssemblies, item.beamAssemblies).length <=
+        20 &&
       mergeMaterialInputs(existing?.materialInputs, item.materialInputs)
         .length <= 40 &&
       mergeFacts.length <= 20 &&
@@ -476,6 +489,11 @@ export function prepareConstructionAnalysis(
     if (existing && canPreserve) {
       reduced++;
       existing.sourceFacts = mergeFacts;
+      if (existing.beamAssemblies || item.beamAssemblies)
+        existing.beamAssemblies = mergeSpatialBeams(
+          existing.beamAssemblies,
+          item.beamAssemblies,
+        );
       if (existing.materialInputs || item.materialInputs)
         existing.materialInputs = mergeMaterialInputs(
           existing.materialInputs,

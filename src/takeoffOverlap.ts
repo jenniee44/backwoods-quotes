@@ -1,3 +1,4 @@
+import { spatialBeamIdentity, mergeSpatialBeams } from "../shared/spatialBeams";
 import { sameBeamCalculator } from "./beamRecipeIdentity";
 import {
   materialInputIdentity,
@@ -50,6 +51,7 @@ export function overlapKey(a: TakeoffItem, b: TakeoffItem) {
         t.sourceFacts,
         t.notes,
         ...(t.materialInputs?.length ? [t.materialInputs] : []),
+        ...(t.beamAssemblies?.length ? [t.beamAssemblies] : []),
       ]),
   );
 }
@@ -113,6 +115,8 @@ export function consolidateCompared(
     norm(a.specification) !== norm(b.specification) ||
     norm(a.location) !== norm(b.location) ||
     a.quantity !== b.quantity ||
+    spatialBeamIdentity(a.beamAssemblies) !==
+      spatialBeamIdentity(b.beamAssemblies) ||
     materialInputIdentity(a.materialInputs) !==
       materialInputIdentity(b.materialInputs) ||
     (a.stockLength ?? null) !== (b.stockLength ?? null) ||
@@ -140,6 +144,7 @@ export function consolidateCompared(
   if (
     facts.length > 20 ||
     facts.some((f) => f.length > 1000) ||
+    mergeSpatialBeams(a.beamAssemblies, b.beamAssemblies).length > 20 ||
     mergeMaterialInputs(a.materialInputs, b.materialInputs).length > 40
   )
     throw new Error(
@@ -153,6 +158,14 @@ export function consolidateCompared(
         ? {
             ...a,
             sourceFacts: facts,
+            ...(a.beamAssemblies || b.beamAssemblies
+              ? {
+                  beamAssemblies: mergeSpatialBeams(
+                    a.beamAssemblies,
+                    b.beamAssemblies,
+                  ),
+                }
+              : {}),
             ...(a.materialInputs || b.materialInputs
               ? {
                   materialInputs: mergeMaterialInputs(

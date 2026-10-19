@@ -1,3 +1,4 @@
+import BeamAssemblySummary from "./BeamAssemblySummary";
 import { proposedBeamRecipe } from "./beamPrefill";
 import { relevantCalculators } from "./calculatorSelection";
 import BeamRunsEditor from "./BeamRunsEditor";
@@ -284,6 +285,12 @@ export default function SimpleMaterialCalculator({
                   </div>
                 ))}
             </div>
+            {!!t.beamAssemblies?.length && (
+              <details>
+                <summary>Drawing associations and references</summary>
+                <BeamAssemblySummary item={t} />
+              </details>
+            )}
             {recipe.kind === "beam-runs" && (
               <BeamRunsEditor
                 disabled={disabled}

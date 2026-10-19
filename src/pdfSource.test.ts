@@ -58,3 +58,33 @@ it("cancels text extraction without creating AI suggestions", async () => {
     extractPdfText(document(["text"]).pdf, 60000, signal),
   ).rejects.toThrow();
 });
+it("extracts positioned selectable annotations alongside unchanged text and reports position limits", async () => {
+  const clean = vi.fn();
+  const pdf = {
+    numPages: 1,
+    getPage: async () => ({
+      getViewport: () => ({
+        width: 800,
+        height: 600,
+        transform: [1, 0, 0, -1, 0, 600],
+      }),
+      cleanup: clean,
+      getTextContent: async () => ({
+        items: [
+          {
+            str: "3PLY 2X10 PT",
+            hasEOL: true,
+            width: 60,
+            transform: [10, 0, 0, 10, 100, 300],
+          },
+        ],
+      }),
+    }),
+  } as unknown as PDFDocumentProxy;
+  const result = await extractPdfText(pdf);
+  expect(result.pages[0].text).toBe("3PLY 2X10 PT");
+  expect(result.pages[0].positions![0]).toMatchObject({ x: 0.125, angle: 0 });
+  const limited = await extractPdfText(pdf, 100);
+  expect(limited.pages[0].text).toBe("3PLY 2X10 PT");
+  expect(limited.pages[0].positionsTruncated).toBe(true);
+});

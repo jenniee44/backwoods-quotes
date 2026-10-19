@@ -330,23 +330,32 @@ test("a preparation fault cannot silently discard selected detail images; rebuil
 test("slow orientation preparation never reports ready or allows ignored zoom controls", async ({
   page,
 }) => {
-  await page.route("**/src/PdfPreview.tsx", async (route) => {
-    const response = await route.fetch();
-    const body = await response.text();
-    expect(body).toContain("p.getTextContent()");
-    await route.fulfill({
-      response,
-      body: body.replace(
-        "p.getTextContent()",
-        "new Promise(resolve => setTimeout(resolve, 1200)).then(() => p.getTextContent())",
-      ),
-    });
-  });
+  let intercepted = false;
+  await page.route(
+    (url) => url.pathname === "/src/PdfPreview.tsx",
+    async (route) => {
+      intercepted = true;
+      const response = await route.fetch();
+      const body = await response.text();
+      expect(body).toContain("p.getTextContent()");
+      await route.fulfill({
+        response,
+        body: body.replace(
+          "p.getTextContent()",
+          "new Promise(resolve => { window.__releaseOrientationTest = resolve; }).then(() => p.getTextContent())",
+        ),
+      });
+    },
+  );
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  expect(
+    intercepted,
+    "The orientation delay must intercept Vite URLs including cache-busting query strings",
+  ).toBe(true);
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic-delayed-orientation.pdf",
     mimeType: "application/pdf",
@@ -360,6 +369,16 @@ test("slow orientation preparation never reports ready or allows ignored zoom co
     page.getByRole("button", { name: "Zoom in", exact: true }),
   ).toBeDisabled();
   await expect(page.getByText(/Original PDF view ready/)).not.toBeVisible();
+  // Explicitly release preparation after all pending-state assertions. A fixed
+  // delay can finish before assertions run on a busy test worker.
+  await page.evaluate(() => {
+    const control = window as typeof window & {
+      __releaseOrientationTest?: () => void;
+    };
+    if (!control.__releaseOrientationTest)
+      throw new Error("Orientation test gate was not installed");
+    control.__releaseOrientationTest();
+  });
   await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
   await page.getByLabel("Zoom drawing").selectOption("1");
   await expect(page.locator(".pdf-scroll-viewport")).toHaveAttribute(

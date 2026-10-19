@@ -1,3 +1,4 @@
+import { spatialBeamIdentity } from "../shared/spatialBeams";
 import type { TakeoffItem } from "./model";
 import { normalizeSpecification } from "../shared/componentIdentity";
 const sorted = (v: Record<string, unknown> | undefined) =>
@@ -9,6 +10,7 @@ export function sameBeamCalculator(a: TakeoffItem, b: TakeoffItem) {
   )
     return false;
   const value = (t: TakeoffItem) => ({
+    spatial: spatialBeamIdentity(t.beamAssemblies),
     kind: t.calculation?.kind,
     inputs: sorted(t.calculation?.inputs),
     specs: sorted(

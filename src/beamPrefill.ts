@@ -1,3 +1,4 @@
+import { spatialBeamRecipe } from "./spatialBeamPrefill";
 import type { TakeoffItem } from "./model";
 import type { MaterialCalculation } from "../shared/materialCalculators";
 import { drawingMeasurements } from "../shared/constructionMeasurements";
@@ -94,6 +95,7 @@ export function proposedBeamRecipe(
     )
   )
     return null;
+  if (item.beamAssemblies?.length) return spatialBeamRecipe(item);
   const labels = new Map<string, string>();
   for (const fact of beamSourceFacts(item)) {
     if (
@@ -220,6 +222,54 @@ export function enrichBeamRecipe(
     return recipe;
   const proposed = proposedBeamRecipe(item),
     inputs = { ...recipe.inputs };
+  if (item.beamAssemblies?.length) {
+    if (inputs.runs === undefined && proposed?.inputs.runs != null)
+      inputs.runs = proposed.inputs.runs;
+    if (!proposed || inputs.runs !== proposed.inputs.runs)
+      return { ...recipe, inputs };
+    const specifications = { ...recipe.specifications },
+      specificationSources = { ...recipe.specificationSources },
+      lengthSources = { ...recipe.lengthSources },
+      runLabels = { ...recipe.runLabels };
+    for (let n = 1; n <= (inputs.runs ?? 0); n++) {
+      const key = String(n),
+        label = runLabels[key];
+      const sourceKey = label
+        ? Object.keys(proposed.runLabels ?? {}).find(
+            (k) => labelKey(proposed.runLabels![k]) === labelKey(label),
+          )
+        : key;
+      // Existing labelled runs must match their own spatial assembly, never merely an array index.
+      if (!sourceKey) continue;
+      for (const field of ["length", "plies"]) {
+        if (
+          inputs[field + n] === undefined &&
+          proposed.inputs[field + sourceKey] != null
+        )
+          inputs[field + n] = proposed.inputs[field + sourceKey];
+      }
+      if (specifications[key] === undefined)
+        specifications[key] = proposed.specifications![sourceKey];
+      if (specificationSources[key] === undefined)
+        specificationSources[key] = proposed.specificationSources![sourceKey];
+      if (
+        lengthSources[key] === undefined &&
+        proposed.lengthSources?.[sourceKey]
+      )
+        lengthSources[key] = proposed.lengthSources[sourceKey];
+      if (runLabels[key] === undefined)
+        runLabels[key] = proposed.runLabels![sourceKey];
+    }
+    return {
+      ...recipe,
+      inputs,
+      specifications,
+      specificationSources,
+      lengthSources,
+      runLabels,
+      runCountSource: recipe.runCountSource ?? proposed.runCountSource,
+    };
+  }
   if (inputs.runs === undefined && proposed?.inputs.runs != null)
     inputs.runs = proposed.inputs.runs;
   const plies =

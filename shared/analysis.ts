@@ -1,3 +1,8 @@
+import {
+  spatialBeamSchema,
+  validSpatialBeams,
+  type SpatialBeam,
+} from "./spatialBeams";
 import { maxAnalysisBytes } from "./analysisPackage";
 import {
   validPdfText,
@@ -25,6 +30,7 @@ export const classifications = [
 // Optional on saved V2 records; required (empty when unknown) in new provider output.
 export type ConstructionEvidence = {
   materialInputs?: MaterialInput[];
+  beamAssemblies?: SpatialBeam[];
   sourceDetailView?: number | null;
   supportBasis?:
     | "Not established"
@@ -111,6 +117,7 @@ export const materialCategories = [
 ];
 const evidenceProperties = {
   materialInputs: materialInputSchema,
+  beamAssemblies: spatialBeamSchema,
   sourceDetailView: {
     type: ["integer", "null"],
     minimum: 1,
@@ -166,6 +173,7 @@ export function validConstructionEvidence(v: Record<string, unknown>): boolean {
   return Object.entries(evidenceProperties).every(([key, schema]) => {
     const value = v[key];
     if (value === undefined) return true; // Existing saved quotes/older responses.
+    if (key === "beamAssemblies") return validSpatialBeams(value);
     if (key === "materialInputs") return validMaterialInputs(value);
     if (key === "sourceDetailView")
       return (
@@ -348,6 +356,7 @@ export function validateAnalysis(
     !texts(value.warnings)
   )
     return fail();
+  let spatialObservations = 0;
   for (const [key, max] of [
     ["sourceObservations", 100],
     ["dimensions", 100],
@@ -402,6 +411,18 @@ export function validateAnalysis(
         const region =
           source?.detailRegions?.[Number(item.sourceDetailView) - 1];
         if (!region || region.page !== item.page) return fail();
+      }
+      spatialObservations +=
+        (item.beamAssemblies as SpatialBeam[] | undefined)?.length ?? 0;
+      if (spatialObservations > 100) return fail();
+      if (item.beamAssemblies && documents) {
+        const pages = documents.find((d) => d.id === item.documentId)?.pdfText
+          ?.pageCount;
+        if (
+          pages &&
+          (item.beamAssemblies as SpatialBeam[]).some((b) => b.page > pages)
+        )
+          return fail();
       }
       // Any missing measurement is explicitly uncertain, never silently zero.
       if (item.quantity === null && key !== "sourceObservations") {
@@ -476,7 +497,13 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
         throw new Error(
           "The PDF text layer is invalid. Reattach the original drawing.",
         );
-      totalText += d.pdfText.pages.reduce((sum, p) => sum + p.text.length, 0);
+      totalText += d.pdfText.pages.reduce(
+        (sum, p) =>
+          sum +
+          p.text.length +
+          (p.positions ?? []).reduce((n, r) => n + r.text.length, 0),
+        0,
+      );
       if (totalText > maxAnalysisTextChars)
         throw new Error(
           "Too much extracted plan text for one request. Select fewer drawings.",
@@ -516,6 +543,12 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
               height: page.height,
               text: page.text,
               status: page.status,
+              ...(page.positions
+                ? { positions: page.positions.map((r) => ({ ...r })) }
+                : {}),
+              ...(page.positionsTruncated !== undefined
+                ? { positionsTruncated: page.positionsTruncated }
+                : {}),
             })),
           },
         }

@@ -563,6 +563,7 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
   if (
     quantity === null &&
     !recipe &&
+    !t.beamAssemblies?.length &&
     t.quantity !== null &&
     ["Written", "Counted", "Calculated"].includes(t.quantityMethod ?? "") &&
     !conflicts.length &&
