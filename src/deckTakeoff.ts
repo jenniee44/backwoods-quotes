@@ -4,6 +4,7 @@ import {
   resolveMaterialInputs,
   type MaterialInput,
 } from "../shared/materialInputs";
+import { normalizeSpecification } from "../shared/componentIdentity";
 import { drawingMeasurements } from "../shared/constructionMeasurements";
 import {
   calculators,
@@ -23,7 +24,9 @@ const legacyLabels: Record<string, MaterialInput["field"]> = {
   "layout length": "layoutLength",
   "layout width": "layoutWidth",
   "member length": "memberLength",
+  "joist length": "memberLength",
   "joist spacing": "spacing",
+  "spacing inches": "spacing",
   "component count": "count",
   "actual board width": "boardWidth",
   "board gap": "gap",
@@ -37,12 +40,43 @@ const legacyLabels: Record<string, MaterialInput["field"]> = {
   "pad width": "padWidth",
   "connection count": "connections",
   "connectors per connection": "piecesPerConnection",
+  "hangers per connection": "piecesPerConnection",
+  "fasteners per connection": "piecesPerConnection",
   "railing length": "linearLength",
   "guard length": "linearLength",
 };
 export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
   const result = [...(t.materialInputs ?? [])];
-  for (const fact of t.sourceFacts ?? []) {
+  // Older analyses stored role-labelled measurements as semicolon-separated
+  // evidence, before materialInputs existed. Parse only explicit labels on this
+  // material's evidence, never unrelated dimensions from the whole PDF.
+  const legacyFacts = (t.sourceFacts ?? []).flatMap((fact) => {
+    if (uncertain.test(fact)) return [];
+    const location = t.location?.trim();
+    const clean =
+      location && fact.toLowerCase().startsWith(location.toLowerCase() + ":")
+        ? fact.slice(location.length + 1).trim()
+        : fact;
+    return clean.split(/[;\n]/).map((part) => {
+      const label = part.match(
+        /\b(layout length|layout width|member length|joist length|connection count|component count)\s*[:=]/i,
+      );
+      // A prefixed label is usable only when this same segment identifies the
+      // exact material specification and location. Do not borrow house dimensions.
+      if (
+        label?.index &&
+        location &&
+        part.toLowerCase().includes(location.toLowerCase()) &&
+        t.specification &&
+        normalizeSpecification(part).includes(
+          normalizeSpecification(t.specification),
+        )
+      )
+        return part.slice(label.index).trim();
+      return part.trim();
+    });
+  });
+  for (const fact of legacyFacts) {
     if (uncertain.test(fact)) continue;
     const m = fact.match(/^\s*(?:verified |written )?([a-z ]+)\s*:\s*(.+)$/i);
     const field = m && legacyLabels[m[1].trim().toLowerCase()];
@@ -52,6 +86,12 @@ export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
     let value: number | undefined;
     if (["ft", "in"].includes(unit) && measurements.length === 1)
       value = measurements[0].inches / (unit === "ft" ? 12 : 1);
+    else if (
+      field === "spacing" &&
+      m![1].trim().toLowerCase() === "spacing inches" &&
+      /^\d+(?:\.\d+)?$/.test(m![2].trim())
+    )
+      value = Number(m![2]);
     else if (
       unit === "each" &&
       /^\d+\s*(?:each|pieces?|connections?|connectors?)?\.?$/i.test(
@@ -71,6 +111,76 @@ export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
         readable: true,
       });
   }
+  for (const fact of t.sourceFacts ?? []) {
+    if (
+      uncertain.test(fact) ||
+      !t.location ||
+      !t.specification ||
+      !fact.toLowerCase().includes(t.location.toLowerCase()) ||
+      !normalizeSpecification(fact).includes(
+        normalizeSpecification(t.specification),
+      ) ||
+      /\bnot\b|\bnon[- ]?uniform\b|except|unless/i.test(fact)
+    )
+      continue;
+    const flags: MaterialInput["field"][] = [];
+    if (/uniform layout/i.test(fact) && /no openings/i.test(fact))
+      flags.push("layoutClear");
+    if (/both ends included/i.test(fact)) flags.push("edgeIncluded");
+    for (const field of flags)
+      result.push({
+        field,
+        value: 1,
+        unit: "option",
+        page: t.page,
+        evidence: fact,
+        readable: true,
+      });
+  }
+  // Retain an explicitly counted support observation before calculator
+  // initialization clears the final/approved quantity field. This is a proposed
+  // component count, never a purchase length or a concrete volume.
+  if (
+    result.length > 0 &&
+    t.origin === "ai" &&
+    t.quantity !== null &&
+    Number.isInteger(t.quantity) &&
+    t.quantity > 0 &&
+    /post|footing|pier/i.test(t.description) &&
+    !/concrete (?:volume|supply)/i.test(t.description) &&
+    /^(?:each|posts?|footings?|piers?|assemblies)$/i.test(t.unit) &&
+    ["Written", "Counted"].includes(t.quantityMethod ?? "") &&
+    !!t.sourceFacts?.length &&
+    !t.assumptions?.length &&
+    !uncertain.test([t.notes, ...(t.warnings ?? [])].join(" "))
+  )
+    result.push({
+      field: "count",
+      value: t.quantity,
+      unit: "each",
+      page: t.page,
+      evidence:
+        `Original ${t.quantityMethod} component observation: ${t.quantity} ${t.unit}; ${t.sourceFacts!.join("; ")}`.slice(
+          0,
+          1000,
+        ),
+      readable: true,
+    });
+  // Spacing is a specification, not proof of the layout boundary or openings.
+  const spacing = [
+    ...(t.specification ?? "").matchAll(
+      /(?:@|at)\s*(\d+(?:\.\d+)?)\s*(?:["″]|in(?:ches)?)\s*(?:o[. ]*c\.?|on cent(?:re|er))/gi,
+    ),
+  ];
+  for (const m of spacing)
+    result.push({
+      field: "spacing",
+      value: Number(m[1]),
+      unit: "in",
+      page: t.page,
+      evidence: `Material specification: ${t.specification}`,
+      readable: true,
+    });
   return result;
 }
 export function supportedMaterialInputs(t: TakeoffItem) {
@@ -326,7 +436,7 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     return empty("Confirm included material scope");
   // Contractor-confirmed calculator values may correct the proposed drawing facts.
   // Original facts stay unchanged and available in expandable evidence.
-  if (recipe?.verified) {
+  if (recipe) {
     const map: Record<string, string> = {
       length: kind === "railing" ? "linearLength" : "layoutLength",
       width: "layoutWidth",
@@ -346,7 +456,16 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
       pieces: kind === "hardware" ? "piecesPerConnection" : "pieces",
     };
     for (const [key, field] of Object.entries(map))
-      if (recipe.inputs[key] != null) v[field] = recipe.inputs[key]!;
+      if (Object.hasOwn(recipe.inputs, key)) {
+        // Explicit blanks are contractor decisions, including in older saved analyses.
+        // Project populated proposed inputs without promoting them to verification.
+        if (recipe.inputs[key] === null) delete v[field];
+        else {
+          v[field] = recipe.inputs[key]!;
+          if (recipe.inputSources?.[key])
+            sources[field] = recipe.inputSources[key];
+        }
+      }
     if (recipe.geometryConfirmed === true) {
       v.layoutClear = 1;
       v.edgeIncluded = 1;
@@ -355,7 +474,9 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
   const has = (...keys: string[]) =>
     keys.every((k) => v[k] !== undefined && v[k] > 0);
   let quantity: number | null = null,
-    unit = "each",
+    unit = recipe
+      ? calculators.find((c) => c.kind === kind)!.unit
+      : t.unit || "each",
     formula = "";
   if (kind === "beam-runs" && recipe?.inputs.runs) {
     quantity = recipe.inputs.runs;
@@ -444,6 +565,7 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     !recipe &&
     t.quantity !== null &&
     ["Written", "Counted", "Calculated"].includes(t.quantityMethod ?? "") &&
+    !conflicts.length &&
     !uncertain.test([t.notes, ...(t.warnings ?? [])].join(" "))
   ) {
     quantity = t.quantity;
@@ -452,6 +574,9 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
       t.calculationBasis ||
       "Proposed drawing quantity; verify purchasing basis";
   }
+  // A conflicting source must not produce a seemingly usable proposal. The
+  // original observations remain available for contractor reconciliation.
+  if (conflicts.length && !recipe?.verified) quantity = null;
   const purchase = recipe ? calculateMaterial(recipe, false) : undefined;
   if (quantity === null)
     missing.push(
@@ -473,7 +598,10 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     quantity,
     unit,
     formula,
-    purchase: purchase?.quantity ?? null,
+    purchase:
+      conflicts.length && !recipe?.verified
+        ? null
+        : (purchase?.quantity ?? null),
     purchaseUnit: purchase?.unit || t.unit,
     missing: [...new Set(missing)],
     sources: Object.values(sources),

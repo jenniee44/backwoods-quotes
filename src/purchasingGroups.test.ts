@@ -62,7 +62,7 @@ it("only shows a safely calculated single purchase quantity; conflicting observa
   ).toBeNull();
   expect(
     purchasingGroups(q, [{ ...a, quantityMethod: "Counted" }])[0].quantity,
-  ).toBeNull();
+  ).toBe(13);
 });
 it("keeps different specifications and foundation methods distinct, excludes reference work", () => {
   const a = item("b", "Beam", "3-ply 2x10 PT");

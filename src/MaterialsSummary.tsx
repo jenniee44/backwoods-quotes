@@ -423,7 +423,10 @@ export default function MaterialsSummary({
                       <small>Drawing requirements attached</small>
                     )}
                   </td>
-                  <td data-label="Quantity">
+                  <td
+                    data-label="Quantity"
+                    title={group.quantity === null ? group.reason : group.basis}
+                  >
                     <strong>
                       {group.quantity === null
                         ? "To confirm"
@@ -431,7 +434,7 @@ export default function MaterialsSummary({
                     </strong>
                   </td>
                   <td data-label="Unit">
-                    {group.quantity === null ? "—" : group.unit}
+                    {group.unit || "To confirm"}
                     {materialStockLength(t) !== null && (
                       <small>{formatFeet(materialStockLength(t)!)}</small>
                     )}
@@ -441,7 +444,7 @@ export default function MaterialsSummary({
                       ? "Needs review"
                       : readyForEstimate(q, t)
                         ? "Verified"
-                        : "Calculated"}
+                        : "Proposed — verify"}
                   </td>
                   <td data-label="Review">
                     <button

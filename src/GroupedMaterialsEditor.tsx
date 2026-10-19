@@ -53,7 +53,7 @@ export default function GroupedMaterialsEditor({
                           ? "To confirm"
                           : Number(group.quantity.toPrecision(8))}
                       </span>
-                      <span>{group.quantity === null ? "—" : group.unit}</span>
+                      <span>{group.unit || "To confirm"}</span>
                       <span>
                         {group.items.every(includedScope)
                           ? "Included"

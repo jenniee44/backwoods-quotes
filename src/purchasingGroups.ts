@@ -1,18 +1,28 @@
-import { assertScope, unresolvedFoundationAlternative } from "./takeoffScope";
+import { unresolvedFoundationAlternative } from "./takeoffScope";
 import { calculateMaterial } from "../shared/materialCalculators";
 import type { Quote, TakeoffItem } from "./model";
-import { normalizeSpecification } from "../shared/componentIdentity";
+import {
+  normalizeSpecification,
+  repeatedMaterialKey,
+  repeatEvidenceEligible,
+} from "../shared/componentIdentity";
+import { materialCategoryFor } from "../shared/takeoff";
 import {
   friendlyMaterialName,
   preliminaryDisposition,
 } from "./preliminaryMaterials";
 import { readyForEstimate } from "./takeoffReview";
+import {
+  supportedMaterialInputs,
+  materialTakeoffProposal,
+} from "./deckTakeoff";
+import { includedScope } from "./takeoffScope";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 export function quantityReason(q: Quote, t: TakeoffItem) {
   if (unresolvedFoundationAlternative(q, t))
     return "Confirm the foundation method: concrete footings or helical piles.";
   if (t.calculation) {
-    const missing = calculateMaterial(t.calculation).missing;
+    const missing = calculateMaterial(t.calculation, false).missing;
     if (missing.length)
       return "Missing calculator inputs: " + missing.join(", ") + ".";
     if (!t.calculation.verified)
@@ -59,38 +69,79 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
   }
   return [...groups.values()].map((g) => {
     const t = g.items[0];
-    let scopeOkay = true;
-    try {
-      assertScope(q, t);
-    } catch {
-      scopeOkay = false;
-    }
+    const proposal = materialTakeoffProposal(t);
+    const key = repeatedMaterialKey(t, materialCategoryFor(t));
+    const proposals = g.items.map(materialTakeoffProposal);
+    const confirmedRepeat =
+      g.items.length > 1 &&
+      !!key &&
+      g.items.every(
+        (item, i) =>
+          repeatEvidenceEligible(item) &&
+          repeatedMaterialKey(item, materialCategoryFor(item)) === key &&
+          JSON.stringify([
+            proposals[i].quantity,
+            proposals[i].unit,
+            proposals[i].purchase,
+            proposals[i].purchaseUnit,
+          ]) ===
+            JSON.stringify([
+              proposal.quantity,
+              proposal.unit,
+              proposal.purchase,
+              proposal.purchaseUnit,
+            ]) &&
+          JSON.stringify(item.calculation?.inputs) ===
+            JSON.stringify(t.calculation?.inputs) &&
+          JSON.stringify(supportedMaterialInputs(item).values) ===
+            JSON.stringify(supportedMaterialInputs(t).values) &&
+          includedScope(item) &&
+          item.alternativeGroup === t.alternativeGroup &&
+          item.alternativeOption === t.alternativeOption &&
+          (item.sourceFacts ?? []).some((f) =>
+            /repeated view of (?:the )?same (?:physical )?(?:assembly|component)|same physical assembly/i.test(
+              f,
+            ),
+          ),
+      );
     const safe =
-      scopeOkay &&
-      g.items.length === 1 &&
-      t.quantity !== null &&
-      preliminaryDisposition(t, q) === "material" &&
-      (readyForEstimate(q, t) ||
-        (t.quantityMethod === "Calculated" &&
-          !!t.calculationBasis?.trim() &&
-          !!t.sourceFacts?.length &&
-          ["Medium", "High"].includes(t.confidence) &&
-          !t.assumptions?.length &&
-          (!t.calculation || t.calculation.verified) &&
-          /^(boards|each|sq ft|sq\. ft|square feet)$/i.test(t.unit) &&
-          !/conflict|unreadable|uncertain|alternative/i.test(
-            [t.notes, ...(t.warnings ?? [])].join(" "),
-          )));
+      (g.items.length === 1 || confirmedRepeat) &&
+      includedScope(t) &&
+      !unresolvedFoundationAlternative(q, t) &&
+      !/conflict|unreadable|uncertain/i.test((t.warnings ?? []).join(" "));
+    // Display proposals before approval. Never write them into the approved
+    // quantity field or bypass the separate conversion checks.
+    const approved = readyForEstimate(q, t);
+    const quantity = safe
+      ? approved
+        ? t.quantity
+        : (proposal.purchase ?? proposal.quantity)
+      : null;
+    const unit = approved
+      ? t.unit
+      : proposal.purchase !== null
+        ? proposal.purchaseUnit
+        : proposal.unit;
     return {
       ...g,
-      quantity: safe ? t.quantity : null,
-      unit: t.unit,
-      reason: safe
-        ? "Verify calculated inputs before approval."
-        : g.items.length > 1
-          ? "Multiple source observations: confirm separate assemblies or repeated views. Counts are not added. " +
-            quantityReason({ ...q, takeoff: [] }, t)
-          : quantityReason(q, t),
+      quantity,
+      unit,
+      basis:
+        !approved && proposal.purchase === null
+          ? "Material quantity; purchasing requirements still require verification."
+          : "Purchase quantity; contractor approval required before conversion.",
+      reason:
+        quantity !== null
+          ? (confirmedRepeat
+              ? "Repeated observations of the same assembly; quantity shown once, never added. "
+              : "") +
+            (proposal.purchase === null && proposal.missing.length
+              ? proposal.missing.join("; ")
+              : "Verify calculated inputs before approval.")
+          : g.items.length > 1
+            ? "Multiple source observations: confirm separate assemblies or repeated views. Counts are not added. " +
+              quantityReason({ ...q, takeoff: [] }, t)
+            : quantityReason(q, t),
     };
   });
 }
