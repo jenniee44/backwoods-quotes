@@ -1,3 +1,11 @@
+import SubmittedImageGallery from "./SubmittedImageGallery";
+import {
+  archiveKey,
+  discardImageArchive,
+  retainImages,
+  sourceHash,
+  type SubmittedImage,
+} from "./analysisImageArchive";
 import type { PreparedDetail } from "./detailReadability";
 import { assertDetailInclusion } from "./detailPackage";
 import { analysisBatches, analyzeBatches } from "./analysisBatches";
@@ -207,6 +215,7 @@ export default function PlansTakeoff({
   latest.current = q;
   const request = useRef<AbortController | null>(null);
   const [analysisState, setAnalysisState] = useState("Ready to analyze");
+  const [readingBudget, setReadingBudget] = useState(8);
   const [analysisError, setAnalysisError] = useState("");
   const [reviewError, setReviewError] = useState("");
   const [inputNotes, setInputNotes] = useState<string[]>([]);
@@ -258,7 +267,22 @@ export default function PlansTakeoff({
       const documents = structuredClone(analysisPackage.documents);
       assertDetailInclusion(selectedDocuments, documents);
       analysisBatches(documents);
-      const fingerprint = await documentFingerprint(documents);
+      const sourceFingerprint = await documentFingerprint(documents);
+      const pageTurns = Object.fromEntries(
+        documents.map((d) => [
+          d.id,
+          orientations[d.id]?.source === d.data ? orientations[d.id].pages : {},
+        ]),
+      );
+      const orientationKey = Object.values(pageTurns).some((p) =>
+        Object.values(p).some((turn) => turn !== 0),
+      )
+        ? `:orientation-${JSON.stringify(pageTurns)}`
+        : "";
+      const fingerprint =
+        sourceFingerprint +
+        (readingBudget === 8 ? "" : `:reading-${readingBudget}`) +
+        orientationKey;
       if (
         latest.current.analysisReports?.some(
           (report) => report.fingerprint === fingerprint,
@@ -285,11 +309,13 @@ export default function PlansTakeoff({
           : {}),
       }));
       const automatic = originalOnlyConfirmed
-        ? { documents: textWithSelectedDetails, notes: [] }
+        ? { documents: textWithSelectedDetails, notes: [], reviewViews: [] }
         : await supplementWholePdfs(
             textWithSelectedDetails,
             controller.signal,
             (message) => setInputNotes([message]),
+            readingBudget,
+            pageTurns,
           );
       const prepared = automatic.documents;
       // Explicit selections remain intact. Automatic supplements are temporary and
@@ -341,12 +367,58 @@ export default function PlansTakeoff({
       ]);
       setAnalysisState("Analyzing plans");
       let submittedDetails = 0;
+      const submittedImages: SubmittedImage[] = [];
+      const hashes = new Map(
+        await Promise.all(
+          prepared.map(async (d) => [d.id, await sourceHash(d.data)] as const),
+        ),
+      );
       const result = await analyzeBatches(
         prepared,
         controller.signal,
         async (docs, signal) => {
           const result = await planAnalysisService.analyze(docs, signal);
           submittedDetails += analysisPackageSize(docs).detailCount;
+          for (const d of docs)
+            for (const region of d.detailRegions ?? []) {
+              const diagnostic = [
+                ...automatic.reviewViews,
+                ...validDetails.map((v) => ({
+                  documentId: v.documentId,
+                  region: v.region,
+                })),
+              ].find(
+                (v) =>
+                  v.documentId === d.id &&
+                  v.region.page === region.page &&
+                  v.region.rotation === region.rotation &&
+                  v.region.x === region.x &&
+                  v.region.y === region.y,
+              );
+              submittedImages.push({
+                documentId: d.id,
+                documentName: d.name,
+                sourceHash: hashes.get(d.id)!,
+                sourceDetailView:
+                  1 +
+                  (prepared
+                    .find((source) => source.id === d.id)
+                    ?.detailRegions?.findIndex(
+                      (r) =>
+                        r.page === region.page &&
+                        r.x === region.x &&
+                        r.y === region.y &&
+                        r.rotation === region.rotation &&
+                        r.data === region.data,
+                    ) ?? -1),
+                region: {
+                  ...region,
+                  orientationUncertain: diagnostic?.region.orientationUncertain,
+                  cropNeedsReview: diagnostic?.region.cropNeedsReview,
+                  inspectionNote: diagnostic?.region.inspectionNote,
+                },
+              });
+            }
           setInputNotes((notes) => [
             ...notes.filter((n) => !n.startsWith("Submitted detail views:")),
             `Submitted detail views: ${submittedDetails} of ${analysisPackageSize(prepared).detailCount}. Original files included in every request.`,
@@ -374,19 +446,48 @@ export default function PlansTakeoff({
                   }
                 : {}),
             })),
-        )) !== fingerprint
+        )) !== sourceFingerprint
       )
         throw new Error(
           "Source files changed during analysis. Results were not added; analyze the current files.",
         );
-      onChange(
-        addAnalysisSuggestions(
-          latest.current,
-          deriveDrawingQuantities(result, prepared),
-          fingerprint,
-          selectedDocuments,
-        ),
+      const reportId = id();
+      const retained = submittedImages.length
+        ? await retainImages({
+            key: archiveKey(latest.current.id, reportId),
+            quoteId: latest.current.id,
+            images: submittedImages,
+          })
+        : true;
+      if (
+        controller.signal.aborted ||
+        !prepared.every((d) =>
+          latest.current.documents.some(
+            (source) => source.id === d.id && source.data === d.data,
+          ),
+        )
+      ) {
+        await discardImageArchive(archiveKey(latest.current.id, reportId));
+        controller.signal.throwIfAborted();
+        throw new Error(
+          "Source changed while retaining images. Analyze the current source; no results were added.",
+        );
+      }
+      const next = addAnalysisSuggestions(
+        latest.current,
+        deriveDrawingQuantities(result, prepared),
+        fingerprint,
+        selectedDocuments,
+        reportId,
       );
+      const report = next.analysisReports!.at(-1)!;
+      report.aiDetails = {
+        submittedCount: submittedImages.length,
+        retentionMessage: retained
+          ? "Saved privately on this device. Images are not included in quote exports or customer PDFs."
+          : "Images are available for this session only. Browser image storage is full or unavailable; existing quote data was not replaced. Reopening may not retain these images.",
+      };
+      onChange(next);
       setAdvancedReview(false);
       setReviewTarget(null);
       requestAnimationFrame(() =>
@@ -788,6 +889,51 @@ export default function PlansTakeoff({
           <summary>
             Plan summary · {new Date(report.createdAt).toLocaleDateString()}
           </summary>
+          {report.aiDetails && (
+            <SubmittedImageGallery
+              quoteId={q.id}
+              reportId={report.id}
+              count={report.aiDetails.submittedCount}
+              message={report.aiDetails.retentionMessage}
+              documents={q.documents}
+              locked={locked || busy}
+              onSupplement={(documentId, region, companions) => {
+                const original = q.documents.find((d) => d.id === documentId);
+                if (!original) return;
+                if (
+                  validDetails.filter((v) => v.documentId !== documentId)
+                    .length +
+                    companions.length +
+                    1 >
+                  maxDetailRegions
+                ) {
+                  setAnalysisError(
+                    "Remove a prepared detail before adding another (24 total limit).",
+                  );
+                  return;
+                }
+                setDetailViews((previous) => [
+                  ...previous.filter((v) => v.documentId !== documentId),
+                  ...companions.map((region) => ({
+                    id: id(),
+                    documentId,
+                    originalData: original.data,
+                    region,
+                    automatic: true,
+                  })),
+                  { id: id(), documentId, originalData: original.data, region },
+                ]);
+                setDetailsInspected(false);
+                setOriginalOnlyConfirmed(false);
+                setExcludedDocuments((ids) =>
+                  ids.filter((i) => i !== documentId),
+                );
+                setInputNotes([
+                  "Corrected view prepared for a future analysis. Review the manual detail and explicitly choose Analyze Plans; prior images and approvals remain unchanged.",
+                ]);
+              }}
+            />
+          )}
           {report.project && (
             <>
               <p>
@@ -1095,37 +1241,72 @@ export default function PlansTakeoff({
           }}
         />
       )}
+      <details className="analysis-report">
+        <summary>Reading options (optional)</summary>
+        <label>
+          Automatic reading-image budget
+          <select
+            aria-label="Automatic reading-image budget"
+            disabled={busy || locked}
+            value={readingBudget}
+            onChange={(e) => setReadingBudget(Number(e.target.value))}
+          >
+            <option value={4}>4 — quicker / lower image cost</option>
+            <option value={8}>8 — balanced (default)</option>
+            <option value={12}>12 — more detail / higher image cost</option>
+          </select>
+        </label>
+        <p className="tiny">
+          This is a maximum, not a target. Useful regions only; the original PDF
+          is always included. Existing file/image limits may reduce this count.
+          More images may increase API cost and preparation time. Viewing saved
+          images is free of AI requests.
+        </p>
+      </details>
+      <p className="tiny">
+        Analyze Plans automatically prepares reading images (8 by default within
+        the size/cost budget). No separate detail-generation step is required.
+        Optional manual corrections can supplement a future analysis.
+      </p>
       {current?.type === "application/pdf" && (
-        <AutoDetailSelection
-          source={current}
-          existing={validDetails
-            .filter((v) => v.documentId === current.id)
-            .map((v) => v.region)}
-          remainingCapacity={maxDetailRegions - validDetails.length}
-          remainingAutomatic={Math.max(
-            0,
-            20 - validDetails.filter((v) => v.automatic).length,
-          )}
-          disabled={locked || busy || uploading || detailProcessing}
-          onBusy={setAutomaticRendering}
-          onAdd={(regions) => {
-            setDetailsInspected(false);
-            setOriginalOnlyConfirmed(false);
-            setExcludedDocuments((ids) =>
-              ids.filter((id) => id !== current.id),
-            );
-            setDetailViews((previous) => [
-              ...previous,
-              ...regions.map((region) => ({
-                id: id(),
-                documentId: current.id,
-                originalData: current.data,
-                region,
-                automatic: true,
-              })),
-            ]);
-          }}
-        />
+        <details className="optional-detail-tools">
+          <summary>Optional: prepare additional detail views</summary>
+          <AutoDetailSelection
+            source={current}
+            rotations={
+              orientations[current.id]?.source === current.data
+                ? orientations[current.id].pages
+                : {}
+            }
+            existing={validDetails
+              .filter((v) => v.documentId === current.id)
+              .map((v) => v.region)}
+            remainingCapacity={maxDetailRegions - validDetails.length}
+            remainingAutomatic={Math.max(
+              0,
+              20 - validDetails.filter((v) => v.automatic).length,
+            )}
+            disabled={locked || busy || uploading || detailProcessing}
+            onBusy={setAutomaticRendering}
+            onAdd={(regions) => {
+              setDetailsInspected(false);
+              setOriginalOnlyConfirmed(false);
+              setExcludedDocuments((ids) =>
+                ids.filter((id) => id !== current.id),
+              );
+              setDetailViews((previous) => [
+                ...previous,
+                ...regions.map((region) => ({
+                  id: id(),
+                  documentId: current.id,
+                  originalData: current.data,
+                  region,
+                  automatic: true,
+                })),
+              ]);
+            }}
+          />
+        </details>
       )}
       {!!validDetails.length && (
         <div className="pdf-detail-list">

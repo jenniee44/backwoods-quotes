@@ -21,7 +21,10 @@ export default function PdfPreview({
   onDetailBusy?: (busy: boolean) => void;
 }) {
   const baseRotations = useRef(
-    new WeakMap<PDFDocumentProxy, Map<number, number>>(),
+    new WeakMap<
+      PDFDocumentProxy,
+      Map<number, { rotation: PdfRotation; reliable: boolean }>
+    >(),
   );
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
@@ -30,6 +33,7 @@ export default function PdfPreview({
     page: number;
     rotation: PdfRotation;
     viewerRotation: PdfRotation;
+    orientationReliable: boolean;
     width: number;
     height: number;
   } | null>(null);
@@ -100,16 +104,17 @@ export default function PdfPreview({
           base = readableRotation(
             p.rotate,
             content.items.flatMap((i) => ("str" in i ? [i] : [])),
-          ).rotation;
+          );
           cache.set(page, base);
         }
         if (canceled) return;
-        const orientation = normalizeRotation(base + rotation);
+        const orientation = normalizeRotation(base.rotation + rotation);
         const viewport = p.getViewport({ scale: 1, rotation: orientation });
         setPageSize({
           page,
           rotation: orientation,
           viewerRotation: rotation,
+          orientationReliable: base.reliable,
           width: viewport.width,
           height: viewport.height,
         });
@@ -566,6 +571,13 @@ export default function PdfPreview({
               : "Original PDF view ready"}{" "}
           · display raster approximately{" "}
           {Math.round(72 * scale * pixels.density)} DPI
+        </p>
+      )}
+      {pageReady && !pageSize?.orientationReliable && (
+        <p className="tiny" role="status">
+          Drawing orientation uncertain — original orientation retained. Use
+          Rotate left/right to check construction text; no measurements were
+          inferred.
         </p>
       )}
       {onDetail && document && (

@@ -87,11 +87,11 @@ export function analysisPageRegions(
 }
 export function selectAnalysisRegions(
   candidates: DetailSuggestion[],
-  limit: number,
+  limit = 8,
   existing: DetailSuggestion[] = [],
 ) {
   const selected: DetailSuggestion[] = [];
-  while (selected.length < Math.min(8, Math.max(0, limit))) {
+  while (selected.length < Math.min(12, Math.max(0, limit))) {
     const eligible = candidates.filter(
       (c) => ![...selected, ...existing].some((p) => overlap(c, p) > 0.45),
     );

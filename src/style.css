@@ -2939,3 +2939,48 @@ details[open] > summary {
     padding: 0.65rem;
   }
 }
+
+.submitted-image-gallery {
+  margin: 0.65rem 0;
+}
+.submitted-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+.submitted-image-pan {
+  max-height: 65vh;
+  overflow: auto;
+  overscroll-behavior: auto;
+  border: 1px solid var(--line, #ddd);
+  background: #eee;
+  touch-action: pan-x pan-y;
+}
+.submitted-image-pan img {
+  display: block;
+  height: auto;
+}
+.submitted-inspector {
+  padding: 0.65rem;
+  border: 1px solid var(--line, #ddd);
+  min-width: 0;
+}
+.submitted-source-map {
+  position: relative;
+  max-width: 600px;
+  margin: 0.6rem 0;
+}
+.submitted-source-map img {
+  display: block;
+  width: 100%;
+}
+.submitted-source-map span {
+  position: absolute;
+  border: 3px solid #e87a23;
+  background: #e87a2326;
+  pointer-events: none;
+}
+.optional-detail-tools {
+  margin: 0.5rem 0;
+}

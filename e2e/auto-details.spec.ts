@@ -18,6 +18,9 @@ test("automatic 250 DPI suggestions are inspected, editable, deduplicated, priva
     buffer: pdf,
   });
   await expect(page.getByLabel("Drawing page 1")).toBeVisible();
+  await page.locator(".optional-detail-tools").evaluate((node) => {
+    (node as HTMLDetailsElement).open = true;
+  });
   await page
     .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
     .click();
@@ -37,6 +40,9 @@ test("automatic 250 DPI suggestions are inspected, editable, deduplicated, priva
   await views.getByLabel("Left edge (%)").fill("1");
   await views.getByRole("button", { name: "Apply region adjustment" }).click();
   await expect(views.first()).toContainText("Selected region: 26");
+  await page.locator(".optional-detail-tools").evaluate((node) => {
+    (node as HTMLDetailsElement).open = true;
+  });
   await page
     .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
     .click();
@@ -90,6 +96,9 @@ test("scanned drawings receive honest coverage suggestions; deleting views prese
     buffer: pdf,
   });
   await expect(page.getByLabel("Drawing page 1")).toBeVisible();
+  await page.locator(".optional-detail-tools").evaluate((node) => {
+    (node as HTMLDetailsElement).open = true;
+  });
   await page
     .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
     .click();
@@ -144,6 +153,9 @@ test("automatic overlap suppression stays scoped to the source PDF", async ({
     await expect(
       page.getByRole("link", { name: `Download ${name}`, exact: true }),
     ).toBeVisible();
+    await page.locator(".optional-detail-tools").evaluate((node) => {
+      (node as HTMLDetailsElement).open = true;
+    });
     await page
       .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
       .click();

@@ -111,6 +111,7 @@ export function addAnalysisSuggestions(
   result: PlanAnalysisResult,
   fingerprint?: string,
   analyzedDocuments = q.documents,
+  analysisId = id(),
 ): Quote {
   if (q.status !== "Draft")
     throw new Error("Only draft quotes accept plan suggestions.");
@@ -123,7 +124,6 @@ export function addAnalysisSuggestions(
     );
   const drawingSuggestions = result.suggestions;
   result = prepareConstructionAnalysis(result);
-  const analysisId = id();
   const suggestions = result.suggestions.map((item) => {
     if (
       !item.description.trim() ||

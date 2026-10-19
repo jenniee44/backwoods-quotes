@@ -1,3 +1,4 @@
+import { normalizeRotation, type PdfRotation } from "../shared/pdf";
 import {
   analysisPageRegions,
   selectAnalysisRegions,
@@ -18,6 +19,7 @@ export async function generatePdfDetails(
   existing: PdfDetailRegion[] = [],
   progress: (s: string) => void = () => {},
   purpose: "review" | "analysis" = "review",
+  pageTurns: Record<number, PdfRotation> = {},
 ) {
   if (pdf.numPages > 50)
     throw new Error("PDF exceeds the 50-page analysis limit.");
@@ -33,6 +35,9 @@ export async function generatePdfDetails(
     const orientation = readableRotation(
       p.rotate,
       content.items.flatMap((i) => ("str" in i ? [i] : [])),
+    );
+    orientation.rotation = normalizeRotation(
+      orientation.rotation + (pageTurns[page] ?? 0),
     );
     if (orientation.rotation !== p.rotate) corrected++;
     const v = p.getViewport({ scale: 1, rotation: orientation.rotation });
@@ -104,6 +109,15 @@ export async function generatePdfDetails(
         region,
         content.items.flatMap((i) => ("str" in i ? [i] : [])),
       );
+      if (pageTurns[region.page] !== undefined) {
+        // An explicit viewer override is authoritative for future captures.
+        Object.assign(oriented, region, {
+          rotation: region.rotation,
+          inspectionNote:
+            "Manual viewer orientation applied. Inspect the submitted image for legibility.",
+          orientationUncertain: true,
+        });
+      }
       const capture = await renderPdfDetail(p, oriented, oriented.rotation);
       if (oriented.rotation !== region.rotation) detailCorrected++;
       views.push({

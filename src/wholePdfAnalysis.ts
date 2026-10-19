@@ -15,11 +15,23 @@ export async function supplementWholePdfs(
   documents: AnalysisDocument[],
   signal: AbortSignal,
   progress: (s: string) => void = () => {},
+  readingBudget = 8,
+  pageTurns: Record<
+    string,
+    Record<number, import("../shared/pdf").PdfRotation>
+  > = {},
 ) {
   const result = structuredClone(documents);
   const notes: string[] = [];
+  const reviewViews: {
+    documentId: string;
+    region: import("./detailReadability").PreparedDetail;
+  }[] = [];
   let remaining = maxAnalysisBytes - analysisPackageSize(result).total;
-  let capacity = Math.min(8, 24 - analysisPackageSize(result).detailCount);
+  let capacity = Math.min(
+    [4, 8, 12].includes(readingBudget) ? readingBudget : 8,
+    24 - analysisPackageSize(result).detailCount,
+  );
   for (const d of result) {
     signal.throwIfAborted();
     if (d.type !== "application/pdf" || d.detailRegions?.length) continue;
@@ -45,9 +57,11 @@ export async function supplementWholePdfs(
         [],
         progress,
         "analysis",
+        pageTurns[d.id] ?? {},
       );
       const included = [];
       let skipped = 0;
+      let uncertain = 0;
       for (const view of generated.views) {
         signal.throwIfAborted();
         const bytes = dataBytes(view.data);
@@ -66,17 +80,16 @@ export async function supplementWholePdfs(
         included.push(region);
         remaining -= bytes;
         capacity--;
-        if (orientationUncertain || cropNeedsReview)
-          notes.push(
-            d.name +
-              ", page " +
-              view.page +
-              ": automatic supplement orientation/crop is uncertain; unreadable details still require contractor input.",
-          );
+        reviewViews.push({ documentId: d.id, region: view });
+        if (orientationUncertain || cropNeedsReview) uncertain++;
         void inspectionNote;
         void reviewGroup;
       }
       if (included.length) d.detailRegions = included;
+      if (uncertain)
+        notes.push(
+          `${d.name}: ${uncertain} automatic reading images need orientation/crop inspection. Open View AI Detail Images after analysis. Unreadable details still require contractor input.`,
+        );
       notes.push(
         d.name +
           ": " +
@@ -112,5 +125,5 @@ export async function supplementWholePdfs(
     }
   }
   signal.throwIfAborted();
-  return { documents: validateDocuments(result), notes };
+  return { documents: validateDocuments(result), notes, reviewViews };
 }

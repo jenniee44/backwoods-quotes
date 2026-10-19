@@ -119,7 +119,7 @@ export function chooseDetailOrientation(
     ranked[0].weight / total >= 0.55 &&
     ranked[0].weight > ranked[1].weight;
   return {
-    rotation: reliable || suggested ? ranked[0].rotation : fallback,
+    rotation: reliable ? ranked[0].rotation : fallback,
     reliable,
     suggested: suggested && !reliable,
     scores,
@@ -181,7 +181,7 @@ export function orientDetail<
     inspectionNote: choice.reliable
       ? "Text direction checked for this detail. Verify legibility before analysis."
       : choice.suggested
-        ? "Mixed text directions — suggested orientation needs manual inspection. Rotate if necessary."
+        ? "Mixed text directions — source orientation retained; inspect and rotate manually if necessary."
         : "Orientation uncertain — inspect and rotate this detail manually. No OCR guesses.",
     reviewGroup: region.label || "Manual details",
   };

@@ -22,7 +22,14 @@ it.each([0, 90, 180, 270])(
       readableRotation(180, [
         {
           str: "READABLE BEAM SPECIFICATIONS",
-          transform: [6 * Math.cos(rad), 6 * Math.sin(rad), 0, 6, 0, 0],
+          transform: [
+            6 * Math.cos(rad),
+            6 * Math.sin(rad),
+            -6 * Math.sin(rad),
+            6 * Math.cos(rad),
+            0,
+            0,
+          ],
         },
       ]).rotation,
     ).toBe(angle);
@@ -61,4 +68,15 @@ it("quarter turns preserve the physical crop and round-trip all bounds", () => {
   let full = r;
   for (let i = 0; i < 4; i++) full = rotateDetailBounds(full, 90);
   expect(full).toEqual(r);
+});
+it("construction annotations override a long reversed title block consistently with detail orientation", () => {
+  const items = [
+    {
+      str: "DRAWN BY PROJECT ADDRESS ".repeat(80),
+      transform: [-6, 0, 0, -6, 10, 10],
+    },
+    { str: "BEAM 3PLY 2X10 PT", transform: [6, 0, 0, 6, 30, 30] },
+    { str: "JOISTS AT 16 IN O/C", transform: [6, 0, 0, 6, 40, 40] },
+  ];
+  expect(readableRotation(180, items)).toEqual({ rotation: 0, reliable: true });
 });

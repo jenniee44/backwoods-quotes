@@ -12,6 +12,9 @@ async function setup(page: import("@playwright/test").Page, pages = 1) {
     buffer: Buffer.from(constructionPdf({ pages })),
   });
   await expect(page.getByLabel("Drawing page 1")).toBeVisible();
+  await page.locator(".optional-detail-tools").evaluate((node) => {
+    (node as HTMLDetailsElement).open = true;
+  });
   await page
     .getByRole("button", { name: "Auto-Generate Detail Views", exact: true })
     .click();

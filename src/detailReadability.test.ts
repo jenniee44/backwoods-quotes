@@ -173,14 +173,14 @@ it("readable safety/status warnings can establish their own upright orientation"
   ).toMatchObject({ rotation: 0, reliable: true });
 });
 
-it("a supported local majority suggests an upright view while remaining explicitly uncertain", () => {
+it("an uncertain local majority retains source orientation for manual review", () => {
   const result = chooseDetailOrientation(180, [
     text(0, 100, 100),
     text(0, 100, 200),
     text(90),
   ]);
   expect(result).toMatchObject({
-    rotation: 0,
+    rotation: 180,
     reliable: false,
     suggested: true,
   });
@@ -194,7 +194,8 @@ it("duplicate text overlays cannot overpower independent upright notes", () => {
     text(0, 100, 400),
     text(0, 100, 500),
   ]);
-  expect(result.rotation).toBe(0);
+  expect(result.reliable).toBe(false);
+  expect(result.rotation).toBe(180);
 });
 it("one long reversed note does not silently dominate multiple local member annotations", () => {
   const result = chooseDetailOrientation(180, [
@@ -203,5 +204,6 @@ it("one long reversed note does not silently dominate multiple local member anno
     text(0, 100, 300),
     text(0, 100, 400),
   ]);
-  expect(result.rotation).toBe(0);
+  expect(result.reliable).toBe(false);
+  expect(result.rotation).toBe(180);
 });

@@ -5,7 +5,12 @@ import {
 import { encodeDetailCanvas } from "./optimizeAnalysisPackage";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { detailDpi, detailRenderSize, maxPdfTextChars } from "../shared/pdf";
+import {
+  detailDpi,
+  detailRenderSize,
+  maxPdfTextChars,
+  normalizeRotation,
+} from "../shared/pdf";
 import type { PdfDetailRegion, PdfTextLayer, PdfRotation } from "../shared/pdf";
 export async function loadPdfSource(data: string) {
   const pdf = await import("pdfjs-dist");
@@ -120,6 +125,7 @@ export async function renderPdfDetail(
     const encoded = encodeDetailCanvas(canvas);
     return {
       ...region,
+      sourcePageRotation: normalizeRotation(page.rotate),
       rotation,
       page: page.pageNumber,
       pageWidth: original.width,

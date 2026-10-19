@@ -160,6 +160,7 @@ export type Quote = {
     id: string;
     fingerprint: string;
     createdAt: string;
+    aiDetails?: { submittedCount: number; retentionMessage: string };
     summary?: ContractorSummary;
     duplicatesReduced?: number;
     sourceDocuments?: { id: string; name: string }[];
@@ -1291,6 +1292,12 @@ function validExtensions(v: unknown) {
         (report) =>
           record(report) &&
           strings(report, ["id", "fingerprint", "createdAt"]) &&
+          (report.aiDetails === undefined ||
+            (record(report.aiDetails) &&
+              Number.isInteger(report.aiDetails.submittedCount) &&
+              Number(report.aiDetails.submittedCount) >= 0 &&
+              Number(report.aiDetails.submittedCount) <= 24 &&
+              typeof report.aiDetails.retentionMessage === "string")) &&
           (report.summary === undefined ||
             validContractorSummary(report.summary)) &&
           (report.duplicatesReduced === undefined ||

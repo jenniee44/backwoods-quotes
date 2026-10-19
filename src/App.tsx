@@ -1,3 +1,4 @@
+import { removeQuoteImages } from "./analysisImageArchive";
 import { useState, useEffect, useRef } from "react";
 import CustomerScopeEditor from "./CustomerScopeEditor";
 import CustomerQuote from "./CustomerQuote";
@@ -328,6 +329,12 @@ export default function App() {
     try {
       const next = deleteQuote(storeRef.current, target.id);
       persistQuoteDeletion(next, target.id);
+      void removeQuoteImages(target.id).then((ok) => {
+        if (!ok)
+          setNotice(
+            "Quote deleted; private analysis-image cleanup could not be verified because browser storage is unavailable. Retry when storage access is restored or clear this site’s browser data.",
+          );
+      });
       setStore(next);
       setEditing(null);
       setPreview(null);

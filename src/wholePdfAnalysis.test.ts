@@ -70,6 +70,7 @@ it("retains complete original bytes and selectable text with bounded original-re
     [],
     expect.anything(),
     "analysis",
+    {},
   );
   expect(source.detailRegions).toBeUndefined();
   expect(destroy).toHaveBeenCalled();
@@ -109,4 +110,85 @@ it("cancellation prevents submission", async () => {
   c.abort();
   await expect(supplementWholePdfs([source], c.signal)).rejects.toThrow();
   expect(loadPdfSource).not.toHaveBeenCalled();
+});
+it("aggregates crop warnings while preserving internal review diagnostics separately from submitted metadata", async () => {
+  vi.mocked(generatePdfDetails).mockResolvedValue({
+    views: [
+      {
+        ...detail,
+        orientationUncertain: true,
+        inspectionNote: "Synthetic uncertain orientation",
+      },
+      {
+        ...detail,
+        x: 200,
+        orientationUncertain: true,
+        inspectionNote: "Synthetic uncertain orientation",
+      },
+    ],
+    scans: 0,
+    corrected: 0,
+    detailCorrected: 0,
+    errors: [],
+  });
+  const r = await supplementWholePdfs([source], new AbortController().signal);
+  expect(
+    r.notes.filter((n) => n.includes("orientation/crop inspection")),
+  ).toHaveLength(1);
+  expect(r.reviewViews).toHaveLength(2);
+  expect(r.reviewViews[0].region.orientationUncertain).toBe(true);
+  expect(r.documents[0].detailRegions![0]).not.toHaveProperty(
+    "orientationUncertain",
+  );
+});
+it("supports an explicit 4/8/12 reading budget within existing capacity and request limits", async () => {
+  await supplementWholePdfs(
+    [source],
+    new AbortController().signal,
+    () => {},
+    12,
+  );
+  expect(generatePdfDetails).toHaveBeenLastCalledWith(
+    expect.anything(),
+    expect.anything(),
+    12,
+    [],
+    expect.anything(),
+    "analysis",
+    {},
+  );
+  await supplementWholePdfs(
+    [source],
+    new AbortController().signal,
+    () => {},
+    100,
+  );
+  expect(generatePdfDetails).toHaveBeenLastCalledWith(
+    expect.anything(),
+    expect.anything(),
+    8,
+    [],
+    expect.anything(),
+    "analysis",
+    {},
+  );
+});
+it("passes explicit page viewer rotations through to crop preparation without rewriting original bytes", async () => {
+  const r = await supplementWholePdfs(
+    [source],
+    new AbortController().signal,
+    () => {},
+    8,
+    { plan: { 2: 180 } },
+  );
+  expect(generatePdfDetails).toHaveBeenLastCalledWith(
+    expect.anything(),
+    expect.anything(),
+    8,
+    [],
+    expect.anything(),
+    "analysis",
+    { 2: 180 },
+  );
+  expect(r.documents[0].data).toBe(source.data);
 });

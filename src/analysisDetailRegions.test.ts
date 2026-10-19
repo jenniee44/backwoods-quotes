@@ -50,7 +50,7 @@ it("distributes an economical eight-view budget across pages and topics without 
     label: i < 10 ? "Beam / support association" : "Footings / posts",
     score: 30,
   }));
-  const selected = selectAnalysisRegions(candidates, 24);
+  const selected = selectAnalysisRegions(candidates, 8);
   expect(selected).toHaveLength(8);
   expect(selected.some((r) => r.page === 2)).toBe(true);
   expect(
@@ -61,4 +61,19 @@ it("distributes an economical eight-view budget across pages and topics without 
   expect(selectAnalysisRegions(candidates, 1, [candidates[0]])[0]).not.toEqual(
     candidates[0],
   );
+});
+
+it("allows a bounded larger reading budget without an unbounded image package", () => {
+  const candidates = Array.from({ length: 20 }, (_, i) => ({
+    page: i + 1,
+    x: 0,
+    y: 0,
+    width: 420,
+    height: 340,
+    label: "Beam",
+    score: 20,
+  }));
+  expect(selectAnalysisRegions(candidates)).toHaveLength(8);
+  expect(selectAnalysisRegions(candidates, 4)).toHaveLength(4);
+  expect(selectAnalysisRegions(candidates, 99)).toHaveLength(12);
 });

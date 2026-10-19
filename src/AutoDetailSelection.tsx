@@ -6,6 +6,7 @@ import type { PlanDocument } from "./model";
 import type { PdfDetailRegion } from "../shared/pdf";
 export default function AutoDetailSelection({
   source,
+  rotations = {},
   existing,
   remainingAutomatic,
   remainingCapacity,
@@ -14,6 +15,7 @@ export default function AutoDetailSelection({
   onAdd,
 }: {
   source: PlanDocument;
+  rotations?: Record<number, import("../shared/pdf").PdfRotation>;
   existing: PdfDetailRegion[];
   remainingAutomatic: number;
   remainingCapacity: number;
@@ -50,6 +52,8 @@ export default function AutoDetailSelection({
           Math.min(remainingAutomatic, remainingCapacity),
           existing,
           setMessage,
+          "review",
+          rotations,
         );
       abort.signal.throwIfAborted();
       rendered = views.length;
