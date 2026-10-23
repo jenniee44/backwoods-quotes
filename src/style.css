@@ -2984,3 +2984,38 @@ details[open] > summary {
 .optional-detail-tools {
   margin: 0.5rem 0;
 }
+
+/* The unchanged original plan is the primary contractor workspace. */
+.drawing-workspace {
+  margin-bottom: 1rem;
+}
+.drawing-workspace .pdf-scroll-viewport {
+  height: clamp(400px, 65vh, 850px);
+  max-height: none;
+}
+.pdf-region-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-block: 0.5rem;
+}
+.pdf-selected-region {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid #d87c37;
+  background: #d87c3726;
+  pointer-events: none;
+}
+.advanced-ai-details,
+.submitted-ai-details {
+  margin-block: 0.75rem;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+@media (max-width: 600px) {
+  .drawing-workspace .pdf-scroll-viewport {
+    height: 55vh;
+    min-height: 320px;
+  }
+}

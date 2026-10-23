@@ -39,10 +39,25 @@ export default function PdfPreview({
   } | null>(null);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
+  const [detailNotice, setDetailNotice] = useState("");
   const [zoom, setZoom] = useState<number | null>(null);
   const [box, setBox] = useState({ width: 300, height: 400, left: 0, top: 0 });
   const [rendering, setRendering] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelection] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const drag = useRef<{
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    select: boolean;
+  } | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const pending = useRef<Promise<void>>(Promise.resolve());
@@ -62,6 +77,7 @@ export default function PdfPreview({
     setZoom(null);
     setError("");
     setDetailError("");
+    setDetailNotice("");
     void import("pdfjs-dist")
       .then((pdfjs) => {
         if (canceled) return;
@@ -118,6 +134,8 @@ export default function PdfPreview({
           width: viewport.width,
           height: viewport.height,
         });
+        setSelection(null);
+        setSelecting(false);
         scroller.current?.scrollTo(0, 0);
         setBox((b) => ({ ...b, left: 0, top: 0 }));
       })
@@ -411,11 +429,12 @@ export default function PdfPreview({
       node.removeEventListener("touchcancel", touchEnd);
     };
   }, [document, pageReady, pageSize, capturing]);
-  async function includeDetail() {
+  async function includeDetail(selected = false) {
     if (!document || !pageSize || !pageReady || !onDetail || capturing) return;
     onDetailBusy?.(true);
     setCapturing(true);
     setDetailError("");
+    setDetailNotice("");
     const work = (async () => {
       try {
         const p = await document.getPage(page);
@@ -423,15 +442,22 @@ export default function PdfPreview({
         // or upscale the preview canvas. Cap size by refusing oversized regions.
         const detail = await renderPdfDetail(
           p,
-          {
-            x: left / scale,
-            y: top / scale,
-            width: visibleWidth / scale,
-            height: visibleHeight / scale,
-          },
+          selected && selection
+            ? selection
+            : {
+                x: left / scale,
+                y: top / scale,
+                width: visibleWidth / scale,
+                height: visibleHeight / scale,
+              },
           pageSize.rotation,
         );
-        if (active.current) onDetail(detail);
+        if (active.current) {
+          onDetail(detail);
+          setDetailNotice(
+            "Region prepared from the original PDF. Choose Analyze Plans to include it in a new analysis; existing results remain unchanged.",
+          );
+        }
       } catch (e) {
         if (active.current) setDetailError((e as Error).message);
       } finally {
@@ -527,11 +553,60 @@ export default function PdfPreview({
               Fit sheet
             </button>
           </div>
+          <div className="pdf-region-controls">
+            <button
+              className="button secondary"
+              aria-pressed={selecting}
+              disabled={capturing || !pageReady}
+              onClick={() => {
+                setSelecting(!selecting);
+                setSelection(null);
+              }}
+            >
+              {selecting ? "Cancel region selection" : "Select drawing region"}
+            </button>
+            {selection && (
+              <>
+                <button
+                  className="button secondary"
+                  onClick={() => {
+                    const node = scroller.current;
+                    if (!node) return;
+                    changeZoom(
+                      Math.min(
+                        node.clientWidth / selection.width,
+                        node.clientHeight / selection.height,
+                      ) * 0.95,
+                      { x: node.clientWidth / 2, y: node.clientHeight / 2 },
+                      {
+                        x: selection.x + selection.width / 2,
+                        y: selection.y + selection.height / 2,
+                      },
+                    );
+                    setSelecting(false);
+                  }}
+                >
+                  Inspect selected region
+                </button>
+                {onDetail && (
+                  <button
+                    className="button secondary"
+                    disabled={
+                      detailsDisabled || capturing || rendering || !pageReady
+                    }
+                    onClick={() => void includeDetail(true)}
+                  >
+                    Prepare selected region for analysis
+                  </button>
+                )}
+              </>
+            )}
+          </div>
           <p className="tiny">
-            Pinch or hold Cmd/Ctrl and scroll over the drawing to zoom. Scroll
-            to pan; Fit sheet returns to the full width. Zoom to read small
-            notes; each view is re-rendered from the original PDF, not enlarged
-            preview pixels.
+            Pinch or Cmd/Ctrl-scroll to zoom. Drag or scroll to pan.
+            Double-click for a closer look, or select a region. Page rotations
+            also apply to future AI reading images; the original PDF stays
+            unchanged.
           </p>
         </>
       )}
@@ -539,6 +614,73 @@ export default function PdfPreview({
         className="pdf-scroll-viewport"
         data-viewer-scale={scale}
         ref={scroller}
+        aria-label="Interactive original PDF"
+        tabIndex={0}
+        style={{
+          touchAction: selecting ? "none" : "auto",
+          cursor: selecting ? "crosshair" : "grab",
+        }}
+        onDoubleClick={(e) => {
+          if (selecting) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          changeZoom(Math.min(4, scale * 2), {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          });
+        }}
+        onPointerDown={(e) => {
+          if (
+            !pageReady ||
+            capturing ||
+            (e.pointerType !== "mouse" && !selecting) ||
+            e.button !== 0
+          )
+            return;
+          const node = e.currentTarget;
+          const rect = node.getBoundingClientRect();
+          drag.current = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            left: node.scrollLeft,
+            top: node.scrollTop,
+            select: selecting,
+          };
+          node.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const start = drag.current;
+          if (!start) return;
+          const node = e.currentTarget;
+          const rect = node.getBoundingClientRect();
+          const x = e.clientX - rect.left,
+            y = e.clientY - rect.top;
+          if (!start.select) {
+            node.scrollTo(start.left + start.x - x, start.top + start.y - y);
+            return;
+          }
+          const x1 = Math.max(0, Math.min(cssWidth, start.left + start.x));
+          const y1 = Math.max(0, Math.min(cssHeight, start.top + start.y));
+          const x2 = Math.max(0, Math.min(cssWidth, node.scrollLeft + x));
+          const y2 = Math.max(0, Math.min(cssHeight, node.scrollTop + y));
+          setSelection(
+            Math.abs(x2 - x1) > 8 && Math.abs(y2 - y1) > 8
+              ? {
+                  x: Math.min(x1, x2) / scale,
+                  y: Math.min(y1, y2) / scale,
+                  width: Math.abs(x2 - x1) / scale,
+                  height: Math.abs(y2 - y1) / scale,
+                }
+              : null,
+          );
+        }}
+        onPointerUp={(e) => {
+          drag.current = null;
+          if (e.currentTarget.hasPointerCapture(e.pointerId))
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
         onScroll={(e) => {
           const node = e.currentTarget;
           setBox((b) => ({ ...b, left: node.scrollLeft, top: node.scrollTop }));
@@ -548,6 +690,18 @@ export default function PdfPreview({
           className="pdf-page-surface"
           style={{ width: cssWidth, height: cssHeight }}
         >
+          {selection && (
+            <div
+              className="pdf-selected-region"
+              aria-label="Selected drawing region"
+              style={{
+                left: selection.x * scale,
+                top: selection.y * scale,
+                width: selection.width * scale,
+                height: selection.height * scale,
+              }}
+            />
+          )}
           <canvas
             className="pdf-canvas"
             ref={canvas}
@@ -596,6 +750,11 @@ export default function PdfPreview({
             additions to the original PDF, not replacements. They cannot restore
             detail missing from an embedded scan.
           </p>
+          {detailNotice && (
+            <p className="tiny" role="status">
+              {detailNotice}
+            </p>
+          )}
           {detailError && (
             <p className="error" role="alert">
               {detailError}

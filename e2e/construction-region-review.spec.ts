@@ -61,13 +61,11 @@ for (const width of [1366, 390])
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
     const original = Buffer.from(drawing(), "ascii");
-    await page
-      .getByLabel("Attach plans", { exact: true })
-      .setInputFiles({
-        name: "synthetic-framing.pdf",
-        mimeType: "application/pdf",
-        buffer: original,
-      });
+    await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
+      name: "synthetic-framing.pdf",
+      mimeType: "application/pdf",
+      buffer: original,
+    });
     await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
     // Saving a zero viewer turn must not force every detail to page orientation.
     await page
@@ -117,6 +115,7 @@ for (const width of [1366, 390])
             { ...views[b], label: "", score: 0 },
           ),
         ).toBeLessThanOrEqual(0.31);
+    await page.locator(".submitted-ai-details > summary").click();
     await page
       .getByRole("button", {
         name: `View AI Detail Images (${views.length})`,

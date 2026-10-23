@@ -10,6 +10,7 @@ async function editor(page: Page) {
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".advanced-ai-details > summary").click();
 }
 function paddedPdf(size = 1_500_000) {
   const original = constructionPdf();

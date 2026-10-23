@@ -576,7 +576,7 @@ export default function PlansTakeoff({
   }
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const current = q.documents.find((d) => d.id === selected);
+  const current = q.documents.find((d) => d.id === selected) ?? q.documents[0];
   async function attach(files: FileList | null, replaceId?: string) {
     if (!files || !files.length) return;
     setUploading(true);
@@ -667,6 +667,171 @@ export default function PlansTakeoff({
   }
   return (
     <>
+      <section
+        className="drawing-workspace"
+        aria-label="Original construction plans"
+      >
+        <h3 className="subheading">Plans & documents</h3>
+        <p className="muted">
+          PDF plans, engineer drawings or photos · up to 8 files, 2 MB each.
+          Stored in this browser. Save the quote after attaching; total browser
+          storage may be smaller than combined file sizes.
+        </p>
+        <fieldset disabled={locked || uploading || busy}>
+          <label className="upload">
+            {uploading
+              ? "Reading documents…"
+              : "Attach plans / drawings / images"}
+            <input
+              aria-label="Attach plans"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              multiple
+              onChange={(e) => {
+                void attach(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </fieldset>
+        <div className="document-list">
+          {q.documents.map((d) => (
+            <div key={d.id}>
+              <button
+                className="button secondary document-name"
+                aria-pressed={current?.id === d.id}
+                onClick={() => setSelected(d.id)}
+              >
+                {d.name}
+              </button>
+              <label className="check-options">
+                <input
+                  type="checkbox"
+                  disabled={busy || locked}
+                  checked={!excludedDocuments.includes(d.id)}
+                  onChange={(e) => {
+                    setDetailsInspected(false);
+                    setOriginalOnlyConfirmed(false);
+                    setExcludedDocuments(
+                      e.target.checked
+                        ? excludedDocuments.filter((id) => id !== d.id)
+                        : [...excludedDocuments, d.id],
+                    );
+                  }}
+                />
+                Include in analysis
+              </label>
+              <fieldset disabled={locked || uploading || busy}>
+                <label className="replace-document">
+                  Replace
+                  <input
+                    aria-label={`Replace ${d.name}`}
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      void attach(e.target.files, d.id);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                <button
+                  className="icon danger"
+                  aria-label={`Remove document ${d.name}`}
+                  onClick={() => {
+                    onChange({
+                      ...q,
+                      documents: q.documents.filter((x) => x.id !== d.id),
+                      takeoff: q.takeoff.map((t) =>
+                        t.documentId === d.id
+                          ? {
+                              ...t,
+                              status: "Proposed",
+                              confidence: "Unspecified",
+                              reviewAcknowledged: false,
+                              scopeVerified: false,
+                              conflictsVerified: false,
+                              sourceDetailView: null,
+                            }
+                          : t,
+                      ),
+                    });
+                    setSelected(null);
+                  }}
+                >
+                  <Trash2 size={17} />
+                </button>
+              </fieldset>
+            </div>
+          ))}
+        </div>
+        {current && (
+          <DocumentPreview
+            document={current}
+            rotations={
+              orientations[current.id]?.source === current.data
+                ? orientations[current.id].pages
+                : {}
+            }
+            onRotation={(page, rotation) =>
+              setOrientations((previous) => ({
+                ...previous,
+                [current.id]: {
+                  source: current.data,
+                  pages: {
+                    ...(previous[current.id]?.source === current.data
+                      ? previous[current.id].pages
+                      : {}),
+                    [page]: rotation,
+                  },
+                },
+              }))
+            }
+            onDetailBusy={setDetailRendering}
+            detailsDisabled={
+              locked ||
+              busy ||
+              uploading ||
+              detailProcessing ||
+              validDetails.length >= maxDetailRegions
+            }
+            onDetail={(region) => {
+              if (validDetails.length >= maxDetailRegions) {
+                onError("Include up to 24 detail views per analysis.");
+                return;
+              }
+              if (
+                validDetails.some(
+                  (v) =>
+                    v.documentId === current.id &&
+                    v.region.page === region.page &&
+                    v.region.rotation === region.rotation &&
+                    v.region.x === region.x &&
+                    v.region.y === region.y &&
+                    v.region.width === region.width &&
+                    v.region.height === region.height,
+                )
+              ) {
+                onError("This PDF detail view is already included.");
+                return;
+              }
+              setDetailsInspected(false);
+              setOriginalOnlyConfirmed(false);
+              setExcludedDocuments((ids) =>
+                ids.filter((id) => id !== current.id),
+              );
+              setDetailViews([
+                ...validDetails,
+                {
+                  id: id(),
+                  documentId: current.id,
+                  originalData: current.data,
+                  region,
+                },
+              ]);
+            }}
+          />
+        )}
+      </section>
       <div className="info">
         <b>
           1 Upload → 2 Analyze → 3 Review → 4 Approve → 5 Convert to Estimate
@@ -684,8 +849,8 @@ export default function PlansTakeoff({
       </div>
       {validDetails.some((v) => v.automatic) && !detailsInspected && (
         <p className="info">
-          Inspect the generated images below, then confirm the detail-view
-          review before analysis.
+          Open Advanced AI Details to inspect the prepared images, then confirm
+          the detail-view review before analysis.
         </p>
       )}
       {packageReady &&
@@ -890,49 +1055,57 @@ export default function PlansTakeoff({
             Plan summary · {new Date(report.createdAt).toLocaleDateString()}
           </summary>
           {report.aiDetails && (
-            <SubmittedImageGallery
-              quoteId={q.id}
-              reportId={report.id}
-              count={report.aiDetails.submittedCount}
-              message={report.aiDetails.retentionMessage}
-              documents={q.documents}
-              locked={locked || busy}
-              onSupplement={(documentId, region, companions) => {
-                const original = q.documents.find((d) => d.id === documentId);
-                if (!original) return;
-                if (
-                  validDetails.filter((v) => v.documentId !== documentId)
-                    .length +
-                    companions.length +
-                    1 >
-                  maxDetailRegions
-                ) {
-                  setAnalysisError(
-                    "Remove a prepared detail before adding another (24 total limit).",
+            <details className="submitted-ai-details">
+              <summary>Advanced AI Details · submitted regions</summary>
+              <SubmittedImageGallery
+                quoteId={q.id}
+                reportId={report.id}
+                count={report.aiDetails.submittedCount}
+                message={report.aiDetails.retentionMessage}
+                documents={q.documents}
+                locked={locked || busy}
+                onSupplement={(documentId, region, companions) => {
+                  const original = q.documents.find((d) => d.id === documentId);
+                  if (!original) return;
+                  if (
+                    validDetails.filter((v) => v.documentId !== documentId)
+                      .length +
+                      companions.length +
+                      1 >
+                    maxDetailRegions
+                  ) {
+                    setAnalysisError(
+                      "Remove a prepared detail before adding another (24 total limit).",
+                    );
+                    return;
+                  }
+                  setDetailViews((previous) => [
+                    ...previous.filter((v) => v.documentId !== documentId),
+                    ...companions.map((region) => ({
+                      id: id(),
+                      documentId,
+                      originalData: original.data,
+                      region,
+                      automatic: true,
+                    })),
+                    {
+                      id: id(),
+                      documentId,
+                      originalData: original.data,
+                      region,
+                    },
+                  ]);
+                  setDetailsInspected(false);
+                  setOriginalOnlyConfirmed(false);
+                  setExcludedDocuments((ids) =>
+                    ids.filter((i) => i !== documentId),
                   );
-                  return;
-                }
-                setDetailViews((previous) => [
-                  ...previous.filter((v) => v.documentId !== documentId),
-                  ...companions.map((region) => ({
-                    id: id(),
-                    documentId,
-                    originalData: original.data,
-                    region,
-                    automatic: true,
-                  })),
-                  { id: id(), documentId, originalData: original.data, region },
-                ]);
-                setDetailsInspected(false);
-                setOriginalOnlyConfirmed(false);
-                setExcludedDocuments((ids) =>
-                  ids.filter((i) => i !== documentId),
-                );
-                setInputNotes([
-                  "Corrected view prepared for a future analysis. Review the manual detail and explicitly choose Analyze Plans; prior images and approvals remain unchanged.",
-                ]);
-              }}
-            />
+                  setInputNotes([
+                    "Corrected view prepared for a future analysis. Review the manual detail and explicitly choose Analyze Plans; prior images and approvals remain unchanged.",
+                  ]);
+                }}
+              />
+            </details>
           )}
           {report.project && (
             <>
@@ -1082,167 +1255,8 @@ export default function PlansTakeoff({
           )}
         </details>
       ))}
-      <h3 className="subheading">Plans & documents</h3>
-      <p className="muted">
-        PDF plans, engineer drawings or photos · up to 8 files, 2 MB each.
-        Stored in this browser. Save the quote after attaching; total browser
-        storage may be smaller than combined file sizes.
-      </p>
-      <fieldset disabled={locked || uploading || busy}>
-        <label className="upload">
-          {uploading
-            ? "Reading documents…"
-            : "Attach plans / drawings / images"}
-          <input
-            aria-label="Attach plans"
-            type="file"
-            accept="application/pdf,image/jpeg,image/png,image/webp"
-            multiple
-            onChange={(e) => {
-              void attach(e.target.files);
-              e.target.value = "";
-            }}
-          />
-        </label>
-      </fieldset>
-      <div className="document-list">
-        {q.documents.map((d) => (
-          <div key={d.id}>
-            <button
-              className="button secondary document-name"
-              onClick={() => setSelected(selected === d.id ? null : d.id)}
-            >
-              {d.name}
-            </button>
-            <label className="check-options">
-              <input
-                type="checkbox"
-                disabled={busy || locked}
-                checked={!excludedDocuments.includes(d.id)}
-                onChange={(e) => {
-                  setDetailsInspected(false);
-                  setOriginalOnlyConfirmed(false);
-                  setExcludedDocuments(
-                    e.target.checked
-                      ? excludedDocuments.filter((id) => id !== d.id)
-                      : [...excludedDocuments, d.id],
-                  );
-                }}
-              />
-              Include in analysis
-            </label>
-            <fieldset disabled={locked || uploading || busy}>
-              <label className="replace-document">
-                Replace
-                <input
-                  aria-label={`Replace ${d.name}`}
-                  type="file"
-                  accept="application/pdf,image/jpeg,image/png,image/webp"
-                  onChange={(e) => {
-                    void attach(e.target.files, d.id);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              <button
-                className="icon danger"
-                aria-label={`Remove document ${d.name}`}
-                onClick={() => {
-                  onChange({
-                    ...q,
-                    documents: q.documents.filter((x) => x.id !== d.id),
-                    takeoff: q.takeoff.map((t) =>
-                      t.documentId === d.id
-                        ? {
-                            ...t,
-                            status: "Proposed",
-                            confidence: "Unspecified",
-                            reviewAcknowledged: false,
-                            scopeVerified: false,
-                            conflictsVerified: false,
-                            sourceDetailView: null,
-                          }
-                        : t,
-                    ),
-                  });
-                  setSelected(null);
-                }}
-              >
-                <Trash2 size={17} />
-              </button>
-            </fieldset>
-          </div>
-        ))}
-      </div>
-      {current && (
-        <DocumentPreview
-          document={current}
-          rotations={
-            orientations[current.id]?.source === current.data
-              ? orientations[current.id].pages
-              : {}
-          }
-          onRotation={(page, rotation) =>
-            setOrientations((previous) => ({
-              ...previous,
-              [current.id]: {
-                source: current.data,
-                pages: {
-                  ...(previous[current.id]?.source === current.data
-                    ? previous[current.id].pages
-                    : {}),
-                  [page]: rotation,
-                },
-              },
-            }))
-          }
-          onDetailBusy={setDetailRendering}
-          detailsDisabled={
-            locked ||
-            busy ||
-            uploading ||
-            detailProcessing ||
-            validDetails.length >= maxDetailRegions
-          }
-          onDetail={(region) => {
-            if (validDetails.length >= maxDetailRegions) {
-              onError("Include up to 24 detail views per analysis.");
-              return;
-            }
-            if (
-              validDetails.some(
-                (v) =>
-                  v.documentId === current.id &&
-                  v.region.page === region.page &&
-                  v.region.rotation === region.rotation &&
-                  v.region.x === region.x &&
-                  v.region.y === region.y &&
-                  v.region.width === region.width &&
-                  v.region.height === region.height,
-              )
-            ) {
-              onError("This PDF detail view is already included.");
-              return;
-            }
-            setDetailsInspected(false);
-            setOriginalOnlyConfirmed(false);
-            setExcludedDocuments((ids) =>
-              ids.filter((id) => id !== current.id),
-            );
-            setDetailViews([
-              ...validDetails,
-              {
-                id: id(),
-                documentId: current.id,
-                originalData: current.data,
-                region,
-              },
-            ]);
-          }}
-        />
-      )}
       <details className="analysis-report">
-        <summary>Reading options (optional)</summary>
+        <summary>Advanced Settings</summary>
         <label>
           Automatic reading-image budget
           <select
@@ -1268,184 +1282,195 @@ export default function PlansTakeoff({
         the size/cost budget). No separate detail-generation step is required.
         Optional manual corrections can supplement a future analysis.
       </p>
-      {current?.type === "application/pdf" && (
-        <details className="optional-detail-tools">
-          <summary>Optional: prepare additional detail views</summary>
-          <AutoDetailSelection
-            source={current}
-            rotations={
-              orientations[current.id]?.source === current.data
-                ? orientations[current.id].pages
-                : {}
-            }
-            existing={validDetails
-              .filter((v) => v.documentId === current.id)
-              .map((v) => v.region)}
-            remainingCapacity={maxDetailRegions - validDetails.length}
-            remainingAutomatic={Math.max(
-              0,
-              20 - validDetails.filter((v) => v.automatic).length,
-            )}
-            disabled={locked || busy || uploading || detailProcessing}
-            onBusy={setAutomaticRendering}
-            onAdd={(regions) => {
-              setDetailsInspected(false);
-              setOriginalOnlyConfirmed(false);
-              setExcludedDocuments((ids) =>
-                ids.filter((id) => id !== current.id),
-              );
-              setDetailViews((previous) => [
-                ...previous,
-                ...regions.map((region) => ({
-                  id: id(),
-                  documentId: current.id,
-                  originalData: current.data,
-                  region,
-                  automatic: true,
-                })),
-              ]);
-            }}
-          />
-        </details>
-      )}
-      {!!validDetails.length && (
-        <div className="pdf-detail-list">
-          <h3>Detail views included in analysis</h3>
-          <p className="tiny">
-            Temporary 250 DPI views rendered directly from the original PDF. Up
-            to 20 automatic / 24 total; each analysis request must fit 8 MB.
-            Larger detail packages use bounded batches. Re-add views after
-            leaving this tab. Only views from selected source files are sent.
-          </p>
-          {validDetails.some((v) => v.automatic) && (
-            <label className="check-options">
-              <input
-                type="checkbox"
-                disabled={busy || detailProcessing || !allPreviewsReady}
-                checked={detailsInspected && allPreviewsReady}
-                onChange={(e) => setDetailsInspected(e.target.checked)}
-              />
-              I inspected all selected automatic detail views and their source
-              regions.
-            </label>
-          )}
-          <div className="detail-gallery-controls">
-            <label className="field">
-              <span>Review drawing details</span>
-              <select
-                aria-label="Detail review group"
-                value={
-                  detailGroups.includes(detailGroup) ||
-                  detailGroup === "Needs attention"
-                    ? detailGroup
-                    : "All details"
-                }
-                onChange={(e) => setDetailGroup(e.target.value)}
-              >
-                <option>All details</option>
-                <option value="Needs attention">
-                  Needs rotation / crop review ({attentionDetails.length})
-                </option>
-                {detailGroups.map((group) => (
-                  <option key={group}>{group}</option>
-                ))}
-              </select>
-            </label>
-            <p role="status">
-              {attentionDetails.length} views need rotation or crop attention.
-              Selecting a review group never changes which images are submitted.
+      <details className="advanced-ai-details">
+        <summary>Advanced AI Details</summary>
+        <p className="tiny">
+          Optional troubleshooting and corrections. The original drawing remains
+          your workspace; automatic reading images supplement it, never
+          represent extra physical materials.
+        </p>
+        {current?.type === "application/pdf" && (
+          <details className="optional-detail-tools">
+            <summary>Optional: prepare additional detail views</summary>
+            <AutoDetailSelection
+              source={current}
+              rotations={
+                orientations[current.id]?.source === current.data
+                  ? orientations[current.id].pages
+                  : {}
+              }
+              existing={validDetails
+                .filter((v) => v.documentId === current.id)
+                .map((v) => v.region)}
+              remainingCapacity={maxDetailRegions - validDetails.length}
+              remainingAutomatic={Math.max(
+                0,
+                20 - validDetails.filter((v) => v.automatic).length,
+              )}
+              disabled={locked || busy || uploading || detailProcessing}
+              onBusy={setAutomaticRendering}
+              onAdd={(regions) => {
+                setDetailsInspected(false);
+                setOriginalOnlyConfirmed(false);
+                setExcludedDocuments((ids) =>
+                  ids.filter((id) => id !== current.id),
+                );
+                setDetailViews((previous) => [
+                  ...previous,
+                  ...regions.map((region) => ({
+                    id: id(),
+                    documentId: current.id,
+                    originalData: current.data,
+                    region,
+                    automatic: true,
+                  })),
+                ]);
+              }}
+            />
+          </details>
+        )}
+        {!!validDetails.length && (
+          <div className="pdf-detail-list">
+            <h3>Detail views included in analysis</h3>
+            <p className="tiny">
+              Temporary 250 DPI views rendered directly from the original PDF.
+              Up to 20 automatic / 24 total; each analysis request must fit 8
+              MB. Larger detail packages use bounded batches. Re-add views after
+              leaving this tab. Only views from selected source files are sent.
             </p>
-            <span>
-              {validDetails.length} views · choose a group to compare related
-              details. Exclude anything unnecessary.
-            </span>
-          </div>
-          <div className="detail-gallery">
-            {validDetails.map((view) => (
-              <div
-                className="detail-review-item"
-                hidden={
-                  detailGroup === "Needs attention"
-                    ? !(
-                        view.region.orientationUncertain ||
-                        view.region.cropNeedsReview
-                      )
-                    : detailGroups.includes(detailGroup) &&
-                      detailGroup !==
-                        (view.region.reviewGroup || "Manual details")
-                }
-                key={view.id}
-              >
-                <label className="check-options">
-                  <input
-                    type="checkbox"
-                    aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
-                    checked={
-                      !excludedDetails.includes(view.id) &&
-                      !excludedDocuments.includes(view.documentId)
-                    }
-                    disabled={locked || busy || detailProcessing}
-                    onChange={(e) => {
-                      setDetailsInspected(false);
-                      setOriginalOnlyConfirmed(false);
-                      setExcludedDetails((ids) =>
-                        e.target.checked
-                          ? ids.filter((id) => id !== view.id)
-                          : [...ids, view.id],
-                      );
-                      if (e.target.checked)
-                        setExcludedDocuments((ids) =>
-                          ids.filter((id) => id !== view.documentId),
+            {validDetails.some((v) => v.automatic) && (
+              <label className="check-options">
+                <input
+                  type="checkbox"
+                  disabled={busy || detailProcessing || !allPreviewsReady}
+                  checked={detailsInspected && allPreviewsReady}
+                  onChange={(e) => setDetailsInspected(e.target.checked)}
+                />
+                I inspected all selected automatic detail views and their source
+                regions.
+              </label>
+            )}
+            <div className="detail-gallery-controls">
+              <label className="field">
+                <span>Review drawing details</span>
+                <select
+                  aria-label="Detail review group"
+                  value={
+                    detailGroups.includes(detailGroup) ||
+                    detailGroup === "Needs attention"
+                      ? detailGroup
+                      : "All details"
+                  }
+                  onChange={(e) => setDetailGroup(e.target.value)}
+                >
+                  <option>All details</option>
+                  <option value="Needs attention">
+                    Needs rotation / crop review ({attentionDetails.length})
+                  </option>
+                  {detailGroups.map((group) => (
+                    <option key={group}>{group}</option>
+                  ))}
+                </select>
+              </label>
+              <p role="status">
+                {attentionDetails.length} views need rotation or crop attention.
+                Selecting a review group never changes which images are
+                submitted.
+              </p>
+              <span>
+                {validDetails.length} views · choose a group to compare related
+                details. Exclude anything unnecessary.
+              </span>
+            </div>
+            <div className="detail-gallery">
+              {validDetails.map((view) => (
+                <div
+                  className="detail-review-item"
+                  hidden={
+                    detailGroup === "Needs attention"
+                      ? !(
+                          view.region.orientationUncertain ||
+                          view.region.cropNeedsReview
+                        )
+                      : detailGroups.includes(detailGroup) &&
+                        detailGroup !==
+                          (view.region.reviewGroup || "Manual details")
+                  }
+                  key={view.id}
+                >
+                  <label className="check-options">
+                    <input
+                      type="checkbox"
+                      aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
+                      checked={
+                        !excludedDetails.includes(view.id) &&
+                        !excludedDocuments.includes(view.documentId)
+                      }
+                      disabled={locked || busy || detailProcessing}
+                      onChange={(e) => {
+                        setDetailsInspected(false);
+                        setOriginalOnlyConfirmed(false);
+                        setExcludedDetails((ids) =>
+                          e.target.checked
+                            ? ids.filter((id) => id !== view.id)
+                            : [...ids, view.id],
                         );
+                        if (e.target.checked)
+                          setExcludedDocuments((ids) =>
+                            ids.filter((id) => id !== view.documentId),
+                          );
+                      }}
+                    />
+                    Include this detail in analysis
+                  </label>
+                  <DetailViewEditor
+                    source={q.documents.find((d) => d.id === view.documentId)!}
+                    region={view.region}
+                    disabled={locked || busy || detailProcessing}
+                    onBusy={setDetailRendering}
+                    onPreviewReady={(ready) =>
+                      setPreviewReady((previous) => {
+                        if (ready && previous[view.id] === view.region.data)
+                          return previous;
+                        const next = { ...previous };
+                        if (ready) next[view.id] = view.region.data;
+                        else delete next[view.id];
+                        return next;
+                      })
+                    }
+                    onChange={(region) => {
+                      setDetailsInspected(false);
+                      setDetailViews((previous) =>
+                        previous.map((v) =>
+                          v.id === view.id ? { ...v, region } : v,
+                        ),
+                      );
                     }}
                   />
-                  Include this detail in analysis
-                </label>
-                <DetailViewEditor
-                  source={q.documents.find((d) => d.id === view.documentId)!}
-                  region={view.region}
-                  disabled={locked || busy || detailProcessing}
-                  onBusy={setDetailRendering}
-                  onPreviewReady={(ready) =>
-                    setPreviewReady((previous) => {
-                      if (ready && previous[view.id] === view.region.data)
-                        return previous;
-                      const next = { ...previous };
-                      if (ready) next[view.id] = view.region.data;
-                      else delete next[view.id];
-                      return next;
-                    })
-                  }
-                  onChange={(region) => {
-                    setDetailsInspected(false);
-                    setDetailViews((previous) =>
-                      previous.map((v) =>
-                        v.id === view.id ? { ...v, region } : v,
-                      ),
-                    );
-                  }}
-                />
-                <span>
-                  {q.documents.find((d) => d.id === view.documentId)?.name} ·
-                  Page {view.region.page} · {view.region.pixelWidth} ×{" "}
-                  {view.region.pixelHeight} px · 250 DPI ·{" "}
-                  {view.region.rotation ?? 0}°
-                </span>
-                <button
-                  className="icon danger"
-                  disabled={locked || busy}
-                  aria-label={`Remove detail view ${view.region.page}`}
-                  onClick={() =>
-                    setDetailViews(detailViews.filter((v) => v.id !== view.id))
-                  }
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            ))}
+                  <span>
+                    {q.documents.find((d) => d.id === view.documentId)?.name} ·
+                    Page {view.region.page} · {view.region.pixelWidth} ×{" "}
+                    {view.region.pixelHeight} px · 250 DPI ·{" "}
+                    {view.region.rotation ?? 0}°
+                  </span>
+                  <button
+                    className="icon danger"
+                    disabled={locked || busy}
+                    aria-label={`Remove detail view ${view.region.page}`}
+                    onClick={() =>
+                      setDetailViews(
+                        detailViews.filter((v) => v.id !== view.id),
+                      )
+                    }
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </details>
       <p className="tiny">
         PDF analysis sends the unchanged original file plus its selectable text
         when available. The preview canvas is never an analysis source. Add

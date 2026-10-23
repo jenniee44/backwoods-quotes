@@ -21,6 +21,7 @@ async function openPdf(page: import("@playwright/test").Page, pdf: Buffer) {
   ).toBeVisible();
   await expect(page.getByLabel("Drawing page 1")).toBeVisible();
   await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
+  await page.locator(".advanced-ai-details > summary").click();
 }
 test("vector PDF stays byte-exact; zoom rerenders detail; text plus 250 DPI region supplement native analysis input", async ({
   page,

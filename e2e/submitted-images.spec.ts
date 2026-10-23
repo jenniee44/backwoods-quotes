@@ -56,7 +56,7 @@ async function analyze(
   });
   await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
   if (budget !== 8) {
-    await page.getByText("Reading options (optional)", { exact: true }).click();
+    await page.getByText("Advanced Settings", { exact: true }).click();
     await page
       .getByLabel("Automatic reading-image budget")
       .selectOption(String(budget));
@@ -67,6 +67,7 @@ async function analyze(
   await expect(
     page.getByText("Analysis complete — needs review", { exact: true }),
   ).toBeVisible({ timeout: 60000 });
+  await page.locator(".submitted-ai-details > summary").click();
   return {
     get sent() {
       return sent;
@@ -146,6 +147,11 @@ for (const width of [1366, 390])
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
+    await page.locator(".submitted-ai-details").evaluateAll((nodes) =>
+      nodes.forEach((node) => {
+        (node as HTMLDetailsElement).open = true;
+      }),
+    );
     await page
       .getByRole("button", {
         name: `View AI Detail Images (${images.length})`,
@@ -171,6 +177,7 @@ for (const width of [1366, 390])
         exact: true,
       })
       .click();
+    await page.locator(".advanced-ai-details > summary").click();
     const correction = page.locator(".submitted-inspector .detail-view-card");
     await correction.locator(".detail-thumbnail-button").click();
     await correction
@@ -229,6 +236,11 @@ test("unavailable private image storage is explicit, keeps quote data safe and n
   await expect(
     page.getByText(/Images are available for this session only/).first(),
   ).toBeVisible();
+  await page.locator(".submitted-ai-details").evaluateAll((nodes) =>
+    nodes.forEach((node) => {
+      (node as HTMLDetailsElement).open = true;
+    }),
+  );
   await page
     .getByRole("button", { name: `View AI Detail Images (${n})`, exact: true })
     .click();
@@ -251,6 +263,11 @@ test("unavailable private image storage is explicit, keeps quote data safe and n
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
+  await page.locator(".submitted-ai-details").evaluateAll((nodes) =>
+    nodes.forEach((node) => {
+      (node as HTMLDetailsElement).open = true;
+    }),
+  );
   await page
     .getByRole("button", { name: `View AI Detail Images (${n})`, exact: true })
     .click();
@@ -344,6 +361,14 @@ test("reading budget is explicit and bounded while viewing previous images never
   await page
     .getByRole("button", { name: "Analyze Plans", exact: true })
     .click();
+  await expect(page.locator(".submitted-ai-details")).toHaveCount(2, {
+    timeout: 60000,
+  });
+  await page.locator(".submitted-ai-details").evaluateAll((nodes) =>
+    nodes.forEach((node) => {
+      (node as HTMLDetailsElement).open = true;
+    }),
+  );
   await expect(
     page.getByRole("button", {
       name: "View AI Detail Images (4)",

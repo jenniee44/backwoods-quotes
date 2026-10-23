@@ -20,6 +20,7 @@ async function openDrawing(page: Page) {
     buffer: original,
   });
   await ready(page);
+  await page.locator(".advanced-ai-details > summary").click();
   return original;
 }
 async function ready(page: Page) {

@@ -17,6 +17,9 @@ async function attach(
     buffer: pdf,
   });
   await expect(page.getByLabel("Drawing page 1")).toBeVisible();
+  await page.locator(".advanced-ai-details").evaluate((node) => {
+    (node as HTMLDetailsElement).open = true;
+  });
   await page.locator(".optional-detail-tools").evaluate((node) => {
     (node as HTMLDetailsElement).open = true;
   });
