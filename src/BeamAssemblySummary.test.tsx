@@ -58,3 +58,44 @@ it("maps manually reordered run labels to the correct summary and respects delib
   expect(rows[1]).toContain("Plies to confirm");
   expect(rows[2]).toContain("Length: 20′");
 });
+it("reports physical lines separately from uncertain construction scope instead of a misleading zero count", () => {
+  const beams = syntheticDeckBeams();
+  beams.forEach((b) => (b.scope = "Requires scope confirmation"));
+  const html = renderToStaticMarkup(
+    <BeamAssemblySummary
+      item={{
+        ...base,
+        id: "synthetic",
+        documentId: "synthetic",
+        beamAssemblies: beams,
+      }}
+    />,
+  );
+  expect(html).toContain("3 proposed beam lines");
+  expect(html).toContain("Uncertain scope is not a purchasing quantity");
+  expect(html).not.toContain("0 proposed");
+});
+
+it("keeps known existing and by-others reference lines outside the proposed work count", () => {
+  const beams = syntheticDeckBeams();
+  const existing = structuredClone(beams[0]);
+  existing.scope = "Existing work to remain";
+  existing.start.y = 0.8;
+  existing.end.y = 0.8;
+  const others = structuredClone(beams[0]);
+  others.scope = "By others / excluded";
+  others.start.y = 0.9;
+  others.end.y = 0.9;
+  const html = renderToStaticMarkup(
+    <BeamAssemblySummary
+      item={{
+        ...base,
+        id: "synthetic",
+        documentId: "synthetic",
+        beamAssemblies: [...beams, existing, others],
+      }}
+    />,
+  );
+  expect(html).toContain("3 proposed beam lines");
+  expect(html).toContain("Reference only; excluded");
+});

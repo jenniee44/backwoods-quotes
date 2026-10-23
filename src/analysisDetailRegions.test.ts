@@ -149,3 +149,26 @@ it("sideways note bounds receive enough source context for a 250 DPI render with
   expect(r.height).toBeLessThanOrEqual(700);
   expect(() => detailRenderSize(r.width, r.height)).not.toThrow();
 });
+it("prioritizes a bounded beam assembly context image for repeated labels without inventing counts or lengths", () => {
+  const marks = [200, 380, 560].flatMap((y) =>
+    [300, 550, 800].map((x) => ({
+      text: "3PLY 2X10 PT",
+      x,
+      y,
+      width: 80,
+      height: 6,
+    })),
+  );
+  const selected = selectAnalysisRegions(
+    analysisPageRegions(1, 2400, 1600, marks, survey),
+    8,
+  );
+  const context = selected.find((r) =>
+    r.label.startsWith("Beam assembly context"),
+  )!;
+  expect(context).toBeDefined();
+  expect(context.height).toBeGreaterThan(340);
+  expect(() => detailRenderSize(context.width, context.height)).not.toThrow();
+  expect(context).not.toHaveProperty("beamCount");
+  expect(context).not.toHaveProperty("length");
+});

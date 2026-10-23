@@ -165,13 +165,15 @@ it("withholds count and length when spatial evidence is ambiguous, even if three
   expect(r.inputs.runs).toBeUndefined();
   expect(r.inputs.length1).toBeUndefined();
 });
-it("retains duplicate-conversion review for generic materials with the same spatial beam assemblies", async () => {
+it("consolidates evidenced repeated spatial beam sets while retaining source records and blocking unverified conversion", async () => {
   const { unresolvedOverlaps } = await import("./takeoffOverlap");
   const a = { ...base(), beamAssemblies: syntheticDeckBeams() },
     b = { ...a, id: "repeated" };
   const q = { ...seed().quotes[0], status: "Draft" as const, takeoff: [a, b] };
   const repaired = prepareDeckTakeoff(q);
-  expect(unresolvedOverlaps(repaired, repaired.takeoff[0])).toHaveLength(1);
+  expect(unresolvedOverlaps(repaired, repaired.takeoff[0])).toHaveLength(0);
+  expect(repaired.takeoff).toHaveLength(2);
+  expect(repaired.takeoff[1].status).toBe("Rejected");
   expect(() =>
     takeoffToLine(repaired, repaired.takeoff[0], "Materials"),
   ).toThrow();

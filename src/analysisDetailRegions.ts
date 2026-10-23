@@ -1,3 +1,4 @@
+import { detailRenderSize } from "../shared/pdf";
 import { drawingAnnotation } from "./drawingAnnotations";
 import {
   overlap,
@@ -83,6 +84,46 @@ export function analysisPageRegions(
     r.score += Math.min(12, usefulWeight) - Math.min(12, administrative * 2);
     return regionInk(survey, r, width, height) >= 8 ? [r] : [];
   });
+  // A bounded assembly-context image helps the visual model follow continuous
+  // linework between repeated ply labels. Label rows DO NOT establish beam counts.
+  const beamMarks = seeds.filter(
+    (m) =>
+      /\b(?:beams?|girders?|\d+\s*[- ]?ply)\b/i.test(m.text) &&
+      drawingAnnotation(m.text).anchor,
+  );
+  for (const seed of beamMarks) {
+    const nearby = beamMarks.filter(
+      (m) => Math.abs(m.x - seed.x) <= 650 && Math.abs(m.y - seed.y) <= 450,
+    );
+    if (nearby.length < 2) continue;
+    const x = Math.max(0, Math.min(...nearby.map((m) => m.x)) - 160);
+    const y = Math.max(0, Math.min(...nearby.map((m) => m.y)) - 100);
+    const right = Math.min(
+      width,
+      Math.max(...nearby.map((m) => m.x + m.width)) + 160,
+    );
+    const bottom = Math.min(
+      height,
+      Math.max(...nearby.map((m) => m.y + m.height)) + 100,
+    );
+    try {
+      detailRenderSize(right - x, bottom - y);
+    } catch {
+      continue;
+    }
+    const region: ReadingCandidate = {
+      page,
+      x,
+      y,
+      width: right - x,
+      height: bottom - y,
+      label:
+        "Beam assembly context — trace physical linework, not label counts",
+      score: 55,
+      evidenceKeys: nearby.map((m) => evidenceKey(page, m)),
+    };
+    if (regionInk(survey, region, width, height) >= 8) candidates.push(region);
+  }
   // Scans have no trustworthy text anchors. Occupied-linework windows remain
   // optional visual aids; no OCR or invented specification/measurement is added.
   return candidates.length || marks.some((m) => m.text.trim())

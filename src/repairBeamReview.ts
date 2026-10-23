@@ -1,3 +1,4 @@
+import { consolidateBeamReviews } from "./consolidateBeamReviews";
 import type { Quote, TakeoffItem } from "./model";
 import { initializeBeamCalculator } from "./initializeBeamCalculator";
 import { isBeamMaterial } from "./beamMaterial";
@@ -22,7 +23,7 @@ export function repairBeamReview(q: Quote): Quote {
   if (q.status !== "Draft") return q;
   let next = {
     ...q,
-    takeoff: q.takeoff.map((t) => {
+    takeoff: consolidateBeamReviews(q.takeoff).map((t) => {
       if (
         t.origin !== "ai" ||
         t.status !== "Proposed" ||

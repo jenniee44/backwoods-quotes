@@ -249,7 +249,34 @@ export function sameSpatialBeam(a: SpatialBeam, b: SpatialBeam) {
       )
     );
   }
-  const tolerance = a.drawingLabel && b.drawingLabel ? 0.001 : 0.000001;
+  // Independent AI observations may round the same endpoints differently.
+  // Require two shared support anchors before allowing that small tolerance;
+  // proximity or repeated specification labels alone never establish identity.
+  const sharedSupports = a.supports.filter((s) =>
+    b.supports.some(
+      (other) =>
+        distance(s.point, other.point) <= 0.003 &&
+        s.evidence.trim() !== "" &&
+        s.evidence === other.evidence,
+    ),
+  );
+  const anchored = sharedSupports.some((s, i) =>
+    sharedSupports
+      .slice(i + 1)
+      .some((other) => distance(s.point, other.point) > 0.03),
+  );
+  const ax = a.end.x - a.start.x,
+    ay = a.end.y - a.start.y;
+  const offset = (p: DrawingPoint) =>
+    Math.abs((p.x - a.start.x) * ay - (p.y - a.start.y) * ax) /
+    Math.max(1e-9, Math.hypot(ax, ay));
+  const inline = offset(b.start) <= 0.0002 && offset(b.end) <= 0.0002;
+  const tolerance =
+    anchored && inline
+      ? 0.003
+      : a.drawingLabel && b.drawingLabel
+        ? 0.001
+        : 0.000001;
   return (
     a.sheet === b.sheet &&
     ((distance(a.start, b.start) <= tolerance &&
@@ -379,7 +406,7 @@ export function spatialBeamOverlap(beams: SpatialBeam[]) {
       const off = (p: DrawingPoint) =>
         Math.abs((p.x - a.start.x) * dy - (p.y - a.start.y) * dx) /
         Math.sqrt(den);
-      if (off(b.start) > 0.000001 || off(b.end) > 0.000001) continue;
+      if (off(b.start) > 0.003 || off(b.end) > 0.003) continue;
       const lo = Math.min(project(b.start), project(b.end)),
         hi = Math.max(project(b.start), project(b.end));
       if (Math.min(1, hi) - Math.max(0, lo) > 0.01)

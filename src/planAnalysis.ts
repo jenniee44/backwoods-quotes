@@ -1,3 +1,4 @@
+import { consolidateBeamReviews } from "./consolidateBeamReviews";
 import { spatialBeamIdentity } from "../shared/spatialBeams";
 import { proposedBeamRecipe } from "./beamPrefill";
 import { proposedMaterialRecipe } from "./deckTakeoff";
@@ -233,7 +234,8 @@ export function addAnalysisSuggestions(
     ...q,
     takeoff: [
       ...q.takeoff,
-      ...adopted.map((item) => {
+      ...consolidateBeamReviews(adopted).map((item) => {
+        if (item.status === "Rejected") return item;
         const source = drawingSuggestions.find(
           (s) =>
             s.documentId === item.documentId &&

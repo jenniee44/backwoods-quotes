@@ -13,19 +13,29 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
   if (!item.beamAssemblies?.length) return null;
   const groups = uniqueSpatialBeams(item.beamAssemblies);
   const included = groups.filter((g) => g[0].scope === "New work");
+  const proposed = groups.filter(
+    (g) =>
+      g[0].scope === "New work" || g[0].scope === "Requires scope confirmation",
+  );
   return (
     <section
       aria-label="Proposed physical beam lines"
       className="beam-assembly-summary"
     >
       <strong>
-        {included.length} proposed beam{" "}
-        {included.length === 1 ? "line" : "lines"} — verify against drawing
+        {proposed.length} proposed beam{" "}
+        {proposed.length === 1 ? "line" : "lines"} — verify against drawing
       </strong>
       <p className="tiny">
         Repeated labels are references, not additional beams. Runs, spans, plies
         and purchasing boards are different quantities.
       </p>
+      {groups.some((g) => g[0].scope === "Requires scope confirmation") && (
+        <p className="takeoff-next-step">
+          Confirm which beam lines are included in this work. Uncertain scope is
+          not a purchasing quantity.
+        </p>
+      )}
       {!!spatialBeamReviewProblem(item) && (
         <p className="takeoff-next-step">{spatialBeamReviewProblem(item)}</p>
       )}
