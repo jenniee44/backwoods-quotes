@@ -111,3 +111,26 @@ it("proposes the evidenced physical count rather than defaulting to three", () =
     expect(initializeBeamCalculator(t)!.inputs.runs).toBe(count);
   }
 });
+it("reconciles one-line and three-line partial observations without adding their reported counts", () => {
+  const a = beam("partial"),
+    b = beam("complete");
+  a.beamAssemblies = a.beamAssemblies!.slice(0, 1);
+  a.quantity = 1;
+  b.quantity = 3;
+  const result = consolidateBeamReviews([a, b]);
+  expect(result.filter((t) => t.status === "Proposed")).toHaveLength(1);
+  expect(initializeBeamCalculator(result[0])!.inputs.runs).toBe(3);
+  expect(result[0].quantity).toBeNull();
+  expect(result[1].quantity).toBe(3);
+});
+it("refreshes only exactly reproducible saved proposals and preserves manually edited or intentionally blank recipes", () => {
+  const a = beam("partial"),
+    b = beam("complete");
+  a.beamAssemblies = a.beamAssemblies!.slice(0, 1);
+  a.calculation = initializeBeamCalculator(a);
+  const joined = consolidateBeamReviews([a, b]);
+  expect(joined[1].status).toBe("Rejected");
+  expect(initializeBeamCalculator(joined[0])!.inputs.runs).toBe(3);
+  a.calculation!.inputs.length1 = null;
+  expect(consolidateBeamReviews([a, b])[1].status).toBe("Proposed");
+});

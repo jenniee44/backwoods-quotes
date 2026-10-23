@@ -1,4 +1,8 @@
 import {
+  validVectorGeometry,
+  type PdfVectorGeometry,
+} from "./pdfVectorGeometry";
+import {
   validTextPositions,
   maxPositionedTextChars,
   type PositionedPdfText,
@@ -16,6 +20,7 @@ export const maxDetailRegions = 24;
 export const maxPdfTextChars = 60_000;
 export const maxAnalysisTextChars = 120_000;
 export type PdfTextPage = {
+  vectorGeometry?: PdfVectorGeometry;
   positions?: PositionedPdfText[];
   positionsTruncated?: boolean;
   page: number;
@@ -91,6 +96,8 @@ export function validPdfText(value: unknown): value is PdfTextLayer {
       Number(p.page) > Number(value.pageCount) ||
       seen.has(Number(p.page)) ||
       (p.positions !== undefined && !validTextPositions(p.positions)) ||
+      (p.vectorGeometry !== undefined &&
+        !validVectorGeometry(p.vectorGeometry)) ||
       (p.positionsTruncated !== undefined &&
         typeof p.positionsTruncated !== "boolean") ||
       !positive(p.width) ||

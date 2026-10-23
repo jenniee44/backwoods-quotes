@@ -3,8 +3,13 @@ import { seed, storageKey, type TakeoffItem } from "../src/model";
 import { analysisFixture } from "../shared/analysis.fixture";
 import { syntheticDeckBeams } from "../shared/spatialBeam.fixture";
 import { constructionPdf } from "./fixtures/constructionPdf";
-for (const width of [1366, 390])
-  test(`overlapping beam observations become one unverified three-line review and survive reopening at ${width}px`, async ({
+for (const [width, count] of [
+  [1366, 2],
+  [1366, 3],
+  [1366, 4],
+  [390, 3],
+])
+  test(`overlapping beam observations become one unverified ${count}-line review and survive reopening at ${width}px`, async ({
     page,
   }) => {
     test.setTimeout(90000);
@@ -28,12 +33,24 @@ for (const width of [1366, 390])
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
+    const beams = syntheticDeckBeams();
+    const extra = structuredClone(beams[0]);
+    extra.start.y = 0.85;
+    extra.end.y = 0.85;
+    extra.labels.forEach((l) => (l.point.y = 0.84));
+    extra.supports.forEach((p) => (p.point.y = 0.85));
+    extra.dimensions = [];
+    const physical = [...beams, extra].slice(0, count);
     let context = false;
     await page.route("**/api/plan-analysis", async (route) => {
       const doc = route.request().postDataJSON().documents[0];
       context = doc.detailRegions?.some((r: { label: string }) =>
         r.label.startsWith("Beam assembly context"),
       );
+      expect(doc.pdfText.pages[0].vectorGeometry.segments).toHaveLength(count);
+      expect(
+        doc.pdfText.pages[0].vectorGeometry.boxes.length,
+      ).toBeGreaterThanOrEqual(count * 2);
       const result = analysisFixture(doc.id);
       const observation = {
         ...result.suggestions[0],
@@ -52,9 +69,10 @@ for (const width of [1366, 390])
         sourceFacts: [
           "Distinct physical beam lines traced on original plan; repeated labels are references only.",
         ],
-        beamAssemblies: syntheticDeckBeams(),
+        beamAssemblies: physical.slice(0, 1),
       };
       const repeated = structuredClone(observation);
+      repeated.beamAssemblies = structuredClone(physical);
       repeated.beamAssemblies.forEach((b) => {
         b.start.x += 0.001;
         b.end.x -= 0.001;
@@ -64,7 +82,8 @@ for (const width of [1366, 390])
       result.dimensions = [];
       await route.fulfill({ json: result });
     });
-    const drawing = [840, 600, 360]
+    const drawing = physical
+      .map((b) => (1 - b.start.y) * 1200)
       .map(
         (y) =>
           `2 w 320 ${y} m 1280 ${y} l S ` +
@@ -128,8 +147,8 @@ for (const width of [1366, 390])
       });
       await expect(
         panel.getByLabel("Number of separate beam runs", { exact: true }),
-      ).toHaveValue("3");
-      for (const n of [1, 2, 3]) {
+      ).toHaveValue(String(count));
+      for (const n of Array.from({ length: count }, (_, i) => i + 1)) {
         const card = panel.getByRole("region", {
           name: `Beam ${n}`,
           exact: true,
@@ -158,6 +177,7 @@ for (const width of [1366, 390])
         storageKey,
       );
       expect(saved.lines).toEqual(manual);
+      expect(saved.documents[0].pdfText).toBeUndefined();
       expect(saved.takeoff).toHaveLength(2);
       expect(saved.takeoff[0].calculation.verified).toBe(false);
     }

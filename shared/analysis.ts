@@ -543,6 +543,9 @@ export function validateDocuments(value: unknown): AnalysisDocument[] {
               height: page.height,
               text: page.text,
               status: page.status,
+              ...(page.vectorGeometry
+                ? { vectorGeometry: structuredClone(page.vectorGeometry) }
+                : {}),
               ...(page.positions
                 ? { positions: page.positions.map((r) => ({ ...r })) }
                 : {}),

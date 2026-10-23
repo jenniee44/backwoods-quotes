@@ -1,3 +1,4 @@
+import { spatialBeamRecipe } from "./spatialBeamPrefill";
 import { normalizeSpecification } from "../shared/componentIdentity";
 import type { TakeoffItem } from "./model";
 import { isBeamMaterial } from "./beamMaterial";
@@ -15,7 +16,10 @@ const eligible = (t: TakeoffItem) =>
   !t.scopeVerified &&
   !t.purchaseVerified &&
   !t.conflictsVerified &&
-  !t.calculation &&
+  (!t.calculation ||
+    (!t.calculation.verified &&
+      JSON.stringify(t.calculation) ===
+        JSON.stringify(spatialBeamRecipe(t)))) &&
   !/^Manual /i.test(t.calculationBasis ?? "") &&
   isBeamMaterial(t) &&
   !!t.beamAssemblies?.length;
@@ -43,11 +47,16 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
           JSON.stringify(t.materialInputs ?? []) ===
             JSON.stringify(item.materialInputs ?? []) &&
           t.stockLength === item.stockLength &&
-          uniqueSpatialBeams(t.beamAssemblies!).length ===
-            uniqueSpatialBeams(item.beamAssemblies!).length &&
-          uniqueSpatialBeams(item.beamAssemblies!).every((g) =>
+          uniqueSpatialBeams(item.beamAssemblies!).some((g) =>
             t.beamAssemblies!.some((b) => sameSpatialBeam(b, g[0])),
-          ),
+          ) &&
+          (uniqueSpatialBeams(item.beamAssemblies!).every((g) =>
+            t.beamAssemblies!.some((b) => sameSpatialBeam(b, g[0])),
+          ) ||
+            uniqueSpatialBeams(t.beamAssemblies!).every((g) =>
+              item.beamAssemblies!.some((b) => sameSpatialBeam(b, g[0])),
+            ) ||
+            !!t.location?.trim()),
       );
     if (!prior) {
       result.push(item);
@@ -98,6 +107,9 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
       included: false,
       notes: `${item.notes}\nConsolidated source observation into ${prior.id}; not an additional billable material.`,
     });
+    // Only a recipe exactly reproducible from source evidence is refreshed.
+    // Manual inputs, blanks, stock choices and verified recipes are ineligible.
+    if (prior.calculation) delete prior.calculation;
     prior.beamAssemblies = merged;
     prior.sourceFacts = facts;
     prior.warnings = warnings;
