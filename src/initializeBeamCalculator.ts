@@ -1,7 +1,7 @@
 import type { TakeoffItem } from "./model";
 import { isBeamMaterial } from "./beamMaterial";
 import { enrichBeamRecipe, proposedBeamRecipe } from "./beamPrefill";
-import { includedScope } from "./takeoffScope";
+import { includedScope, workScope } from "./takeoffScope";
 /** Choosing the beam tool is independent of establishing distinct physical runs. */
 export function initializeBeamCalculator(t: TakeoffItem) {
   if (
@@ -11,9 +11,12 @@ export function initializeBeamCalculator(t: TakeoffItem) {
     t.status !== "Proposed" ||
     t.reviewAcknowledged ||
     t.convertedLineId ||
-    !includedScope(t) ||
+    (!includedScope(t) && workScope(t) !== "Requires scope confirmation") ||
     (t.itemRole && t.itemRole !== "Construction item") ||
-    (!t.calculation && t.quantity !== null && t.quantityMethod === "Unknown") ||
+    (!t.calculation &&
+      t.quantity !== null &&
+      t.quantityMethod === "Unknown" &&
+      !t.beamAssemblies?.length) ||
     /^Manual /i.test(t.calculationBasis ?? "")
   )
     return t.calculation;

@@ -390,7 +390,10 @@ export function mergeSpatialBeams(
 /** Partial overlapping collinear observations cannot safely establish two runs. */
 export function spatialBeamOverlap(beams: SpatialBeam[]) {
   const groups = uniqueSpatialBeams(
-    beams.filter((b) => b.scope === "New work"),
+    beams.filter(
+      (b) =>
+        b.scope === "New work" || b.scope === "Requires scope confirmation",
+    ),
   );
   for (let i = 0; i < groups.length; i++)
     for (let j = i + 1; j < groups.length; j++) {

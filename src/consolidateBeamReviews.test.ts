@@ -94,7 +94,8 @@ it("does not merge separate assemblies, scope alternatives, manual edits, review
 it("unknown scope and labels alone never create purchasable beam counts", () => {
   const t = beam("a");
   t.beamAssemblies!.forEach((ob) => (ob.scope = "Requires scope confirmation"));
-  expect(initializeBeamCalculator(t)?.inputs.runs).toBeUndefined();
+  expect(initializeBeamCalculator(t)?.inputs.runs).toBe(3);
+  expect(initializeBeamCalculator(t)?.verified).toBe(false);
   t.beamAssemblies = [];
   t.sourceFacts = ["3PLY 2X10 PT repeated three times"];
   expect(initializeBeamCalculator(t)?.inputs.runs).toBeUndefined();

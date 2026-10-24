@@ -71,7 +71,9 @@ export function spatialBeamRecipe(
   item: TakeoffItem,
 ): MaterialCalculation | null {
   const observations = item.beamAssemblies ?? [];
-  const included = observations.filter((b) => b.scope === "New work");
+  const included = observations.filter(
+    (b) => b.scope === "New work" || b.scope === "Requires scope confirmation",
+  );
   if (
     !included.length ||
     spatialBeamOverlap(included) ||
@@ -124,7 +126,10 @@ export function spatialBeamReviewProblem(item: TakeoffItem) {
   const overlap = spatialBeamOverlap(beams);
   if (overlap) return overlap;
   for (const group of uniqueSpatialBeams(
-    beams.filter((b) => b.scope === "New work"),
+    beams.filter(
+      (b) =>
+        b.scope === "New work" || b.scope === "Requires scope confirmation",
+    ),
   ))
     if (new Set(spatialLengths(item, group).map((l) => l.feet)).size > 1)
       return "Conflicting full beam lengths: compare the drawing references and confirm the correct assembly length.";

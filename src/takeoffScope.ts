@@ -94,6 +94,13 @@ export function unresolvedFoundationAlternative(q: Quote, item: TakeoffItem) {
   );
 }
 export function assertScope(q: Quote, item: TakeoffItem) {
+  if (
+    !item.scopeVerified &&
+    item.beamAssemblies?.some((b) => b.scope === "Requires scope confirmation")
+  )
+    throw new Error(
+      "Confirm which proposed beam lines are included before approval/conversion.",
+    );
   if (!includedScope(item))
     throw new Error(
       "Confirm contract scope inclusion: existing/by-others or excluded work must be explicitly included and verified before approval/conversion.",

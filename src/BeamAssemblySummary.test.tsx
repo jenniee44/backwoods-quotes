@@ -99,3 +99,21 @@ it("keeps known existing and by-others reference lines outside the proposed work
   expect(html).toContain("3 proposed beam lines");
   expect(html).toContain("Reference only; excluded");
 });
+it("does not repeat an already completed contractor scope confirmation as missing information", () => {
+  const beams = syntheticDeckBeams();
+  beams.forEach((b) => (b.scope = "Requires scope confirmation"));
+  const html = renderToStaticMarkup(
+    <BeamAssemblySummary
+      item={{
+        ...base,
+        id: "synthetic",
+        documentId: "synthetic",
+        beamAssemblies: beams,
+        scopeVerified: true,
+      }}
+    />,
+  );
+  expect(html).toContain("Included by contractor");
+  expect(html).not.toContain("Confirm which beam lines are included");
+  expect(html).toContain("Confirm this beam&#x27;s full length");
+});

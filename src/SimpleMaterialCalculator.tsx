@@ -1,3 +1,4 @@
+import { proposedBeamSpecification } from "./beamMaterial";
 import { initializeBeamCalculator } from "./initializeBeamCalculator";
 import { enrichBeamRecipe, proposedBeamRecipe } from "./beamPrefill";
 import BeamAssemblySummary from "./BeamAssemblySummary";
@@ -50,7 +51,8 @@ export default function SimpleMaterialCalculator({
 }) {
   const [error, setError] = useState("");
   const [allCalculators, setAllCalculators] = useState(false);
-  const recipe = t.calculation ?? initializeBeamCalculator(t),
+  const specification = proposedBeamSpecification(t);
+  const recipe = initializeBeamCalculator(t) ?? t.calculation,
     definition = calculators.find((d) => d.kind === recipe?.kind),
     preview = recipe ? calculateMaterial(recipe, false) : null;
   const calculate = (_t: TakeoffItem, r: MaterialCalculation) => onCalculate(r);
@@ -87,10 +89,10 @@ export default function SimpleMaterialCalculator({
         <Field label="Specifications">
           <input
             aria-label="Calculator specifications"
-            key={t.specification}
-            defaultValue={t.specification ?? ""}
+            key={specification}
+            defaultValue={specification ?? ""}
             onBlur={(e) => {
-              if (e.target.value !== (t.specification ?? ""))
+              if (e.target.value !== (specification ?? ""))
                 edit({ specification: e.target.value });
             }}
           />
@@ -136,6 +138,32 @@ export default function SimpleMaterialCalculator({
           Confirm measurements and purchasing requirements. Missing inputs
           remain to confirm; calculations do not approve materials.
         </p>
+        {t.beamAssemblies?.some(
+          (b) => b.scope === "Requires scope confirmation",
+        ) && (
+          <label className="check-options">
+            <input
+              type="checkbox"
+              checked={
+                t.scopeVerified === true &&
+                t.workScope === "New work" &&
+                t.included !== false
+              }
+              onChange={(e) =>
+                onPatch(
+                  e.target.checked
+                    ? {
+                        scopeVerified: true,
+                        workScope: "New work",
+                        included: true,
+                      }
+                    : { scopeVerified: false },
+                )
+              }
+            />
+            I verified that the proposed beam lines are included in this work
+          </label>
+        )}
         <Field label="Material calculator">
           <select
             aria-label="Material calculator"

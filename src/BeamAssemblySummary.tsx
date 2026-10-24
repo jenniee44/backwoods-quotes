@@ -12,7 +12,6 @@ import { formatFeet } from "../shared/measurementFormatting";
 export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
   if (!item.beamAssemblies?.length) return null;
   const groups = uniqueSpatialBeams(item.beamAssemblies);
-  const included = groups.filter((g) => g[0].scope === "New work");
   const proposed = groups.filter(
     (g) =>
       g[0].scope === "New work" || g[0].scope === "Requires scope confirmation",
@@ -30,18 +29,19 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
         Repeated labels are references, not additional beams. Runs, spans, plies
         and purchasing boards are different quantities.
       </p>
-      {groups.some((g) => g[0].scope === "Requires scope confirmation") && (
-        <p className="takeoff-next-step">
-          Confirm which beam lines are included in this work. Uncertain scope is
-          not a purchasing quantity.
-        </p>
-      )}
+      {!item.scopeVerified &&
+        groups.some((g) => g[0].scope === "Requires scope confirmation") && (
+          <p className="takeoff-next-step">
+            Confirm which beam lines are included in this work. Uncertain scope
+            is not a purchasing quantity.
+          </p>
+        )}
       {!!spatialBeamReviewProblem(item) && (
         <p className="takeoff-next-step">{spatialBeamReviewProblem(item)}</p>
       )}
       {groups.map((observations, index) => {
         const b = observations[0],
-          n = included.indexOf(observations) + 1,
+          n = proposed.indexOf(observations) + 1,
           proposal = spatialBeamLength(item, observations);
         const saved =
           item.calculation?.kind === "beam-runs" && n > 0
@@ -75,7 +75,10 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
               {b.specification || "Specification to confirm"}
             </strong>
             <p>
-              {b.scope} ·{" "}
+              {b.scope === "Requires scope confirmation" && item.scopeVerified
+                ? "Included by contractor"
+                : b.scope}{" "}
+              ·{" "}
               {plies != null && Number.isFinite(plies) && plies > 0
                 ? `${plies} plies`
                 : "Plies to confirm"}{" "}
@@ -87,12 +90,15 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
               {b.sheet || "Sheet to confirm"} · page {b.page}
             </small>
             <p className="tiny">
-              {b.scope !== "New work"
-                ? "Reference only; excluded from automatic purchasing calculations."
-                : problem ||
-                  (length == null
-                    ? "Confirm this beam's full length; overall and support-span dimensions are not cut lengths."
-                    : "Confirm stock lengths and approved cutting/splice requirements before purchasing.")}
+              {b.scope === "Requires scope confirmation" && !item.scopeVerified
+                ? "Confirm inclusion before approval; this line is a proposal, not a purchase quantity."
+                : b.scope !== "New work" &&
+                    b.scope !== "Requires scope confirmation"
+                  ? "Reference only; excluded from automatic purchasing calculations."
+                  : problem ||
+                    (length == null
+                      ? "Confirm this beam's full length; overall and support-span dimensions are not cut lengths."
+                      : "Confirm stock lengths and approved cutting/splice requirements before purchasing.")}
             </p>
             <details>
               <summary>Advanced drawing evidence</summary>

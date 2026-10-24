@@ -190,3 +190,87 @@ it("selecting the default tool alone leaves older observation quantities and uni
   });
   expect(prepareDeckTakeoff(reopened)).toEqual(reopened);
 });
+it("selects and prefills spatial beam proposals before scope or overall confidence is verified, without purchasing assumptions", async () => {
+  const { completenessProblem } = await import("./takeoffRequirements");
+  const { editTakeoff } = await import("./planAnalysis");
+  const t = {
+    ...base(),
+    workScope: "Requires scope confirmation" as const,
+    included: false,
+    confidence: "Unspecified" as const,
+    beamAssemblies: syntheticDeckBeams(),
+  };
+  t.beamAssemblies.forEach((b) => (b.scope = "Requires scope confirmation"));
+  t.beamAssemblies[0].dimensions.push(
+    fullDimension(t.beamAssemblies[0], "12'-6\""),
+  );
+  const recipe = initializeBeamCalculator(t)!;
+  expect(recipe.kind).toBe("beam-runs");
+  expect(recipe.inputs).toMatchObject({
+    runs: 3,
+    plies1: 3,
+    plies2: 3,
+    plies3: 3,
+    length1: 12.5,
+  });
+  for (const field of ["waste", "stock1", "pieces1", "length2", "length3"])
+    expect(recipe.inputs[field]).toBeUndefined();
+  expect(recipe.arrangements).toEqual({});
+  expect(recipe.verified).toBe(false);
+  expect(completenessProblem(t)).toContain("Confirm which proposed beam lines");
+  const confirmed = editTakeoff(t, {
+    workScope: "New work",
+    included: true,
+    scopeVerified: true,
+  });
+  expect(confirmed.scopeVerified).toBe(true);
+  expect(confirmed.status).toBe("Proposed");
+  expect(confirmed.reviewAcknowledged).toBe(false);
+});
+it("fills an absent overall specification from consistent spatial evidence and preserves explicitly cleared fields", () => {
+  const t = {
+    ...base(),
+    specification: undefined,
+    beamAssemblies: syntheticDeckBeams(),
+  };
+  const q = { ...seed().quotes[0], status: "Draft" as const, takeoff: [t] };
+  const repaired = prepareDeckTakeoff(q);
+  expect(repaired.takeoff[0].specification).toBe("3PLY 2X10 PT");
+  expect(repaired.takeoff[0].calculation!.inputs.plies1).toBe(3);
+  expect(
+    prepareDeckTakeoff({ ...q, takeoff: [{ ...t, specification: "" }] })
+      .takeoff[0].specification,
+  ).toBe("");
+});
+it("offers the beam tool without rewriting a previously entered observation quantity", () => {
+  const t = {
+    ...base(),
+    quantity: 12,
+    quantityMethod: "Unknown" as const,
+    beamAssemblies: syntheticDeckBeams(),
+  };
+  expect(initializeBeamCalculator(t)?.kind).toBe("beam-runs");
+  const q = { ...seed().quotes[0], status: "Draft" as const, takeoff: [t] };
+  expect(prepareDeckTakeoff(q).takeoff[0]).toEqual(t);
+});
+it("scope confirmation preserves contractor-verified calculator values while requiring a separate approval", async () => {
+  const { editTakeoff } = await import("./planAnalysis");
+  const t = {
+    ...base(),
+    beamAssemblies: syntheticDeckBeams(),
+    calculation: {
+      kind: "beam-runs",
+      inputs: { runs: 3, length1: 12, plies1: 3 },
+      verified: true,
+    },
+  };
+  t.beamAssemblies[0].scope = "Requires scope confirmation";
+  const updated = editTakeoff(t, {
+    workScope: "New work",
+    included: true,
+    scopeVerified: true,
+  });
+  expect(updated.calculation).toEqual(t.calculation);
+  expect(updated.reviewAcknowledged).toBe(false);
+  expect(updated.status).toBe("Proposed");
+});

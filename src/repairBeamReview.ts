@@ -1,7 +1,7 @@
 import { consolidateBeamReviews } from "./consolidateBeamReviews";
 import type { Quote, TakeoffItem } from "./model";
 import { initializeBeamCalculator } from "./initializeBeamCalculator";
-import { isBeamMaterial } from "./beamMaterial";
+import { isBeamMaterial, proposedBeamSpecification } from "./beamMaterial";
 import { consolidateCompared } from "./takeoffOverlap";
 import { sameBeamCalculator } from "./beamRecipeIdentity";
 import {
@@ -29,20 +29,26 @@ export function repairBeamReview(q: Quote): Quote {
         t.status !== "Proposed" ||
         t.convertedLineId ||
         t.reviewAcknowledged ||
+        (!t.calculation &&
+          t.quantity !== null &&
+          t.quantityMethod === "Unknown") ||
         !isBeamMaterial(t)
       )
         return t;
       if (t.calculation?.verified) return t;
       if (t.calculation && t.calculation.kind !== "beam-runs") return t;
+      const specification = proposedBeamSpecification(t);
       const calculation = initializeBeamCalculator(t);
       if (
         !calculation ||
         (!t.calculation && Object.keys(calculation.inputs).length === 0) ||
-        JSON.stringify(calculation) === JSON.stringify(t.calculation)
+        (JSON.stringify(calculation) === JSON.stringify(t.calculation) &&
+          specification === t.specification)
       )
         return t;
       return {
         ...t,
+        ...(specification !== undefined ? { specification } : {}),
         calculation,
         quantity: null,
         unit: "boards",

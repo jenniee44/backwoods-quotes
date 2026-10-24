@@ -21,3 +21,22 @@ export function isBeamMaterial(item: TakeoffItem) {
     /\b\d+\s*[x×]\s*\d+\b/i.test(item.specification ?? item.description)
   );
 }
+/** Only fill an absent field, never a deliberately cleared specification. */
+export function proposedBeamSpecification(item: TakeoffItem) {
+  if (item.specification !== undefined) return item.specification;
+  const values = [
+    ...new Set(
+      (item.beamAssemblies ?? [])
+        .filter(
+          (b) =>
+            b.scope === "New work" || b.scope === "Requires scope confirmation",
+        )
+        .map((b) => b.specification.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return values.length === 1 &&
+    !/unknown|unreadable|to confirm/i.test(values[0])
+    ? values[0]
+    : undefined;
+}

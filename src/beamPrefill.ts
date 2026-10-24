@@ -76,6 +76,16 @@ const labelKey = (s: string) =>
 export function proposedBeamRecipe(
   item: TakeoffItem,
 ): MaterialCalculation | null {
+  // Spatial facts can be proposed before scope is resolved; approval remains
+  // gated separately. Each line still needs readable labels and reliable geometry.
+  if (
+    item.origin === "ai" &&
+    item.destination === "Materials" &&
+    isBeamMaterial(item) &&
+    item.beamAssemblies?.length &&
+    (includedScope(item) || workScope(item) === "Requires scope confirmation")
+  )
+    return spatialBeamRecipe(item);
   if (
     item.origin !== "ai" ||
     item.destination !== "Materials" ||
@@ -218,7 +228,7 @@ export function enrichBeamRecipe(
   if (
     recipe.kind !== "beam-runs" ||
     recipe.verified ||
-    !hasReadableSpecification(item)
+    (!hasReadableSpecification(item) && !item.beamAssemblies?.length)
   )
     return recipe;
   const proposed = proposedBeamRecipe(item),

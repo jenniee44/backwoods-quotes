@@ -10,6 +10,11 @@ export function hasReadableSpecification(t: TakeoffItem) {
   );
 }
 export function completenessProblem(t: TakeoffItem) {
+  if (
+    !t.scopeVerified &&
+    t.beamAssemblies?.some((b) => b.scope === "Requires scope confirmation")
+  )
+    return "Confirm which proposed beam lines are included in this work before approval.";
   if (!t.conflictsVerified && spatialBeamReviewProblem(t))
     return spatialBeamReviewProblem(t);
   if (!t.conflictsVerified && materialInputProblem(t.materialInputs))

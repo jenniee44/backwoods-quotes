@@ -307,10 +307,18 @@ export function editTakeoff(
       key === "purchaseVerified" ||
       key === "conflictsVerified",
   );
+  const beamScopeConfirmation =
+    Object.keys(delta).every((key) =>
+      ["scopeVerified", "workScope", "included"].includes(key),
+    ) &&
+    delta.scopeVerified === true &&
+    delta.workScope === "New work" &&
+    delta.included === true &&
+    item.beamAssemblies?.some((b) => b.scope === "Requires scope confirmation");
   const calculation =
     "calculation" in delta
       ? delta.calculation
-      : item.calculation && !scopeOnly
+      : item.calculation && !scopeOnly && !beamScopeConfirmation
         ? { ...item.calculation, verified: false }
         : item.calculation;
   return {
@@ -324,9 +332,11 @@ export function editTakeoff(
     ...(calculation && !calculation.verified ? { quantity: null } : {}),
     status: "Proposed",
     reviewAcknowledged: false,
-    scopeVerified: scopeOnly
-      ? (delta.scopeVerified ?? item.scopeVerified)
-      : false,
+    scopeVerified: beamScopeConfirmation
+      ? true
+      : scopeOnly
+        ? (delta.scopeVerified ?? item.scopeVerified)
+        : false,
   };
 }
 export function reviewTakeoff(item: TakeoffItem): TakeoffItem {

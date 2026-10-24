@@ -145,7 +145,8 @@ it("keeps existing and by-others beams out of automatic calculations", () => {
   t.beamAssemblies![2].scope = "By others / excluded";
   expect(proposedBeamRecipe(t)!.inputs.runs).toBe(1);
   t.beamAssemblies![0].scope = "Requires scope confirmation";
-  expect(proposedBeamRecipe(t)).toBeNull();
+  expect(proposedBeamRecipe(t)?.inputs.runs).toBe(1);
+  expect(proposedBeamRecipe(t)?.verified).toBe(false);
 });
 it("does not count ambiguous geometry or unrelated labels as reliable beam lines", () => {
   const t = item();
