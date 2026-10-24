@@ -1,3 +1,6 @@
+import { useContext } from "react";
+import { DrawingLocationContext } from "./DrawingLocationContext";
+import { beamLayout } from "./framingLayout";
 import type { TakeoffItem } from "./model";
 import {
   beamGeometryProblem,
@@ -10,6 +13,7 @@ import {
 } from "./spatialBeamPrefill";
 import { formatFeet } from "../shared/measurementFormatting";
 export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
+  const showDrawing = useContext(DrawingLocationContext);
   if (!item.beamAssemblies?.length) return null;
   const groups = uniqueSpatialBeams(item.beamAssemblies);
   const proposed = groups.filter(
@@ -68,6 +72,7 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
             ? saved.inputs[`plies${savedKey}`]
             : Number(b.specification.match(/\b(\d+)\s*[- ]?ply\b/i)?.[1]);
         const problem = beamGeometryProblem(b);
+        const layout = beamLayout(item, observations);
         return (
           <article key={index} className="beam-line-summary">
             <strong>
@@ -100,6 +105,79 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
                       ? "Confirm this beam's full length; overall and support-span dimensions are not cut lengths."
                       : "Confirm stock lengths and approved cutting/splice requirements before purchasing.")}
             </p>
+            <div className="framing-layout-facts">
+              <p className="tiny">
+                Support positions: {layout.supports.length || "To confirm"} ·
+                Proposed intervals between supports:{" "}
+                {layout.spans.length || "To confirm"}. These are not new footing
+                counts or lumber pieces.
+              </p>
+              {!!layout.supports.length && (
+                <details>
+                  <summary>Review support locations and scope</summary>
+                  <ol>
+                    {layout.supports.map((support, i) => (
+                      <li key={i}>
+                        Support {i + 1}:{" "}
+                        {support.scopes.length === 1
+                          ? support.scopes[0]
+                          : "Conflicting scope — confirm"}
+                        <p className="tiny">{support.evidence.join("; ")}</p>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="tiny">
+                    A support position is not automatically a new post, pier or
+                    footing. Confirm each component and foundation method
+                    separately.
+                  </p>
+                </details>
+              )}
+              {!!layout.spans.length && (
+                <details>
+                  <summary>
+                    Review support spans ({layout.spans.length})
+                  </summary>
+                  <ol>
+                    {layout.spans.map((span, i) => (
+                      <li key={i}>
+                        Span {i + 1}:{" "}
+                        {span.conflict
+                          ? "Conflicting dimensions — confirm on drawing"
+                          : span.ambiguousAssociation
+                            ? "Confirm which beam this dimension belongs to"
+                            : span.feet != null
+                              ? `${formatFeet(span.feet)} (proposed)`
+                              : "Length to confirm"}
+                        {span.dimensions.map((d, j) => (
+                          <p className="tiny" key={j}>
+                            {d.role}: {d.written} — {d.evidence}
+                          </p>
+                        ))}
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="tiny">
+                    Span lengths are not summed into beam cut lengths. Supports
+                    do not establish permitted splices, new posts or new
+                    footings.
+                  </p>
+                </details>
+              )}
+              <p className="tiny">
+                Purchasing boards: verify each run's full length, stock
+                availability and approved cutting/splice arrangement in the
+                calculator. No offcut reuse is assumed.
+              </p>
+              {showDrawing && (
+                <button
+                  type="button"
+                  onClick={() => showDrawing(item.documentId, b)}
+                >
+                  Show this beam on original drawing
+                </button>
+              )}
+            </div>
             <details>
               <summary>Advanced drawing evidence</summary>
               <p>

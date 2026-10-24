@@ -17,6 +17,7 @@ export function vectorGeometry(
 ): PdfVectorGeometry {
   let matrix: Matrix = [1, 0, 0, 1, 0, 0];
   const stack: Matrix[] = [];
+  const candidates: number[][] = [];
   const segments: number[][] = [],
     boxes: number[][] = [];
   let clipped = false,
@@ -41,8 +42,20 @@ export function vectorGeometry(
     );
     return Math.hypot(p[0] - r[0] - t * dx, p[1] - r[1] - t * dy);
   };
+  const geometryKey = (r: number[]) => {
+    const v = r.map((n) => Math.round(n * 1e6) / 1e6);
+    return (
+      v[0] < v[2] || (v[0] === v[2] && v[1] <= v[3])
+        ? v
+        : [v[2], v[3], v[0], v[1]]
+    ).join(",");
+  };
+  const seedKeys = new Set<string>();
+  const candidateKeys = new Set<string>();
   const anchors = labels.filter((l) =>
-    /\b\d+\s*[- ]?ply\b|\bbeams?\b|\bgirders?\b/i.test(l.text),
+    /\b\d+\s*[- ]?ply\b|\b(?:beams?|girders?|joists?|ledgers?|footings?|posts?|stairs?|decking)\b/i.test(
+      l.text,
+    ),
   );
   if (!anchors.length) return { segments: [], boxes: [], truncated: false };
   for (let i = 0; i < list.fnArray.length; i++) {
@@ -135,17 +148,32 @@ export function vectorGeometry(
       }
     }
     if (curved) continue;
-    for (const r of lines)
+    for (const r of lines) {
+      if (valid(r) && Math.hypot(r[2] - r[0], r[3] - r[1]) >= 0.02) {
+        const key = geometryKey(r);
+        if (!candidateKeys.has(key)) {
+          if (candidates.length < 1200) {
+            candidateKeys.add(key);
+            candidates.push(r);
+          } else truncated = true;
+        }
+      }
       if (
         valid(r) &&
-        Math.hypot(r[2] - r[0], r[3] - r[1]) >= 0.08 &&
+        Math.hypot(r[2] - r[0], r[3] - r[1]) >= 0.02 &&
         anchors.some(
           (l) => near([l.x + l.width / 2, l.y + l.height / 2], r) < 0.035,
         )
       ) {
-        if (segments.length < 160) segments.push(r);
-        else truncated = true;
+        const key = geometryKey(r);
+        if (!seedKeys.has(key)) {
+          if (segments.length < 160) {
+            seedKeys.add(key);
+            segments.push(r);
+          } else truncated = true;
+        }
       }
+    }
     if (closed && lines.length === 4) {
       const xs = lines.flatMap((r) => [r[0], r[2]]),
         ys = lines.flatMap((r) => [r[1], r[3]]);
@@ -160,6 +188,42 @@ export function vectorGeometry(
         else truncated = true;
       }
     }
+  }
+  // Keep actual connected collinear strokes even when only one span has a label.
+  // This does not create centerlines, bridge gaps or classify members/supports.
+  const connected = (a: number[], b: number[]) => {
+    const dx = a[2] - a[0],
+      dy = a[3] - a[1],
+      length = Math.hypot(dx, dy);
+    const off = (x: number, y: number) =>
+      Math.abs((x - a[0]) * dy - (y - a[1]) * dx) / length;
+    if (off(b[0], b[1]) > 0.001 || off(b[2], b[3]) > 0.001) return false;
+    return (
+      Math.min(
+        ...[0, 2].flatMap((i) =>
+          [0, 2].map((j) => Math.hypot(a[i] - b[j], a[i + 1] - b[j + 1])),
+        ),
+      ) <= 0.002
+    );
+  };
+  const retained = new Set(segments.map(geometryKey));
+  for (let pass = 0; pass < 8; pass++) {
+    const additions = candidates.filter(
+      (r) =>
+        !retained.has(geometryKey(r)) && segments.some((s) => connected(s, r)),
+    );
+    if (!additions.length) break;
+    for (const r of additions) {
+      if (retained.has(geometryKey(r))) continue;
+      if (segments.length >= 160) {
+        truncated = true;
+        break;
+      }
+      segments.push(r);
+      retained.add(geometryKey(r));
+    }
+    if (segments.length >= 160) break;
+    if (pass === 7) truncated = true;
   }
   const usefulBoxes = boxes.filter((b) =>
     segments.some(

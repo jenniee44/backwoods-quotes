@@ -161,6 +161,48 @@ for (const [width, count] of [
         ).toHaveValue("");
       }
       await expect(panel).toContainText("Purchase quantity: To confirm");
+      await panel
+        .getByText("Drawing associations and references", { exact: true })
+        .click();
+      const layout = panel.getByRole("region", {
+        name: "Proposed physical beam lines",
+      });
+      await expect(layout).toContainText("Support positions: 4");
+      await expect(layout).toContainText(
+        "Proposed intervals between supports: 3",
+      );
+      await layout
+        .getByText("Review support spans (3)", { exact: true })
+        .first()
+        .click();
+      await expect(layout).toContainText("Span 1: 8′ 0″ (proposed)");
+      await layout
+        .getByRole("button", {
+          name: "Show this beam on original drawing",
+          exact: true,
+        })
+        .first()
+        .click();
+      const overlay = page.getByRole("img", {
+        name: "Proposed beam location on original drawing",
+      });
+      await expect(overlay).toBeVisible();
+      const yBefore = await overlay.locator("line").getAttribute("y1");
+      await page
+        .getByRole("button", { name: "Rotate right", exact: true })
+        .click();
+      await expect
+        .poll(() => overlay.locator("line").getAttribute("y1"))
+        .not.toBe(yBefore);
+      await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
+      await page
+        .getByRole("button", { name: "Rotate left", exact: true })
+        .click();
+      await expect
+        .poll(() => overlay.locator("line").getAttribute("y1"))
+        .toBe(yBefore);
+      await expect(page.getByText(/Original PDF view ready/)).toBeVisible();
+
       await expect
         .poll(() =>
           page.evaluate(
@@ -178,6 +220,17 @@ for (const [width, count] of [
       );
       expect(saved.lines).toEqual(manual);
       expect(saved.documents[0].pdfText).toBeUndefined();
+      expect(saved.documents[0].data.split(",")[1]).toBe(
+        Buffer.from(
+          constructionPdf({
+            width: 1600,
+            height: 1200,
+            notes: [],
+            drawing: false,
+            pageDrawing: [drawing],
+          }),
+        ).toString("base64"),
+      );
       expect(saved.takeoff).toHaveLength(2);
       expect(saved.takeoff[0].calculation.verified).toBe(false);
     }

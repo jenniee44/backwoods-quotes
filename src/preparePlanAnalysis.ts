@@ -28,7 +28,9 @@ export async function preparePlanAnalysis(
         signal?.throwIfAborted();
         if (
           !layer.positions?.some((p) =>
-            /\b\d+\s*[- ]?ply\b|\bbeams?\b|\bgirders?\b/i.test(p.text),
+            /\b\d+\s*[- ]?ply\b|\b(?:beams?|girders?|joists?|ledgers?|footings?|posts?|stairs?|decking)\b/i.test(
+              p.text,
+            ),
           )
         )
           continue;

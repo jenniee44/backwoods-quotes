@@ -1,3 +1,4 @@
+import { spatialBeamReviewProblem } from "./spatialBeamPrefill";
 import { enrichBeamRecipe } from "./beamPrefill";
 import { materialInputProblem } from "../shared/materialInputs";
 import { relevantSpecifications } from "./materialReferences";
@@ -953,7 +954,8 @@ export default function TakeoffTable({
                                     </tr>
                                   </tbody>
                                 </table>
-                                {(!!materialInputProblem(t.materialInputs) ||
+                                {(!!spatialBeamReviewProblem(t) ||
+                                  !!materialInputProblem(t.materialInputs) ||
                                   t.warnings?.some((w) =>
                                     /conflicting/i.test(w),
                                   )) && (

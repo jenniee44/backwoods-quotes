@@ -564,3 +564,35 @@ For vector PDFs, analysis preparation now includes a bounded original-page map o
 Beam calculator selection is separate from quote eligibility: an AI beam with unresolved scope can open Beams — individual verified runs and show supported spatial line counts, specifications, plies and explicitly associated full lengths as unverified proposals. Known existing/by-others lines stay outside automatic purchasing inputs. Source-observation counts and repeated labels do not become runs. An absent overall specification may be filled from consistent spatial specifications; explicitly cleared fields, manual modes/other calculator choices, quantities and verified recipes are preserved. Saved beam recipes fill only never-entered values, preserving intentional blanks.
 
 Uncertain beam scope blocks approval and direct conversion even when the parent material says New work. The purchasing calculator provides an explicit inclusion confirmation for the proposed lines; confirming scope does not approve materials or verify quantities. Missing lengths, waste, stock boards and cutting/splice arrangements stay blank unless supported or entered by the contractor. Approved/converted/manual records and customer pricing remain unchanged.
+
+### Framing layout review
+
+Beam review now separates physical runs, plies, proposed support locations,
+individual support intervals, written span dimensions and purchasing boards.
+Expand **Review support spans** or **Review support locations and scope** to check
+these associations. Repeated views retain their evidence without adding counts.
+A conflicting written span blocks approval until the contractor reconciles it.
+Older saved support records have unknown scope; they are never silently treated
+as new posts or footings. Missing or ambiguous dimensions remain **To confirm**.
+
+**Show this beam on original drawing** opens its attached original PDF page and
+highlights the proposed centerline/support references. The overlay follows viewer
+rotation and zoom; it is transient and is never baked into the original PDF or
+customer documents. Missing documents/pages produce a clear message. This is an
+AI-proposed location aid, not a measurement tool or verified structural layout.
+
+PDF extraction retains bounded connected straight linework beyond isolated labels,
+including shorter spans and labelled joist/ledger/support-related areas. It sends
+actual unclassified strokes and symbols, never inferred beam/support counts or
+pixel-derived lengths. Existing document/image/request limits still apply.
+Unsupported clipped/form-local/scanned geometry remains dependent on the original
+PDF and high-resolution reading images. No additional AI calls or paid services
+are introduced. Synthetic tests mock AI responses; they do not certify recognition
+of an unseen private drawing.
+
+The existing material calculators still require explicit layout boundaries,
+spacing, edge/opening conditions and component-specific connections. Beam purchase
+boards require contractor-confirmed full run lengths, plies, available stock and
+approved cutting/splice arrangements; support intervals are never assumed to be
+permitted splice locations. Stock/waste grouping remains explicit. Automatic
+structural splice design and cross-run offcut optimization are not performed.

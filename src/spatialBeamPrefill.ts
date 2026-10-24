@@ -1,3 +1,4 @@
+import { beamLayout } from "./framingLayout";
 import type { TakeoffItem } from "./model";
 import {
   validCalculation,
@@ -131,7 +132,9 @@ export function spatialBeamReviewProblem(item: TakeoffItem) {
         b.scope === "New work" || b.scope === "Requires scope confirmation",
     ),
   ))
-    if (new Set(spatialLengths(item, group).map((l) => l.feet)).size > 1)
+    if (beamLayout(item, group).spans.some((s) => s.conflict))
+      return "Conflicting support-span dimensions: verify the associated beam and drawing references before approval.";
+    else if (new Set(spatialLengths(item, group).map((l) => l.feet)).size > 1)
       return "Conflicting full beam lengths: compare the drawing references and confirm the correct assembly length.";
   return "";
 }

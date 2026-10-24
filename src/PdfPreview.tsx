@@ -1,3 +1,7 @@
+import {
+  rotatedDrawingPoint,
+  type DrawingLocation,
+} from "./DrawingLocationContext";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerURL from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -12,7 +16,9 @@ export default function PdfPreview({
   onDetailBusy,
   rotations,
   onRotation,
+  location,
 }: {
+  location?: DrawingLocation;
   rotations: Record<number, PdfRotation>;
   onRotation: (page: number, rotation: PdfRotation) => void;
   url: string;
@@ -34,6 +40,7 @@ export default function PdfPreview({
     rotation: PdfRotation;
     viewerRotation: PdfRotation;
     orientationReliable: boolean;
+    originalRotation: number;
     width: number;
     height: number;
   } | null>(null);
@@ -131,6 +138,7 @@ export default function PdfPreview({
           rotation: orientation,
           viewerRotation: rotation,
           orientationReliable: base.reliable,
+          originalRotation: p.rotate,
           width: viewport.width,
           height: viewport.height,
         });
@@ -177,6 +185,60 @@ export default function PdfPreview({
   const top = Math.min(box.top, Math.max(0, cssHeight - box.height));
   const visibleWidth = Math.min(box.width, cssWidth - left);
   const visibleHeight = Math.min(box.height, cssHeight - top);
+  const located = useRef<number | null>(null);
+  useEffect(() => {
+    if (location && document && location.beam.page <= document.numPages)
+      setPage(location.beam.page);
+  }, [location, document]);
+  const focusedBeam =
+    location && location.beam.page === page && pageReady && pageSize
+      ? {
+          start: rotatedDrawingPoint(
+            location.beam.start,
+            pageSize.rotation - pageSize.originalRotation,
+          ),
+          end: rotatedDrawingPoint(
+            location.beam.end,
+            pageSize.rotation - pageSize.originalRotation,
+          ),
+          supports: location.beam.supports.map((s) =>
+            rotatedDrawingPoint(
+              s.point,
+              pageSize.rotation - pageSize.originalRotation,
+            ),
+          ),
+        }
+      : null;
+  useLayoutEffect(() => {
+    if (
+      !location ||
+      !focusedBeam ||
+      !pageReady ||
+      located.current === location.request
+    )
+      return;
+    located.current = location.request;
+    scroller.current?.scrollTo({
+      left: Math.max(
+        0,
+        ((focusedBeam.start.x + focusedBeam.end.x) / 2) * cssWidth -
+          box.width / 2,
+      ),
+      top: Math.max(
+        0,
+        ((focusedBeam.start.y + focusedBeam.end.y) / 2) * cssHeight -
+          box.height / 2,
+      ),
+    });
+  }, [
+    location,
+    focusedBeam,
+    pageReady,
+    cssWidth,
+    cssHeight,
+    box.width,
+    box.height,
+  ]);
   const pixels = previewRenderSize(
     visibleWidth,
     visibleHeight,
@@ -565,6 +627,44 @@ export default function PdfPreview({
             >
               {selecting ? "Cancel region selection" : "Select drawing region"}
             </button>
+            {focusedBeam && (
+              <svg
+                aria-label="Proposed beam location on original drawing"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  zIndex: 2,
+                  pointerEvents: "none",
+                }}
+              >
+                <line
+                  x1={focusedBeam.start.x * 100}
+                  y1={focusedBeam.start.y * 100}
+                  x2={focusedBeam.end.x * 100}
+                  y2={focusedBeam.end.y * 100}
+                  stroke="#e97015"
+                  strokeWidth="5"
+                  vectorEffect="non-scaling-stroke"
+                  opacity=".8"
+                />
+                {focusedBeam.supports.map((s, i) => (
+                  <circle
+                    key={i}
+                    cx={s.x * 100}
+                    cy={s.y * 100}
+                    r="1"
+                    fill="none"
+                    stroke="#e97015"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </svg>
+            )}
             {selection && (
               <>
                 <button
@@ -716,6 +816,18 @@ export default function PdfPreview({
           />
         </div>
       </div>
+      {location && document && location.beam.page > document.numPages && (
+        <p role="alert">
+          This drawing reference points to a missing page. Verify the source
+          document.
+        </p>
+      )}
+      {focusedBeam && (
+        <p className="tiny">
+          Orange highlight: proposed beam association, not verified construction
+          geometry.
+        </p>
+      )}
       {document && (
         <p className="tiny" role="status">
           {!pageReady

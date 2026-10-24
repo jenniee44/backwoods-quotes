@@ -1,3 +1,7 @@
+import {
+  DrawingLocationContext,
+  type DrawingLocation,
+} from "./DrawingLocationContext";
 import SubmittedImageGallery from "./SubmittedImageGallery";
 import {
   archiveKey,
@@ -48,7 +52,9 @@ function DocumentPreview({
   onDetailBusy,
   rotations,
   onRotation,
+  location,
 }: {
+  location?: DrawingLocation;
   rotations: Record<number, PdfRotation>;
   onRotation: (page: number, rotation: PdfRotation) => void;
   document: PlanDocument;
@@ -72,6 +78,7 @@ function DocumentPreview({
       {d.type === "application/pdf" ? (
         <PdfPreview
           url={url}
+          location={location}
           rotations={rotations}
           onRotation={onRotation}
           onDetail={onDetail}
@@ -574,6 +581,7 @@ export default function PlansTakeoff({
       setReviewError((e as Error).message);
     }
   }
+  const [drawingLocation, setDrawingLocation] = useState<DrawingLocation>();
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const current = q.documents.find((d) => d.id === selected) ?? q.documents[0];
@@ -666,7 +674,24 @@ export default function PlansTakeoff({
     });
   }
   return (
-    <>
+    <DrawingLocationContext.Provider
+      value={(documentId, beam) => {
+        const source = q.documents.find((d) => d.id === documentId);
+        if (!source || source.type !== "application/pdf") {
+          onError(
+            "The original PDF is not attached. Reattach it to locate this proposed beam.",
+          );
+          return;
+        }
+        setSelected(documentId);
+        setDrawingLocation({ documentId, beam, request: Date.now() });
+        window.requestAnimationFrame(() =>
+          window.document
+            .querySelector(".drawing-workspace")
+            ?.scrollIntoView({ block: "start", behavior: "smooth" }),
+        );
+      }}
+    >
       <section
         className="drawing-workspace"
         aria-label="Original construction plans"
@@ -767,6 +792,11 @@ export default function PlansTakeoff({
         {current && (
           <DocumentPreview
             document={current}
+            location={
+              drawingLocation?.documentId === current.id
+                ? drawingLocation
+                : undefined
+            }
             rotations={
               orientations[current.id]?.source === current.data
                 ? orientations[current.id].pages
@@ -1587,6 +1617,6 @@ export default function PlansTakeoff({
           Add takeoff item
         </button>
       </details>
-    </>
+    </DrawingLocationContext.Provider>
   );
 }

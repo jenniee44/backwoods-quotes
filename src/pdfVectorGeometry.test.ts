@@ -80,7 +80,10 @@ it("bounds and validates geometry metadata, rejecting injected fields and malfor
   const result = vectorGeometry(
     {
       fnArray: Array(200).fill(4),
-      argsArray: Array.from({ length: 200 }, () => [20, [path(300)]]),
+      argsArray: Array.from({ length: 200 }, (_, i) => [
+        20,
+        [path(280 + i / 10)],
+      ]),
     },
     ops,
     viewport,
@@ -111,4 +114,56 @@ it("preserves nearby closed-path symbol geometry without classifying it as posts
   );
   expect(result.boxes).toEqual([[0.195, 0.295, 0.205, 0.305]]);
   expect(result).not.toHaveProperty("supports");
+});
+it("retains short connected spans beyond the only beam label without creating beam counts or inferred bridges", () => {
+  const segments = [
+    [200, 300, 250, 300],
+    [250, 300, 300, 300],
+    [300, 300, 350, 300],
+    [600, 300, 650, 300],
+    [250, 320, 300, 320],
+  ];
+  const result = vectorGeometry(
+    {
+      fnArray: segments.map(() => 4),
+      argsArray: segments.map(([x, y, z, w]) => [20, [[0, x, y, 1, z, w]]]),
+    },
+    ops,
+    viewport,
+    [{ ...labels[0], x: 0.2, width: 0.01 }],
+  );
+  expect(result.segments).toContainEqual([0.3, 0.3, 0.35, 0.3]);
+  expect(result.segments).not.toContainEqual([0.6, 0.3, 0.65, 0.3]);
+  expect(result).not.toHaveProperty("beamCount");
+});
+it("includes labelled joist linework as unclassified geometry for component interpretation", () => {
+  const result = vectorGeometry(
+    { fnArray: [4], argsArray: [[20, [path(300)]]] },
+    ops,
+    viewport,
+    [{ ...labels[0], text: '2x6 PT joists at 16" OC' }],
+  );
+  expect(result.segments).toHaveLength(1);
+});
+
+it("duplicate/reversed drawing strokes do not consume the geometry budget and hide other physical lines", () => {
+  const result = vectorGeometry(
+    {
+      fnArray: Array(203).fill(4),
+      argsArray: [
+        ...Array.from({ length: 200 }, (_, i) => [
+          20,
+          [[0, i % 2 ? 800 : 200, 300, 1, i % 2 ? 200 : 800, 300]],
+        ]),
+        [20, [path(500)]],
+        [20, [path(700)]],
+        [20, [path(900)]],
+      ],
+    },
+    ops,
+    viewport,
+    [...labels, { ...labels[0], y: 0.89 }],
+  );
+  expect(result.segments).toHaveLength(4);
+  expect(result.truncated).toBe(false);
 });

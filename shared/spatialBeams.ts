@@ -18,7 +18,11 @@ export type SpatialBeam = {
   end: DrawingPoint;
   specification: string;
   labels: { text: string; point: DrawingPoint }[];
-  supports: { point: DrawingPoint; evidence: string }[];
+  supports: {
+    point: DrawingPoint;
+    evidence: string;
+    scope?: SpatialBeam["scope"];
+  }[];
   dimensions: BeamDimension[];
   scope:
     | "New work"
@@ -82,8 +86,21 @@ export const spatialBeamSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          properties: { point, evidence: text },
-          required: ["point", "evidence"],
+          properties: {
+            point,
+            evidence: {
+              ...text,
+              description:
+                "Identify this physical support location and its relation to this beam. A symbol alone does not establish a new footing or permitted splice.",
+            },
+            scope: {
+              type: "string",
+              enum: scopes,
+              description:
+                "Scope of this support, independently of the beam. Use Requires scope confirmation if not explicit.",
+            },
+          },
+          required: ["point", "evidence", "scope"],
         },
       },
       dimensions: {
@@ -191,7 +208,8 @@ export function validSpatialBeams(v: unknown): v is SpatialBeam[] {
         12,
         (s) =>
           record(s) &&
-          keys(s, ["point", "evidence"]) &&
+          keys(s, ["point", "evidence", "scope"]) &&
+          (s.scope === undefined || scopes.includes(String(s.scope))) &&
           validPoint(s.point) &&
           str(s.evidence),
       ) &&
