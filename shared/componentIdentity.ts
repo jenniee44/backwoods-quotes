@@ -4,6 +4,12 @@ export const normalizeSpecification = (value: string) =>
   value
     .toLowerCase()
     .replace(/pressure[- ]treated/g, "pt")
+    .replace(/\baluminium\b/g, "aluminum")
+    .replace(/\bsimpson(?:[ -]strong[ -]tie)?\s+(lus\d+[a-z0-9-]*)\b/g, "$1")
+    .replace(
+      /\bjoist hangers?\b/g,
+      /\blus\d+/i.test(value) ? "" : "joist hanger",
+    )
     .replace(/[×✕]/g, "x")
     .replace(/(\d)\s*x\s*(\d)/g, "$1x$2")
     .replace(/(\d)[ -]+ply/g, "$1ply")
@@ -152,7 +158,7 @@ export function repeatedMaterialKey(
 ) {
   const scope = item.scopeGroup?.trim().toLowerCase();
   const generic =
-    /^(?:deck framing|deck structure|framing|posts & beams|hardware & connectors|deck joists|structural framing|beams?|joists?|posts?|hangers? \/ connectors|connectors?|footings? & foundations|footings? \/ concrete)$/i;
+    /^(?:deck framing|deck structure|framing|posts & beams|hardware & connectors|deck joists|structural framing|beams?|joists?|posts?|hangers? \/ connectors|connectors?|footings? & foundations|footings? \/ concrete|flashing & waterproofing|ledger flashing|flashing \/ waterproofing)$/i;
   const boundaries = [
     ...new Set(
       (item.sourceFacts ?? []).flatMap((f) =>

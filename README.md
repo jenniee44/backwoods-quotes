@@ -596,3 +596,39 @@ boards require contractor-confirmed full run lengths, plies, available stock and
 approved cutting/splice arrangements; support intervals are never assumed to be
 permitted splice locations. Stock/waste grouping remains explicit. Automatic
 structural splice design and cross-run offcut optimization are not performed.
+
+### Proposed quantities and contractor project scope
+
+Drawing geometry can now produce preliminary quantities while contract inclusion
+is unresolved. These quantities remain proposals: unknown scope blocks purchase
+output, approval and estimate conversion. Only explicitly supported layout
+boundaries, spacing, edge/opening conditions and material-specific inputs are
+used. Generic component counts do not become hardware connection counts; hangers
+need identified connection counts and specified pieces per connection. A narrowly
+identified legacy auto-generated hardware mapping can be repaired; manual inputs,
+intentional blanks and verified calculations are preserved.
+
+The Preliminary Shopping List supports inline specification, corrected purchase
+quantity and unit edits for individual materials. Groups with unresolved separate
+assemblies still require Review Details. Editing invalidates prior approval and
+preserves original evidence. Expand **Calculation and evidence** or **What’s
+missing?** to see the formula, source dimensions, page references, confidence,
+assumptions and the specific absent inputs. Supported component quantities remain
+separate from purchasing quantities and stock/cutting requirements.
+
+**Project scope — alternatives and additional work** lets the contractor add
+subcontracted helical piles, decking, guards, stairs or demolition. Quantities and
+specifications start blank. Select exactly which unapproved footing observations
+a pile option replaces. Those observations remain in the quote as excluded
+references, with original engineering notes unchanged. This is a contract-scope
+decision, not approval of structural equivalence. Subcontracted piles require
+review through Advanced Review; demolition is a cost-scope entry, with no labour
+hours or prices inferred. Nothing is approved or priced automatically.
+
+Explicit same-assembly flashing/hanger repeat observations with equivalent
+specifications and quantities can become one candidate while retaining archived
+source records. Different locations, connection interfaces, coatings/products,
+conflicting quantities, manual edits and keep-separate decisions remain distinct.
+Comparison quantities from a real job are not application defaults or extraction
+targets. Synthetic regression fixtures exercise the described issues; validation
+of a private drawing's actual quantities still requires its readable evidence.

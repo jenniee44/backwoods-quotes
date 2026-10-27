@@ -130,7 +130,7 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
   // A supported component proposal is visible before approval, but is not
   // represented as purchasable boards or silently added across drawing views.
   await expect(
-    region.locator('#summary-beam [data-label="Quantity"]'),
+    region.locator('#summary-beam [data-label="Quantity"] strong'),
   ).toHaveText("3");
   await expect(
     region.locator('#summary-beam [data-label="Unit"]'),

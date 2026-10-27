@@ -44,6 +44,7 @@ const legacyLabels: Record<string, MaterialInput["field"]> = {
   "fasteners per connection": "piecesPerConnection",
   "railing length": "linearLength",
   "guard length": "linearLength",
+  "flashing length": "linearLength",
 };
 export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
   const result = [...(t.materialInputs ?? [])];
@@ -181,6 +182,26 @@ export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
       evidence: `Material specification: ${t.specification}`,
       readable: true,
     });
+  if (
+    relevantCalculators(t).includes("joists") &&
+    !result.some((f) => f.field === "layoutLength")
+  ) {
+    // Older analyses sometimes used layoutWidth for the spacing axis. Only an
+    // explicit directional association permits this alias, never proximity or pixels.
+    result.push(
+      ...result
+        .filter(
+          (f) =>
+            f.field === "layoutWidth" &&
+            f.readable &&
+            /perpendicular to (?:the )?joists|across (?:the )?joists|joist spacing axis/i.test(
+              f.evidence,
+            ) &&
+            !uncertain.test(f.evidence),
+        )
+        .map((f) => ({ ...f, field: "layoutLength" as const })),
+    );
+  }
   return result;
 }
 export function supportedMaterialInputs(t: TakeoffItem) {
@@ -234,7 +255,8 @@ export function proposedMaterialRecipe(
     t.origin !== "ai" ||
     (t.destination ?? "Materials") !== "Materials" ||
     (t.itemRole && t.itemRole !== "Construction item") ||
-    !includedScope(t) ||
+    (!includedScope(t) && workScope(t) !== "Requires scope confirmation") ||
+    t.status === "Rejected" ||
     (workScope(t) === "Existing work to remove or modify" &&
       !t.scopeVerified) ||
     !hasReadableSpecification(t)
@@ -264,6 +286,7 @@ export function proposedMaterialRecipe(
     padWidth: "padWidth",
   };
   if (kind === "hardware") {
+    delete map.count;
     map.connections = "count";
     map.piecesPerConnection = "pieces";
   }
@@ -274,6 +297,19 @@ export function proposedMaterialRecipe(
   if (kind === "decking-layout") map.direction = "direction";
   const inputs = { ...t.calculation?.inputs },
     inputSources = { ...t.calculation?.inputSources };
+  if (
+    kind === "hardware" &&
+    v.connections === undefined &&
+    inputs.count !== null &&
+    inputs.count === v.count &&
+    inputSources.count &&
+    inputSources.count === sources.count
+  ) {
+    // Repair only a demonstrably generated legacy mapping. User-entered/blank
+    // and verified connection counts remain untouched.
+    delete inputs.count;
+    delete inputSources.count;
+  }
   for (const [field, key] of Object.entries(map))
     if (
       v[field] !== undefined &&
@@ -412,7 +448,7 @@ export type TakeoffProposal = {
 };
 export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
   const { values: v, sources, conflicts } = supportedMaterialInputs(t);
-  const recipe = t.calculation ?? proposedMaterialRecipe(t),
+  const recipe = proposedMaterialRecipe(t) ?? t.calculation,
     kind = recipe?.kind ?? recipeKind(t, v);
   const missing = conflicts.map(
     (f) =>
@@ -420,7 +456,7 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
   );
   const empty = (reason: string): TakeoffProposal => ({
     quantity: null,
-    unit: "",
+    unit: t.unit,
     formula: "",
     purchase: null,
     purchaseUnit: "",
@@ -428,12 +464,48 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     sources: Object.values(sources),
     stockSuggestion: null,
   });
+  const scopePending =
+    workScope(t) === "Requires scope confirmation" && t.status !== "Rejected";
   if (
-    !includedScope(t) ||
+    (!includedScope(t) && !scopePending) ||
+    t.status === "Rejected" ||
     workScope(t) === "Existing work to remain" ||
     (workScope(t) === "Existing work to remove or modify" && !t.scopeVerified)
   )
     return empty("Confirm included material scope");
+  if (/^Manual /i.test(t.calculationBasis ?? "") && !t.calculation) {
+    return {
+      quantity: t.quantity,
+      unit: t.unit,
+      formula:
+        "Contractor-entered estimate quantity; original drawing evidence is retained separately",
+      purchase: null,
+      purchaseUnit: t.unit,
+      missing: [
+        t.quantity === null
+          ? "Enter the contractor-confirmed purchasing quantity"
+          : "Verify the corrected quantity, specification and purchasing basis before approval",
+        ...(scopePending
+          ? ["Confirm whether this work is included in your job scope"]
+          : []),
+      ],
+      sources: ["Contractor edit, not a drawing measurement"],
+      stockSuggestion: null,
+    };
+  }
+  if (
+    ["posts", "post-stock", "concrete", "rectangular-concrete"].includes(
+      kind ?? "",
+    ) &&
+    ["Total visible locations", "Existing work", "By others"].includes(
+      t.supportBasis ?? "",
+    ) &&
+    !(recipe?.verified && t.scopeVerified)
+  ) {
+    return empty(
+      "Identify the new included support locations; visible symbols and existing/by-others supports are not a new footing or post count",
+    );
+  }
   // Contractor-confirmed calculator values may correct the proposed drawing facts.
   // Original facts stay unchanged and available in expandable evidence.
   if (recipe) {
@@ -533,7 +605,7 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     quantity = v.linearLength;
     unit = "linear ft";
     formula =
-      "Explicitly dimensioned railing length; no perimeter subtraction inferred";
+      "Explicitly dimensioned included linear length; no perimeter subtraction inferred";
   } else if (
     ["concrete", "rectangular-concrete"].includes(kind ?? "") &&
     has("count", "depth")
@@ -551,7 +623,11 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
       unit = "cu yd";
       formula = "count × pad length × pad width × depth / 46656";
     }
-  } else if (kind && has("count")) {
+  } else if (
+    kind &&
+    !["hardware", "beam-runs", "treads"].includes(kind) &&
+    has("count")
+  ) {
     quantity = v.count;
     unit = /post/.test(kind)
       ? /post/i.test(t.description)
@@ -579,11 +655,50 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
   // original observations remain available for contractor reconciliation.
   if (conflicts.length && !recipe?.verified) quantity = null;
   const purchase = recipe ? calculateMaterial(recipe, false) : undefined;
-  if (quantity === null)
+  if (quantity === null) {
+    const required: Record<string, [string, string][]> = {
+      joists: [
+        ["layoutLength", "framing layout width perpendicular to joists"],
+        ["spacing", "joist spacing"],
+        ["layoutClear", "layout boundary and openings"],
+        ["edgeIncluded", "required edge members"],
+      ],
+      hardware: [
+        ["connections", "identified connection count"],
+        ["piecesPerConnection", "specified hardware pieces per connection"],
+      ],
+      railing: [["linearLength", "included measured linear length"]],
+      "decking-layout": [
+        ["layoutLength", "deck layout length"],
+        ["layoutWidth", "deck layout width"],
+        ["layoutClear", "deck boundary and openings"],
+      ],
+      decking: [
+        ["layoutLength", "deck layout length"],
+        ["layoutWidth", "deck layout width"],
+        ["layoutClear", "deck boundary and openings"],
+      ],
+      posts: [["count", "unique new included support count"]],
+      concrete: [
+        ["count", "unique new footing count"],
+        ["diameter", "footing diameter"],
+        ["depth", "concrete depth"],
+      ],
+    };
+    const absent = (required[kind ?? ""] ?? [])
+      .filter(([key]) => v[key] === undefined || v[key] <= 0)
+      .map(([, label]) => label);
     missing.push(
-      kind === "joists"
-        ? "Confirm layout length, spacing, both edge members and openings"
-        : "Confirm this assembly's dimensions or unique component count",
+      absent.length
+        ? "Confirm " + absent.join(", ")
+        : kind === "beam-runs"
+          ? "Confirm distinct physical beam runs; beam lengths and stock/cutting inputs are separate"
+          : "Confirm this assembly's measured dimensions or unique component count",
+    );
+  }
+  if (scopePending)
+    missing.push(
+      "Confirm whether this drawing requirement is included in your job scope; this proposal is not approved for purchase",
     );
   if (purchase?.missing.length) missing.push(...purchase.missing);
   else if (!recipe)
@@ -600,12 +715,19 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     unit,
     formula,
     purchase:
-      conflicts.length && !recipe?.verified
+      scopePending || (conflicts.length && !recipe?.verified)
         ? null
         : (purchase?.quantity ?? null),
     purchaseUnit: purchase?.unit || t.unit,
     missing: [...new Set(missing)],
-    sources: Object.values(sources),
+    sources: [
+      ...new Set([
+        ...Object.values(sources),
+        ...Object.values(recipe?.lengthSources ?? {}),
+        ...Object.values(recipe?.specificationSources ?? {}),
+        ...(recipe?.runCountSource ? [recipe.runCountSource] : []),
+      ]),
+    ],
     stockSuggestion,
   };
 }

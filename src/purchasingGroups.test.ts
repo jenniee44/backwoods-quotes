@@ -78,12 +78,12 @@ it("keeps different specifications and foundation methods distinct, excludes ref
 });
 it("missing-input explanations identify beam lengths, joist layout and connection counts", () => {
   const q = newQuote(defaults, []);
-  expect(quantityReason(q, item("b", "Beam", "PT"))).toContain("beam lengths");
+  expect(quantityReason(q, item("b", "Beam", "PT"))).toContain("physical beam runs");
   expect(quantityReason(q, item("j", "Deck joists", "PT"))).toContain(
-    "deck layout dimensions",
+    "framing layout width perpendicular to joists",
   );
   expect(quantityReason(q, item("h", "Joist hangers", "LUS26"))).toContain(
-    "connection counts",
+    "identified connection count",
   );
 });
 it("a calculated foundation quantity stays unconfirmed while competing foundation methods remain unresolved", () => {

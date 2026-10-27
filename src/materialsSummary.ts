@@ -1,3 +1,4 @@
+import { reconcileRepeatedMaterials } from "./reconcileRepeatedMaterials";
 import { isGeneralSpecification } from "./materialReferences";
 import type { Quote, TakeoffItem } from "./model";
 import { takeoffToLine } from "./model";
@@ -30,7 +31,7 @@ export function prepareMaterialsSummary(
     return t;
   });
   const prepared = preserveObservations
-    ? referenceItems
+    ? reconcileRepeatedMaterials(referenceItems)
     : consolidateTakeoff(referenceItems, true);
   return prepared.map((t) => {
     // Only an explicitly verified, complete recipe can produce a quantity.

@@ -98,7 +98,7 @@ test("purchasing categories retain separate beam, joist and hanger assemblies wi
   ]);
   await expect(list).not.toContainText("Existing house");
   const beam = list.locator("#summary-b1");
-  await expect(beam).not.toContainText("beam lengths");
+  await expect(beam.locator("details")).not.toHaveAttribute("open");
   await beam
     .getByRole("button", { name: "Review details", exact: true })
     .click();

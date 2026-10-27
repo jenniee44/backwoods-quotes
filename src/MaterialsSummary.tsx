@@ -1,3 +1,6 @@
+import { calculateMaterial } from "../shared/materialCalculators";
+import { materialTakeoffProposal } from "./deckTakeoff";
+import ContractorScopeEditor from "./ContractorScopeEditor";
 import { prepareDeckTakeoff } from "./deckTakeoff";
 import MaterialTakeoffSummary from "./MaterialTakeoffSummary";
 import { approvedPurchasingGroups } from "./materialShoppingList";
@@ -370,6 +373,13 @@ export default function MaterialsSummary({
           </div>
         </>
       )}
+      <ContractorScopeEditor
+        onReview={onAdvanced}
+        quote={q}
+        locked={locked}
+        onChange={onChange}
+        onError={onError}
+      />
       {view === "takeoff" ? (
         <MaterialTakeoffSummary
           quote={q}
@@ -417,7 +427,22 @@ export default function MaterialsSummary({
                       className="purchasing-specification"
                       title={t.specification || "Specification to confirm"}
                     >
-                      {t.specification || "To confirm"}
+                      {group.items.length === 1 ? (
+                        <input
+                          maxLength={1000}
+                          aria-label={"Preliminary specification: " + t.id}
+                          key={String(t.specification) + revision}
+                          defaultValue={t.specification ?? ""}
+                          placeholder="To confirm"
+                          disabled={locked || !!t.convertedLineId}
+                          onBlur={(e) => {
+                            if (e.target.value !== (t.specification ?? ""))
+                              change(t, { specification: e.target.value });
+                          }}
+                        />
+                      ) : (
+                        t.specification || "To confirm"
+                      )}
                     </span>
                     {relevantSpecifications(q, group.items).length > 0 && (
                       <small>Drawing requirements attached</small>
@@ -432,9 +457,83 @@ export default function MaterialsSummary({
                         ? "To confirm"
                         : Number(group.quantity.toPrecision(8))}
                     </strong>
+                    {group.items.length === 1 && (
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        aria-label={"Preliminary quantity: " + t.id}
+                        placeholder="Enter corrected purchase quantity"
+                        defaultValue={t.quantity ?? ""}
+                        key={String(t.quantity) + revision}
+                        disabled={locked || !!t.convertedLineId}
+                        onBlur={(e) => {
+                          const quantity =
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value);
+                          if (quantity !== t.quantity) change(t, { quantity });
+                        }}
+                      />
+                    )}
+                    <details>
+                      <summary>
+                        {group.quantity === null
+                          ? "What’s missing?"
+                          : "Calculation and evidence"}
+                      </summary>
+                      <p>{group.reason}</p>
+                      <p>
+                        {materialTakeoffProposal(t).formula ||
+                          t.calculationBasis}
+                      </p>
+                      {t.calculation && (
+                        <>
+                          <p>
+                            Purchasing formula:{" "}
+                            {calculateMaterial(t.calculation, false).formula}
+                          </p>
+                          <ul>
+                            {calculateMaterial(t.calculation, false).steps.map(
+                              (step, i) => (
+                                <li key={i}>{step}</li>
+                              ),
+                            )}
+                          </ul>
+                        </>
+                      )}
+                      <p>
+                        {t.sourceDocumentName || "Drawing"} · page{" "}
+                        {t.page ?? "to confirm"} · {t.confidence} confidence
+                      </p>
+                      {materialTakeoffProposal(t).sources.map((source, i) => (
+                        <p key={i}>{source}</p>
+                      ))}
+                      <p>
+                        Assumptions:{" "}
+                        {(t.assumptions ?? []).join("; ") ||
+                          "None supplied; missing inputs are not assumed."}
+                      </p>
+                    </details>
                   </td>
                   <td data-label="Unit">
-                    {group.unit || "To confirm"}
+                    <small>Proposed: {group.unit || "To confirm"}</small>
+                    {group.items.length === 1 ? (
+                      <input
+                        maxLength={40}
+                        aria-label={"Preliminary unit: " + t.id}
+                        defaultValue={t.unit}
+                        key={t.unit + revision}
+                        disabled={locked || !!t.convertedLineId}
+                        onBlur={(e) => {
+                          if (e.target.value !== t.unit)
+                            change(t, { unit: e.target.value });
+                        }}
+                      />
+                    ) : (
+                      group.unit || "To confirm"
+                    )}
                     {materialStockLength(t) !== null && (
                       <small>{formatFeet(materialStockLength(t)!)}</small>
                     )}

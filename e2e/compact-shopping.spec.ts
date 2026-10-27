@@ -81,7 +81,7 @@ for (const width of [1366, 390])
       );
       await expect(list).not.toContainText("SYNTHETIC_WARNING_ONLY_IN_REVIEW");
       await expect(list).not.toContainText("All fasteners shall be galvanized");
-      await expect(list.locator("tbody details")).toHaveCount(0);
+      await expect(list.locator("tbody details[open]")).toHaveCount(0);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,

@@ -157,7 +157,7 @@ it("requires actual layout boundaries even with spacing and length", () => {
   };
   expect(materialTakeoffProposal(t).quantity).toBeNull();
   expect(materialTakeoffProposal(t).missing.join(" ")).toContain(
-    "both edge members and openings",
+    "layout boundary and openings, required edge members",
   );
 });
 it("derives hardware only from explicit connection counts and pieces per connection", () => {

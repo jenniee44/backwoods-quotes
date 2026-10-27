@@ -12,6 +12,11 @@ const norm = (s?: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 function family(t: TakeoffItem) {
+  if (
+    t.destination === "Subcontractor" &&
+    /helical|screw piles?/i.test(t.description)
+  )
+    return "helical-subcontractor";
   if (t.destination !== "Materials") return "";
   const s = t.description;
   if (/hanger|connector|bracket|hardware/i.test(s)) return "hangers-connectors";
@@ -25,6 +30,9 @@ function family(t: TakeoffItem) {
     beams: /beam/i,
     posts: /\bposts?\b/i,
     joists: /joist/i,
+    decking: /decking|deck boards?/i,
+    stairs: /stairs?|stringers?|treads?/i,
+    ledger: /ledger/i,
     guards: /guard|railing/i,
   }))
     if (pattern.test(s)) return key;

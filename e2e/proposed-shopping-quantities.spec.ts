@@ -80,7 +80,9 @@ for (const width of [1366, 390])
       .click();
     const list = page.locator(".preliminary-materials");
     const row = list.locator("#summary-deck-joists");
-    await expect(row.locator('[data-label="Quantity"]')).toHaveText("13");
+    await expect(row.locator('[data-label="Quantity"] strong')).toHaveText(
+      "13",
+    );
     await expect(row.locator('[data-label="Unit"]')).toContainText("boards");
     await expect(row.locator('[data-label="Status"]')).toContainText(
       "Proposed",
@@ -111,6 +113,6 @@ for (const width of [1366, 390])
     await expect(
       page
         .locator(".preliminary-materials #summary-deck-joists")
-        .locator('[data-label="Quantity"]'),
+        .locator('[data-label="Quantity"] strong'),
     ).toHaveText("13");
   });

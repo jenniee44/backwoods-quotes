@@ -399,7 +399,10 @@ describe("reconstructed automatic deck takeoff", () => {
     "Requires scope confirmation",
   ] as const)("does not prepare purchases for %s", (workScope) => {
     const t = { ...base, workScope, materialInputs: geometry };
-    expect(proposedMaterialRecipe(t)).toBeUndefined();
+    if (workScope === "Requires scope confirmation") {
+      expect(proposedMaterialRecipe(t)?.verified).toBe(false);
+      expect(materialTakeoffProposal(t).quantity).toBe(13);
+    } else expect(proposedMaterialRecipe(t)).toBeUndefined();
     expect(materialTakeoffProposal(t).purchase).toBeNull();
   });
   it("fresh analysis retains input/page provenance and consolidates clear repeat views without double counts", () => {

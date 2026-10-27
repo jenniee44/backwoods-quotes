@@ -156,19 +156,27 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
       expect(crop.page).toBeGreaterThanOrEqual(1);
       expect(crop.page).toBeLessThanOrEqual(3);
     }
-  const posts = list.locator("tr").filter({ hasText: "6x6 PT" });
+  const posts = list
+    .locator("tr")
+    .filter({ has: page.locator('[title="6x6 PT"]') });
   await expect(posts).toHaveCount(1);
   await expect(posts).toContainText("To confirm");
   await expect(list).toContainText("192");
   await expect(list).toContainText("To confirm");
   await expect(
-    list.locator("tr[id]").filter({ hasText: "3-ply 2x10 PT" }),
+    list
+      .locator("tr[id]")
+      .filter({ has: page.locator('[title="3-ply 2x10 PT"]') }),
   ).toHaveCount(1);
   await expect(
-    list.locator("tr[id]").filter({ hasText: "2x6 PT at 16 in O/C" }),
+    list
+      .locator("tr[id]")
+      .filter({ has: page.locator('[title="2x6 PT at 16 in O/C"]') }),
   ).toHaveCount(1);
   await expect(
-    list.locator("tr[id]").filter({ hasText: "Simpson LUS26" }),
+    list
+      .locator("tr[id]")
+      .filter({ has: page.locator('[title="Simpson LUS26"]') }),
   ).toHaveCount(1);
   await expect(page.locator(".advanced-review")).not.toHaveAttribute("open");
   await expect(page.getByText(/Submitted detail views:/).first()).toBeVisible();

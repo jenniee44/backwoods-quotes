@@ -3019,3 +3019,31 @@ details[open] > summary {
     min-height: 320px;
   }
 }
+/* Inline preliminary edits keep evidence collapsed without adding form-sized rows. */
+.preliminary-materials td details {
+  margin: 0;
+}
+.preliminary-materials td details > summary {
+  min-height: 32px;
+  line-height: 1.25;
+}
+.preliminary-materials td details[open] > summary {
+  margin-bottom: 0.4rem;
+}
+.preliminary-materials input:not([type="checkbox"]) {
+  min-height: 32px;
+  margin: 0;
+  padding: 0.25rem;
+}
+@media (max-width: 720px) {
+  .preliminary-materials input:not([type="checkbox"]) {
+    min-height: 44px;
+  }
+  .preliminary-materials td {
+    padding: 0.05rem 0;
+  }
+  .preliminary-materials td[data-label="Material"]::before,
+  .preliminary-materials td[data-label="Review"]::before {
+    display: none;
+  }
+}

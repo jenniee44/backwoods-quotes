@@ -16,11 +16,13 @@ import {
   supportedMaterialInputs,
   materialTakeoffProposal,
 } from "./deckTakeoff";
-import { includedScope } from "./takeoffScope";
+import { includedScope, workScope } from "./takeoffScope";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 export function quantityReason(q: Quote, t: TakeoffItem) {
   if (unresolvedFoundationAlternative(q, t))
     return "Confirm the foundation method: concrete footings or helical piles.";
+  const proposal = materialTakeoffProposal(t);
+  if (proposal.missing.length) return proposal.missing.join("; ");
   if (t.calculation) {
     const missing = calculateMaterial(t.calculation, false).missing;
     if (missing.length)
@@ -106,7 +108,8 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
       );
     const safe =
       (g.items.length === 1 || confirmedRepeat) &&
-      includedScope(t) &&
+      (includedScope(t) || workScope(t) === "Requires scope confirmation") &&
+      t.status !== "Rejected" &&
       !unresolvedFoundationAlternative(q, t) &&
       !/conflict|unreadable|uncertain/i.test((t.warnings ?? []).join(" "));
     // Display proposals before approval. Never write them into the approved

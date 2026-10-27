@@ -105,8 +105,8 @@ for (const width of [1366, 390])
         region.locator(".preliminary-materials #summary-excluded"),
       ).toHaveCount(0);
       await expect(
-        region.locator("tbody input,tbody textarea,tbody select"),
-      ).toHaveCount(0);
+        region.locator("tbody input[aria-label^='Preliminary quantity:']"),
+      ).toHaveCount(2);
       await expect(
         region.getByRole("button", {
           name: "Send approved materials to estimate",
