@@ -1,5 +1,7 @@
 import { spatialBeamIdentity, mergeSpatialBeams } from "./spatialBeams";
 import {
+  evidenceScope,
+  normalizeSpecification,
   repeatedMaterialKey,
   repeatEvidenceEligible,
 } from "./componentIdentity";
@@ -183,6 +185,38 @@ export function prepareConstructionAnalysis(
     siteVerification: [],
     observations: [],
   };
+  // Dimension records may carry role-labelled inputs separately from the material.
+  // Transfer only an exact physical-assembly association, never nearby dimensions.
+  for (const item of result.suggestions) {
+    if (!item.location?.trim() || !item.specification?.trim()) continue;
+    const matching = (result.dimensions ?? []).filter(
+      (dimension) =>
+        dimension.documentId === item.documentId &&
+        dimension.page === item.page &&
+        item.page !== null &&
+        dimension.location?.trim().toLowerCase() ===
+          item.location!.trim().toLowerCase() &&
+        normalizeSpecification(dimension.specification ?? "") ===
+          normalizeSpecification(item.specification!) &&
+        materialCategoryFor(dimension) === materialCategoryFor(item) &&
+        repeatedMaterialKey(
+          { ...dimension, destination: "Materials", quantity: null, unit: "" },
+          materialCategoryFor(dimension),
+        ) ===
+          repeatedMaterialKey(
+            { ...item, destination: "Materials", quantity: null, unit: "" },
+            materialCategoryFor(item),
+          ) &&
+        evidenceScope(dimension) === evidenceScope(item) &&
+        dimension.supportBasis === item.supportBasis,
+    );
+    const inputs = matching.reduce(
+      (facts, dimension) =>
+        mergeMaterialInputs(facts, dimension.materialInputs),
+      item.materialInputs ?? [],
+    );
+    if (inputs.length <= 40 && inputs.length) item.materialInputs = inputs;
+  }
   const observations = [
     ...(result.sourceObservations ?? []),
     // A readable component specification on a dimension record is useful, but

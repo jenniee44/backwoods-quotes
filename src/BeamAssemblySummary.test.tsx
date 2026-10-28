@@ -117,3 +117,21 @@ it("does not repeat an already completed contractor scope confirmation as missin
   expect(html).not.toContain("Confirm which beam lines are included");
   expect(html).toContain("Confirm this beam&#x27;s full length");
 });
+it.each([
+  "2x6 ledger board",
+  "Ledger with aluminum flashing",
+  "Aluminum flashing",
+])(
+  "never displays %s as a beam despite misplaced spatial metadata",
+  (description) => {
+    const item = {
+      ...base,
+      id: "ledger",
+      documentId: "synthetic",
+      description,
+      category: "Beams",
+      beamAssemblies: syntheticDeckBeams(),
+    };
+    expect(renderToStaticMarkup(<BeamAssemblySummary item={item} />)).toBe("");
+  },
+);

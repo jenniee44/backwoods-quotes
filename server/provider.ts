@@ -1,3 +1,4 @@
+import { AnalysisFailure } from "../shared/analysisErrors";
 import { detailSourceMapping } from "../shared/detailCoordinates";
 import { planAnalysisInstructions } from "./instructions";
 import { analysisSchema, validateAnalysis } from "../shared/analysis";
@@ -67,56 +68,101 @@ export function openAIProvider(
           });
         }
       });
-      const response = await request("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          store: false,
-          instructions: planAnalysisInstructions,
-          input: [{ role: "user", content }],
-          text: {
-            format: {
-              type: "json_schema",
-              name: "construction_takeoff",
-              strict: true,
-              schema: analysisSchema,
-            },
+      let response: Response;
+      try {
+        response = await request("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
           },
-          max_output_tokens: 12000,
-        }),
-        signal,
-      });
-      if (!response.ok)
-        throw new Error(
+          body: JSON.stringify({
+            model,
+            store: false,
+            instructions: planAnalysisInstructions,
+            input: [{ role: "user", content }],
+            text: {
+              format: {
+                type: "json_schema",
+                name: "construction_takeoff",
+                strict: true,
+                schema: analysisSchema,
+              },
+            },
+            max_output_tokens: 12000,
+          }),
+          signal,
+        });
+      } catch (e) {
+        if (signal.aborted) throw signal.reason ?? e;
+        throw new AnalysisFailure("ANALYSIS_PROVIDER_UNAVAILABLE");
+      }
+      if (!response.ok) {
+        let code = "";
+        try {
+          const rawError = await response.text();
+          if (rawError.length < 100000)
+            code = String(JSON.parse(rawError)?.error?.code ?? "");
+        } catch {
+          /* Never expose raw provider responses. */
+        }
+        throw new AnalysisFailure(
           response.status === 429
-            ? "The analysis provider is busy or its usage limit was reached. Try later."
-            : "The analysis provider could not process the plans. Check the server configuration or try a clearer file.",
+            ? code === "insufficient_quota"
+              ? "ANALYSIS_PROVIDER_QUOTA"
+              : "ANALYSIS_PROVIDER_BUSY"
+            : code === "invalid_json_schema"
+              ? "ANALYSIS_SCHEMA_REJECTED"
+              : code === "model_not_found"
+                ? "ANALYSIS_PROVIDER_MODEL"
+                : [401, 403, 404].includes(response.status)
+                  ? "ANALYSIS_PROVIDER_AUTH"
+                  : response.status === 413 ||
+                      [
+                        "context_length_exceeded",
+                        "string_above_max_length",
+                      ].includes(code)
+                    ? "ANALYSIS_INPUT_LIMIT"
+                    : response.status >= 500
+                      ? "ANALYSIS_PROVIDER_UNAVAILABLE"
+                      : "ANALYSIS_PROVIDER_REQUEST",
         );
+      }
       const raw = await response.text();
       if (raw.length > 1_000_000)
-        throw new Error("The analysis response was too large.");
-      const body = JSON.parse(raw);
+        throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
+      let body;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
+      }
       if (body.status !== "completed" || !Array.isArray(body.output))
-        throw new Error(
-          "The analysis was incomplete. Try fewer pages or clearer plans.",
+        throw new AnalysisFailure(
+          body.incomplete_details?.reason === "max_output_tokens"
+            ? "ANALYSIS_OUTPUT_LIMIT"
+            : "ANALYSIS_INCOMPLETE",
         );
-      const parts = body.output
-        .flatMap(
-          (output: { content?: { type: string; text?: string }[] }) =>
-            output.content ?? [],
-        )
-        .filter((c: { type: string }) => c.type === "output_text");
-      if (parts.length !== 1 || typeof parts[0].text !== "string")
-        throw new Error("The analysis did not return a usable takeoff.");
-      return validateAnalysis(
-        JSON.parse(parts[0].text),
-        documents.map((d) => d.id),
-        documents,
+      const contents = body.output.flatMap(
+        (output: { content?: { type: string; text?: string }[] }) =>
+          output.content ?? [],
       );
+      if (contents.some((c: { type: string }) => c.type === "refusal"))
+        throw new AnalysisFailure("ANALYSIS_REFUSED");
+      const parts = contents.filter(
+        (c: { type: string }) => c.type === "output_text",
+      );
+      if (parts.length !== 1 || typeof parts[0].text !== "string")
+        throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
+      try {
+        return validateAnalysis(
+          JSON.parse(parts[0].text),
+          documents.map((d) => d.id),
+          documents,
+        );
+      } catch {
+        throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
+      }
     },
   };
 }

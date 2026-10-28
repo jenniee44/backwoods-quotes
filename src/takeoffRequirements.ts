@@ -1,3 +1,4 @@
+import { isBeamMaterial } from "./beamMaterial";
 import { spatialBeamReviewProblem } from "./spatialBeamPrefill";
 import type { TakeoffItem } from "./model";
 import { materialInputProblem } from "../shared/materialInputs";
@@ -11,6 +12,7 @@ export function hasReadableSpecification(t: TakeoffItem) {
 }
 export function completenessProblem(t: TakeoffItem) {
   if (
+    isBeamMaterial(t) &&
     !t.scopeVerified &&
     t.beamAssemblies?.some((b) => b.scope === "Requires scope confirmation")
   )

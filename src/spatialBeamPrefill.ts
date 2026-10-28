@@ -1,3 +1,4 @@
+import { isBeamMaterial } from "./beamMaterial";
 import { beamLayout } from "./framingLayout";
 import type { TakeoffItem } from "./model";
 import {
@@ -123,6 +124,7 @@ export function spatialBeamRecipe(
 }
 
 export function spatialBeamReviewProblem(item: TakeoffItem) {
+  if (!isBeamMaterial(item)) return "";
   const beams = item.beamAssemblies ?? [];
   const overlap = spatialBeamOverlap(beams);
   if (overlap) return overlap;

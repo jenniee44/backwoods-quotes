@@ -78,7 +78,9 @@ it("keeps different specifications and foundation methods distinct, excludes ref
 });
 it("missing-input explanations identify beam lengths, joist layout and connection counts", () => {
   const q = newQuote(defaults, []);
-  expect(quantityReason(q, item("b", "Beam", "PT"))).toContain("physical beam runs");
+  expect(quantityReason(q, item("b", "Beam", "PT"))).toContain(
+    "physical beam runs",
+  );
   expect(quantityReason(q, item("j", "Deck joists", "PT"))).toContain(
     "framing layout width perpendicular to joists",
   );
@@ -105,4 +107,31 @@ it("a calculated foundation quantity stays unconfirmed while competing foundatio
     true,
   );
   expect(quantityReason(q, a)).toContain("foundation method");
+});
+it("shows the same spatially established beam set once without requiring a repeated-view phrase", async () => {
+  const { syntheticDeckBeams } = await import("../shared/spatialBeam.fixture");
+  const a = {
+    ...item("a", "Deck beams", "3PLY 2X10 PT"),
+    quantity: null,
+    beamAssemblies: syntheticDeckBeams(),
+  };
+  const { spatialBeamRecipe } = await import("./spatialBeamPrefill");
+  const withRecipe = { ...a, calculation: spatialBeamRecipe(a)! };
+  const b = {
+    ...withRecipe,
+    id: "b",
+    sourceFacts: ["Additional detail reference"],
+  };
+  const q = { ...newQuote(defaults, []), takeoff: [withRecipe, b] };
+  const before = structuredClone(q);
+  expect(purchasingGroups(q, q.takeoff)[0]).toMatchObject({
+    quantity: 3,
+    unit: "runs",
+  });
+  expect(q).toEqual(before);
+  const separate = {
+    ...b,
+    beamAssemblies: b.beamAssemblies.map((beam) => ({ ...beam, page: 2 })),
+  };
+  expect(purchasingGroups(q, [a, separate])[0].quantity).toBeNull();
 });

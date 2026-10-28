@@ -1,3 +1,4 @@
+import { isBeamMaterial } from "./beamMaterial";
 import { proposedBeamSpecification } from "./beamMaterial";
 import { initializeBeamCalculator } from "./initializeBeamCalculator";
 import { enrichBeamRecipe, proposedBeamRecipe } from "./beamPrefill";
@@ -138,32 +139,33 @@ export default function SimpleMaterialCalculator({
           Confirm measurements and purchasing requirements. Missing inputs
           remain to confirm; calculations do not approve materials.
         </p>
-        {t.beamAssemblies?.some(
-          (b) => b.scope === "Requires scope confirmation",
-        ) && (
-          <label className="check-options">
-            <input
-              type="checkbox"
-              checked={
-                t.scopeVerified === true &&
-                t.workScope === "New work" &&
-                t.included !== false
-              }
-              onChange={(e) =>
-                onPatch(
-                  e.target.checked
-                    ? {
-                        scopeVerified: true,
-                        workScope: "New work",
-                        included: true,
-                      }
-                    : { scopeVerified: false },
-                )
-              }
-            />
-            I verified that the proposed beam lines are included in this work
-          </label>
-        )}
+        {isBeamMaterial(t) &&
+          t.beamAssemblies?.some(
+            (b) => b.scope === "Requires scope confirmation",
+          ) && (
+            <label className="check-options">
+              <input
+                type="checkbox"
+                checked={
+                  t.scopeVerified === true &&
+                  t.workScope === "New work" &&
+                  t.included !== false
+                }
+                onChange={(e) =>
+                  onPatch(
+                    e.target.checked
+                      ? {
+                          scopeVerified: true,
+                          workScope: "New work",
+                          included: true,
+                        }
+                      : { scopeVerified: false },
+                  )
+                }
+              />
+              I verified that the proposed beam lines are included in this work
+            </label>
+          )}
         <Field label="Material calculator">
           <select
             aria-label="Material calculator"
@@ -324,7 +326,7 @@ export default function SimpleMaterialCalculator({
                   </div>
                 ))}
             </div>
-            {!!t.beamAssemblies?.length && (
+            {isBeamMaterial(t) && !!t.beamAssemblies?.length && (
               <details>
                 <summary>Drawing associations and references</summary>
                 <BeamAssemblySummary item={t} />

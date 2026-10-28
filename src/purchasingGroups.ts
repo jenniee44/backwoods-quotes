@@ -1,3 +1,4 @@
+import { sameSpatialBeam, uniqueSpatialBeams } from "../shared/spatialBeams";
 import { unresolvedFoundationAlternative } from "./takeoffScope";
 import { calculateMaterial } from "../shared/materialCalculators";
 import type { Quote, TakeoffItem } from "./model";
@@ -74,6 +75,22 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
     const proposal = materialTakeoffProposal(t);
     const key = repeatedMaterialKey(t, materialCategoryFor(t));
     const proposals = g.items.map(materialTakeoffProposal);
+    const samePhysicalBeams = (peer: TakeoffItem) => {
+      if (
+        peer.documentId !== t.documentId ||
+        !t.beamAssemblies?.length ||
+        !peer.beamAssemblies?.length
+      )
+        return false;
+      const a = uniqueSpatialBeams(t.beamAssemblies),
+        b = uniqueSpatialBeams(peer.beamAssemblies);
+      return (
+        a.length === b.length &&
+        a.every((group) =>
+          b.some((other) => sameSpatialBeam(group[0], other[0])),
+        )
+      );
+    };
     const confirmedRepeat =
       g.items.length > 1 &&
       !!key &&
@@ -100,11 +117,12 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
           includedScope(item) &&
           item.alternativeGroup === t.alternativeGroup &&
           item.alternativeOption === t.alternativeOption &&
-          (item.sourceFacts ?? []).some((f) =>
-            /repeated view of (?:the )?same (?:physical )?(?:assembly|component)|same physical assembly/i.test(
-              f,
-            ),
-          ),
+          (samePhysicalBeams(item) ||
+            (item.sourceFacts ?? []).some((f) =>
+              /repeated view of (?:the )?same (?:physical )?(?:assembly|component)|same physical assembly/i.test(
+                f,
+              ),
+            )),
       );
     const safe =
       (g.items.length === 1 || confirmedRepeat) &&
@@ -129,6 +147,14 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
       ...g,
       quantity,
       unit,
+      observations: g.items.map((item, i) => ({
+        id: item.id,
+        page: item.page,
+        location: item.location,
+        quantity: proposals[i].quantity,
+        unit: proposals[i].unit,
+        missing: proposals[i].missing,
+      })),
       basis:
         !approved && proposal.purchase === null
           ? "Material quantity; purchasing requirements still require verification."

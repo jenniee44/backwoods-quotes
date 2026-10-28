@@ -2,7 +2,13 @@ import type { TakeoffItem } from "./model";
 /** Select an appropriate tool, not a beam quantity. Hardware is not its beam. */
 export function isBeamMaterial(item: TakeoffItem) {
   if (
-    /hanger|fastener|screw|bolt|connector|flashing|waterproof/i.test(
+    /ledger|flashing|waterproof/i.test(
+      `${item.description} ${item.specification ?? ""}`,
+    )
+  )
+    return false;
+  if (
+    /ledger|rim joist|band joist|hanger|fastener|screw|bolt|connector|flashing|waterproof/i.test(
       item.description,
     )
   )

@@ -333,3 +333,74 @@ it("keeps same-spec alternatives unresolved even when observations say repeated 
   const q = prepareDeckTakeoff(quote([a, b]));
   expect(purchasingGroups(q, q.takeoff)[0].quantity).toBeNull();
 });
+it("retains an explicit counted joist observation through calculator initialization, independently of purchase inputs", () => {
+  const t: TakeoffItem = {
+    ...base,
+    quantity: 13,
+    unit: "joists",
+    quantityMethod: "Counted",
+    materialInputs: undefined,
+    sourceFacts: ["New work: 13 individually identified joists in Deck D1"],
+    assumptions: [],
+  };
+  const q = prepareDeckTakeoff(quote([t]));
+  expect(q.takeoff[0].quantity).toBeNull();
+  expect(materialTakeoffProposal(q.takeoff[0])).toMatchObject({
+    quantity: 13,
+    unit: "joists",
+    purchase: null,
+  });
+  expect(purchasingGroups(q, q.takeoff)[0].quantity).toBe(13);
+  expect(prepareDeckTakeoff(q)).toEqual(q);
+});
+it("retains supported quantities for separate source observations without summing their counts", () => {
+  const q = prepareDeckTakeoff(
+    quote([base, { ...base, id: "side", location: "Side deck" }]),
+  );
+  const group = purchasingGroups(q, q.takeoff)[0];
+  expect(group.quantity).toBeNull();
+  expect(group.observations.map((o) => o.quantity)).toEqual([13, 13]);
+});
+it("does not replace intentionally cleared calculator measurements with drawing facts", () => {
+  const t: TakeoffItem = {
+    ...base,
+    calculation: {
+      kind: "joists",
+      verified: false,
+      inputs: { length: null, spacing: 16 },
+    },
+  };
+  const q = prepareDeckTakeoff(quote([t]));
+  expect(q.takeoff[0].calculation?.inputs.length).toBeNull();
+  expect(materialTakeoffProposal(q.takeoff[0]).quantity).toBeNull();
+});
+it("does not hide a conflict between a counted joist observation and the layout calculation", () => {
+  const t = {
+    ...base,
+    materialInputs: [...base.materialInputs!, fact("count", 14, "each")],
+  };
+  const q = prepareDeckTakeoff(quote([t]));
+  const proposal = materialTakeoffProposal(q.takeoff[0]);
+  expect(proposal.quantity).toBeNull();
+  expect(proposal.purchase).toBeNull();
+  expect(proposal.missing.join(" ")).toContain(
+    "Counted observation (14 joists) conflicts with the layout calculation (13 joists)",
+  );
+});
+it("never displays a saved erroneous beam-run calculation as a ledger or flashing quantity", () => {
+  const t: TakeoffItem = {
+    ...base,
+    description: "2x6 ledger board with aluminum flashing",
+    category: "Beams",
+    calculation: {
+      kind: "beam-runs",
+      verified: false,
+      inputs: { runs: 3, plies1: 3 },
+    },
+  };
+  expect(materialTakeoffProposal(t)).toMatchObject({
+    quantity: null,
+    purchase: null,
+  });
+  expect(t.calculation?.inputs.runs).toBe(3);
+});

@@ -632,3 +632,50 @@ conflicting quantities, manual edits and keep-separate decisions remain distinct
 Comparison quantities from a real job are not application defaults or extraction
 targets. Synthetic regression fixtures exercise the described issues; validation
 of a private drawing's actual quantities still requires its readable evidence.
+
+### Analysis failures, retries and duplicate protection
+
+The analysis API uses separate timestamped **pending**, **succeeded** and **failed**
+request markers in the existing private `ANALYSIS_LIMITS` binding. A running
+request is protected for a bounded lease; a successful request keeps a two-minute
+cooldown. A failed, cancelled, timed-out or invalid-result attempt releases its
+owned pending state so the same input can be retried. Cleanup checks ownership before updating a marker, so it does not knowingly
+overwrite a newer request. Older `in-progress` markers retain their original
+120-second TTL during rollout. Attempts still consume the existing 20/day limit;
+there is no automatic retry or rate-limit bypass.
+
+KV stores only hashed keys, random ownership IDs, phase and expiration timestamps,
+never drawings, extracted text, provider messages, takeoff results or credentials.
+An isolate-local metadata guard prevents simultaneous duplicate calls in that
+isolate. KV is eventually consistent, so this remains best-effort cross-isolate
+duplicate/rate protection, not an atomic distributed lock. Timestamped expiration
+bounds abandoned requests. KV outages fail closed; if cleanup fails, the actual
+failure remains visible with a bounded-wait recovery explanation. No binding or
+Cloudflare/OpenAI configuration changes are required.
+
+The server bounds provider work to 90 seconds; the client bounds both fetch and
+response-body reading to 120 seconds and clears pending UI state on failure or
+cancellation. Safe reason codes distinguish quota, rate limiting, credentials,
+model access, rejected structured schema, output truncation, refusal, invalid
+results, storage failure and timeout. Raw provider bodies, secrets, Access values
+and document content are not returned or logged. Pending/successful cooldowns are
+shown separately from failures, with retry timing; a blocked retry retains the
+previous failure explanation for the same input.
+
+For a multi-batch request, completed valid batches may be reused for identical
+inputs during this mounted browser session. Only unfinished batches are sent
+again. Results remain provisional and no partial takeoff is written to the quote.
+The temporary cache is bounded, cleared on success, source removal/replacement or
+unmount, and is never written to browser storage, exports or customer documents.
+Changing inputs requires a new analysis. A reload loses this temporary cache and
+may require waiting for successful server cooldowns to expire.
+
+The Pages Function (`functions/api/plan-analysis.ts`) serves this API independently
+of a separately connected Workers Builds project. A successful Pages deployment
+does not prove a live provider call succeeds; a separate Worker build failure is
+not the source of an application-generated request-cooldown response. Existing
+pre-fix generic failures cannot retrospectively reveal their underlying provider
+reason without authenticated runtime logs. Recovery regression tests use
+synthetic files and mocked provider failures, not private plans or paid calls.
+
+Saved takeoff troubleshooting: **Plans & Takeoff → Export saved takeoff analysis → Download private analysis JSON** exports the saved source observations, extracted measurement inputs and pages, calculator inputs, proposed component/purchase quantities, assumptions, confidence, unresolved inputs, and review state. It makes no AI request and does not change the estimate. Original PDFs/images, customer contact fields, quote notes, and prices are excluded. The file **does contain internal drawing text and evidence**; keep it private and never attach it to a customer quote or publish it. This is a diagnostic export, not a restorable quote backup. Component counts remain separate from stock-board purchasing quantities; export does not approve or convert anything.

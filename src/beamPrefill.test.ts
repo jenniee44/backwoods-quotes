@@ -143,3 +143,29 @@ it("manual estimating edits and unrelated continuous joist notes do not become b
     })?.inputs.pieces1,
   ).toBeUndefined();
 });
+it.each([
+  "2x6 ledger board",
+  "Ledger board and aluminum flashing",
+  "Aluminum flashing",
+])("rejects misplaced beam metadata on %s", (description) => {
+  const t = { ...item, description, category: "Beams" };
+  expect(proposedBeamRecipe(t)).toBeNull();
+});
+it("uses explicit ledger identity rather than an incorrect beam category for tool selection", async () => {
+  const { relevantCalculators } = await import("./calculatorSelection");
+  expect(
+    relevantCalculators({
+      ...item,
+      description: "PT member",
+      specification: "2x6 ledger board",
+      category: "Beams",
+    }),
+  ).toEqual(["ledger"]);
+  expect(
+    relevantCalculators({
+      ...item,
+      description: "Aluminum flashing",
+      category: "Beams",
+    }),
+  ).toEqual(["railing"]);
+});

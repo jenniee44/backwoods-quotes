@@ -1,7 +1,9 @@
+import { AnalysisFailure, isAnalysisErrorCode } from "../shared/analysisErrors";
+import { abortableAnalysis } from "../shared/abortableAnalysis";
 import { consolidateBeamReviews } from "./consolidateBeamReviews";
 import { spatialBeamIdentity } from "../shared/spatialBeams";
 import { proposedBeamRecipe } from "./beamPrefill";
-import { proposedMaterialRecipe } from "./deckTakeoff";
+import { preservedDrawingInputs, proposedMaterialRecipe } from "./deckTakeoff";
 import { materialInputIdentity } from "../shared/materialInputs";
 import { completenessProblem } from "./takeoffRequirements";
 import {
@@ -43,44 +45,76 @@ export const planAnalysisService: PlanAnalysisService = {
       throw new Error(
         "The original plans, text and detail views exceed the request limit. Select fewer files/details; originals will not be reduced.",
       );
-    let response: Response;
     try {
-      response = await fetch("/api/plan-analysis", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: requestBody,
+      return await abortableAnalysis(
+        async (requestSignal) => {
+          let response: Response;
+          try {
+            response = await fetch("/api/plan-analysis", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: requestBody,
+              signal: requestSignal,
+            });
+          } catch (error) {
+            if (requestSignal.aborted) throw requestSignal.reason ?? error;
+            throw new Error(
+              "The analysis service could not be reached. Check your connection or sign in through Cloudflare Access.",
+            );
+          }
+          if (
+            !response.headers.get("Content-Type")?.includes("application/json")
+          )
+            throw new Error(
+              "The analysis service is unavailable or requires sign-in. Configure Cloudflare Access and the API route.",
+            );
+          let body;
+          try {
+            body = await response.json();
+          } catch {
+            throw new Error(
+              "The analysis service returned an unreadable response. Please retry or use manual takeoff.",
+            );
+          }
+          if (!response.ok && isAnalysisErrorCode(body?.code)) {
+            const retry =
+              typeof body.retryAfterSeconds === "number" &&
+              Number.isFinite(body.retryAfterSeconds)
+                ? Math.max(1, Math.min(120, Math.ceil(body.retryAfterSeconds)))
+                : undefined;
+            const failure = new AnalysisFailure(body.code, retry);
+            // Server recovery text is fixed and sanitized; do not forward arbitrary payload fields.
+            if (
+              typeof body.error === "string" &&
+              body.error.endsWith(
+                " Request tracking could not be cleared; duplicate protection may remain for up to two minutes. Wait before retrying.",
+              )
+            )
+              failure.message +=
+                " Request tracking could not be cleared; duplicate protection may remain for up to two minutes. Wait before retrying.";
+            throw failure;
+          }
+          if (!response.ok)
+            throw new Error(
+              typeof body?.error === "string"
+                ? body.error
+                : "Plan analysis failed. Try again or use manual takeoff.",
+            );
+          return validateAnalysis(
+            body,
+            documents.map((d) => d.id),
+            payload,
+          );
+        },
         signal,
-      });
-    } catch (error) {
-      if ((error as Error).name === "AbortError") throw error;
-      throw new Error(
-        "The analysis service could not be reached. Check your connection or sign in through Cloudflare Access.",
+        120000,
       );
+    } catch (e) {
+      if ((e as Error)?.name === "TimeoutError" && !signal?.aborted)
+        throw new AnalysisFailure("ANALYSIS_CLIENT_TIMEOUT");
+      throw e;
     }
-    if (!response.headers.get("Content-Type")?.includes("application/json"))
-      throw new Error(
-        "The analysis service is unavailable or requires sign-in. Configure Cloudflare Access and the API route.",
-      );
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      throw new Error(
-        "The analysis service returned an unreadable response. Please retry or use manual takeoff.",
-      );
-    }
-    if (!response.ok)
-      throw new Error(
-        typeof body?.error === "string"
-          ? body.error
-          : "Plan analysis failed. Try again or use manual takeoff.",
-      );
-    return validateAnalysis(
-      body,
-      documents.map((d) => d.id),
-      payload,
-    );
   },
 };
 export async function documentFingerprint(
@@ -257,6 +291,7 @@ export function addAnalysisSuggestions(
         return calculation
           ? {
               ...item,
+              materialInputs: preservedDrawingInputs(item),
               calculation,
               quantity: null,
               unit: calculateMaterial(calculation, false).unit || item.unit,

@@ -1,6 +1,13 @@
 import { isBeamMaterial } from "./beamMaterial";
 import type { TakeoffItem } from "./model";
 export function relevantCalculators(item: TakeoffItem) {
+  const identity = `${item.description} ${item.specification ?? ""}`;
+  if (/flashing|waterproof/i.test(identity)) return ["railing"];
+  if (
+    /ledger/i.test(identity) &&
+    !/hanger|connector|fastener|screw|bolt/i.test(item.description)
+  )
+    return ["ledger"];
   if (isBeamMaterial(item)) return ["beam-runs", "beams"];
   const specific = matchingCalculators(item.description);
   return specific.length ? specific : matchingCalculators(item.category ?? "");

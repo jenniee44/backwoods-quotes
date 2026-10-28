@@ -1,3 +1,5 @@
+import { downloadTakeoffAnalysis } from "./takeoffAnalysisExport";
+import { AnalysisFailure } from "../shared/analysisErrors";
 import {
   DrawingLocationContext,
   type DrawingLocation,
@@ -222,8 +224,27 @@ export default function PlansTakeoff({
   latest.current = q;
   const request = useRef<AbortController | null>(null);
   const [analysisState, setAnalysisState] = useState("Ready to analyze");
+  const completedBatches = useRef<{
+    quoteId: string;
+    fingerprint: string;
+    sources: { id: string; data: string }[];
+    results: Map<string, import("../shared/analysis").PlanAnalysisResult>;
+  } | null>(null);
+  useEffect(() => {
+    if (
+      completedBatches.current &&
+      (completedBatches.current.quoteId !== q.id ||
+        !completedBatches.current.sources.every((s) =>
+          q.documents.some((d) => d.id === s.id && d.data === s.data),
+        ))
+    )
+      completedBatches.current = null;
+  }, [q.id, q.documents]);
   const [readingBudget, setReadingBudget] = useState(8);
   const [analysisError, setAnalysisError] = useState("");
+  const lastFailure = useRef<{ fingerprint: string; message: string } | null>(
+    null,
+  );
   const [reviewError, setReviewError] = useState("");
   const [inputNotes, setInputNotes] = useState<string[]>([]);
   const [submittedPackage, setSubmittedPackage] = useState<{
@@ -270,6 +291,7 @@ export default function PlansTakeoff({
     setReviewError("");
     setInputNotes([]);
     setAnalysisState("Uploading/preparing");
+    let attemptFingerprint = "";
     try {
       const documents = structuredClone(analysisPackage.documents);
       assertDetailInclusion(selectedDocuments, documents);
@@ -290,6 +312,7 @@ export default function PlansTakeoff({
         sourceFingerprint +
         (readingBudget === 8 ? "" : `:reading-${readingBudget}`) +
         orientationKey;
+      attemptFingerprint = fingerprint;
       if (
         latest.current.analysisReports?.some(
           (report) => report.fingerprint === fingerprint,
@@ -373,6 +396,19 @@ export default function PlansTakeoff({
           }),
       ]);
       setAnalysisState("Analyzing plans");
+      if (completedBatches.current?.fingerprint !== fingerprint)
+        completedBatches.current = {
+          quoteId: q.id,
+          fingerprint,
+          sources: selectedDocuments.map(({ id, data }) => ({ id, data })),
+          results: new Map(),
+        };
+      const batchCache = completedBatches.current.results;
+      if (batchCache.size)
+        setInputNotes((notes) => [
+          ...notes,
+          "Resuming completed batches from this browser session for the exact same submitted sources. Only unfinished batches contact the provider again.",
+        ]);
       let submittedDetails = 0;
       const submittedImages: SubmittedImage[] = [];
       const hashes = new Map(
@@ -380,65 +416,66 @@ export default function PlansTakeoff({
           prepared.map(async (d) => [d.id, await sourceHash(d.data)] as const),
         ),
       );
+      const rememberSubmitted = (docs: AnalysisDocument[]) => {
+        submittedDetails += analysisPackageSize(docs).detailCount;
+        for (const d of docs)
+          for (const region of d.detailRegions ?? []) {
+            const diagnostic = [
+              ...automatic.reviewViews,
+              ...validDetails.map((v) => ({
+                documentId: v.documentId,
+                region: v.region,
+              })),
+            ].find(
+              (v) =>
+                v.documentId === d.id &&
+                v.region.page === region.page &&
+                v.region.rotation === region.rotation &&
+                v.region.x === region.x &&
+                v.region.y === region.y,
+            );
+            submittedImages.push({
+              documentId: d.id,
+              documentName: d.name,
+              sourceHash: hashes.get(d.id)!,
+              sourceDetailView:
+                1 +
+                (prepared
+                  .find((source) => source.id === d.id)
+                  ?.detailRegions?.findIndex(
+                    (r) =>
+                      r.page === region.page &&
+                      r.x === region.x &&
+                      r.y === region.y &&
+                      r.rotation === region.rotation &&
+                      r.data === region.data,
+                  ) ?? -1),
+              region: {
+                ...region,
+                orientationUncertain: diagnostic?.region.orientationUncertain,
+                cropNeedsReview: diagnostic?.region.cropNeedsReview,
+                inspectionNote: diagnostic?.region.inspectionNote,
+              },
+            });
+          }
+        setInputNotes((notes) => [
+          ...notes.filter((n) => !n.startsWith("Submitted detail views:")),
+          `Submitted detail views: ${submittedDetails} of ${analysisPackageSize(prepared).detailCount}. Original files included in every request.`,
+        ]);
+      };
       const result = await analyzeBatches(
         prepared,
         controller.signal,
-        async (docs, signal) => {
-          const result = await planAnalysisService.analyze(docs, signal);
-          submittedDetails += analysisPackageSize(docs).detailCount;
-          for (const d of docs)
-            for (const region of d.detailRegions ?? []) {
-              const diagnostic = [
-                ...automatic.reviewViews,
-                ...validDetails.map((v) => ({
-                  documentId: v.documentId,
-                  region: v.region,
-                })),
-              ].find(
-                (v) =>
-                  v.documentId === d.id &&
-                  v.region.page === region.page &&
-                  v.region.rotation === region.rotation &&
-                  v.region.x === region.x &&
-                  v.region.y === region.y,
-              );
-              submittedImages.push({
-                documentId: d.id,
-                documentName: d.name,
-                sourceHash: hashes.get(d.id)!,
-                sourceDetailView:
-                  1 +
-                  (prepared
-                    .find((source) => source.id === d.id)
-                    ?.detailRegions?.findIndex(
-                      (r) =>
-                        r.page === region.page &&
-                        r.x === region.x &&
-                        r.y === region.y &&
-                        r.rotation === region.rotation &&
-                        r.data === region.data,
-                    ) ?? -1),
-                region: {
-                  ...region,
-                  orientationUncertain: diagnostic?.region.orientationUncertain,
-                  cropNeedsReview: diagnostic?.region.cropNeedsReview,
-                  inspectionNote: diagnostic?.region.inspectionNote,
-                },
-              });
-            }
-          setInputNotes((notes) => [
-            ...notes.filter((n) => !n.startsWith("Submitted detail views:")),
-            `Submitted detail views: ${submittedDetails} of ${analysisPackageSize(prepared).detailCount}. Original files included in every request.`,
-          ]);
-          return result;
-        },
+        (docs, signal) => planAnalysisService.analyze(docs, signal),
         (number, total) =>
           setInputNotes((notes) => [
             ...notes.filter((n) => !n.startsWith("Analyzing batch")),
             `Analyzing batch ${number} of ${total}. Original PDFs accompany every batch; nothing is added until all succeed.`,
           ]),
+        batchCache,
+        rememberSubmitted,
       );
-      if (controller.signal.aborted) return;
+      controller.signal.throwIfAborted();
       if (
         (await documentFingerprint(
           latest.current.documents
@@ -495,6 +532,8 @@ export default function PlansTakeoff({
           : "Images are available for this session only. Browser image storage is full or unavailable; existing quote data was not replaced. Reopening may not retain these images.",
       };
       onChange(next);
+      lastFailure.current = null;
+      completedBatches.current = null;
       setAdvancedReview(false);
       setReviewTarget(null);
       requestAnimationFrame(() =>
@@ -510,15 +549,43 @@ export default function PlansTakeoff({
       );
     } catch (error) {
       if (request.current === controller) {
-        setAnalysisState("Analysis failed");
-        setAnalysisError(
+        const protectedRequest =
+          error instanceof AnalysisFailure &&
+          ["ANALYSIS_IN_PROGRESS", "ANALYSIS_COOLDOWN"].includes(error.code);
+        setAnalysisState(
           controller.signal.aborted
-            ? "Analysis cancelled. Existing estimates are unchanged."
-            : (error as Error).message,
+            ? "Analysis cancelled"
+            : protectedRequest
+              ? error.code === "ANALYSIS_IN_PROGRESS"
+                ? "Analysis already in progress"
+                : "Plans recently analyzed"
+              : "Analysis failed",
         );
+        const message = controller.signal.aborted
+          ? "Analysis cancelled. Existing estimates are unchanged."
+          : (error as Error).message;
+        const previous =
+          protectedRequest &&
+          lastFailure.current?.fingerprint === attemptFingerprint
+            ? ` Previous failure: ${lastFailure.current.message}`
+            : "";
+        const retry =
+          error instanceof AnalysisFailure && error.retryAfterSeconds
+            ? ` Retry after ${error.retryAfterSeconds} seconds.`
+            : "";
+        setAnalysisError(message + retry + previous);
+        if (!protectedRequest && !controller.signal.aborted)
+          lastFailure.current = { fingerprint: attemptFingerprint, message };
       }
     } finally {
-      if (request.current === controller) request.current = null;
+      if (request.current === controller) {
+        request.current = null;
+        setAnalysisState((state) =>
+          ["Uploading/preparing", "Analyzing plans"].includes(state)
+            ? "Ready to analyze"
+            : state,
+        );
+      }
     }
   }
   function updateItem(
@@ -1078,6 +1145,21 @@ export default function PlansTakeoff({
         <p className="error" role="alert">
           {analysisError}
         </p>
+      )}
+      {!!q.analysisReports?.length && (
+        <details className="analysis-export">
+          <summary>Export saved takeoff analysis</summary>
+          <p>
+            Private troubleshooting file with drawing evidence, extracted
+            measurements, calculated proposals and unresolved inputs. No
+            original PDFs, images, customer contact details or prices are
+            included. Evidence can contain private drawing text; keep this file
+            private.
+          </p>
+          <button type="button" onClick={() => downloadTakeoffAnalysis(q)}>
+            Download private analysis JSON
+          </button>
+        </details>
       )}
       {(q.analysisReports ?? []).map((report) => (
         <details key={report.id} className="analysis-report" open>

@@ -1,3 +1,10 @@
+import { AnalysisFailure, analysisErrors } from "../shared/analysisErrors";
+import { abortableAnalysis } from "../shared/abortableAnalysis";
+import {
+  reserveAnalysis,
+  finishAnalysis,
+  type AnalysisLease,
+} from "./analysisLease";
 import { maxAnalysisBodyBytes } from "../shared/analysisPackage";
 import { authorize } from "./access";
 import type { AccessEnv } from "./access";
@@ -16,12 +23,17 @@ export type Env = AccessEnv & {
     ): Promise<void>;
   };
 };
-const json = (data: unknown, status = 200) =>
+const json = (
+  data: unknown,
+  status = 200,
+  extra: Record<string, string> = {},
+) =>
   Response.json(data, {
     status,
     headers: {
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
+      ...extra,
     },
   });
 async function boundedBody(request: Request) {
@@ -115,6 +127,8 @@ export async function handleAnalysis(
       400,
     );
   }
+  let lease: AnalysisLease | undefined;
+  let tracking = false;
   try {
     if (env.ANALYSIS_LIMITS) {
       const hash = async (text: string) =>
@@ -141,59 +155,69 @@ export async function handleAnalysis(
           .join("|"),
       );
       const key = `request:${userHash}:${fingerprint}`;
-      if (await env.ANALYSIS_LIMITS.get(key))
-        return json(
-          {
-            error:
-              "These plans were recently analyzed or are being analyzed. Wait two minutes before retrying.",
-          },
-          409,
-        );
+      tracking = true;
       const day = `daily:${userHash}:${new Date().toISOString().slice(0, 10)}`;
-      const count = Number((await env.ANALYSIS_LIMITS.get(day)) ?? 0);
-      if (count >= 20)
-        return json(
-          { error: "The daily plan-analysis limit was reached. Try tomorrow." },
-          429,
-        );
-      await env.ANALYSIS_LIMITS.put(day, String(count + 1), {
-        expirationTtl: 172800,
-      });
-      await env.ANALYSIS_LIMITS.put(key, "in-progress", { expirationTtl: 120 });
+      lease = await reserveAnalysis(env.ANALYSIS_LIMITS, key, day);
+      tracking = false;
     }
-    const signal = AbortSignal.any([
+    const result = await abortableAnalysis(
+      (signal) =>
+        (
+          provider ?? openAIProvider(env.OPENAI_API_KEY!, env.OPENAI_MODEL)
+        ).analyze(documents, signal),
       request.signal,
-      AbortSignal.timeout(90000),
-    ]);
-    const result = await (
-      provider ?? openAIProvider(env.OPENAI_API_KEY!, env.OPENAI_MODEL)
-    ).analyze(documents, signal);
-    return json(
-      validateAnalysis(
+      90000,
+    );
+    let validated;
+    try {
+      validated = validateAnalysis(
         result,
         documents.map((d) => d.id),
         documents,
-      ),
-    );
-  } catch (e) {
-    if (
-      (e as Error).name === "AbortError" ||
-      (e as Error).name === "TimeoutError"
-    )
-      return json(
-        {
-          error:
-            "Analysis was interrupted or took too long. Existing estimates are safe; retry with fewer pages.",
-        },
-        504,
       );
-    // Provider errors are deliberately generic; never log request bodies or secrets.
+    } catch {
+      throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
+    }
+    if (lease) {
+      tracking = true;
+      await finishAnalysis(lease, "succeeded");
+      tracking = false;
+    }
+    return json(validated);
+  } catch (e) {
+    const failure =
+      e instanceof AnalysisFailure
+        ? e
+        : new AnalysisFailure(
+            tracking
+              ? "ANALYSIS_TRACKING_UNAVAILABLE"
+              : request.signal.aborted
+                ? "ANALYSIS_INTERRUPTED"
+                : ["AbortError", "TimeoutError"].includes((e as Error)?.name)
+                  ? "ANALYSIS_TIMEOUT"
+                  : "ANALYSIS_FAILED",
+          );
+    let recovery = "";
+    if (lease) {
+      try {
+        await finishAnalysis(lease, "failed");
+      } catch {
+        recovery =
+          " Request tracking could not be cleared; duplicate protection may remain for up to two minutes. Wait before retrying.";
+      }
+    }
     return json(
       {
-        error:
-          "Plans could not be analyzed. Check the provider configuration, try fewer/clearer pages, or use manual takeoff.",
+        error: failure.message + recovery,
+        code: failure.code,
+        ...(failure.retryAfterSeconds
+          ? { retryAfterSeconds: failure.retryAfterSeconds }
+          : {}),
       },
-      502,
+      analysisErrors[failure.code].status,
+      failure.retryAfterSeconds
+        ? { "Retry-After": String(failure.retryAfterSeconds) }
+        : {},
     );
   }
 }

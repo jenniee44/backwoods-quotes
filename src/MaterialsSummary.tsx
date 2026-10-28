@@ -484,6 +484,20 @@ export default function MaterialsSummary({
                           : "Calculation and evidence"}
                       </summary>
                       <p>{group.reason}</p>
+                      {group.items.length > 1 && (
+                        <ul aria-label="Separate observation quantities">
+                          {group.observations.map((ob) => (
+                            <li key={ob.id}>
+                              {ob.location || "Assembly to confirm"} · page{" "}
+                              {ob.page ?? "unknown"}:{" "}
+                              {ob.quantity === null
+                                ? "To confirm"
+                                : `${ob.quantity} ${ob.unit} (proposed component quantity)`}
+                              . Counts are not added.
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       <p>
                         {materialTakeoffProposal(t).formula ||
                           t.calculationBasis}

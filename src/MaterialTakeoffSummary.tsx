@@ -118,8 +118,11 @@ export default function MaterialTakeoffSummary(props: Props) {
                 {g.items[0].specification || "Specification to confirm"}
               </strong>
               <p>
-                Quantity to confirm · {g.items.length} source assemblies or
-                overlapping observations. Counts are not added.
+                {g.quantity === null
+                  ? "Quantity to confirm"
+                  : `${formatQuantity(g.quantity, g.unit)} (proposed, shown once)`}{" "}
+                · {g.items.length} source assemblies or overlapping
+                observations. Counts are not added.
               </p>
               <details>
                 <summary>Compare assemblies before approval</summary>

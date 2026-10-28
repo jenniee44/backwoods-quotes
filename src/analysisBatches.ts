@@ -67,13 +67,31 @@ export async function analyzeBatches(
     s: AbortSignal,
   ) => Promise<PlanAnalysisResult>,
   progress: (n: number, total: number) => void = () => {},
+  completed?: Map<string, PlanAnalysisResult>,
+  observed: (documents: AnalysisDocument[], reused: boolean) => void = () => {},
 ): Promise<PlanAnalysisResult> {
   const batches = analysisBatches(sources);
   const results: PlanAnalysisResult[] = [];
   for (const [index, batch] of batches.entries()) {
     signal.throwIfAborted();
     progress(index + 1, batches.length);
-    const result = await analyze(batch.documents, signal);
+    const key = completed
+      ? Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(JSON.stringify(batch.documents)),
+            ),
+          ),
+        )
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("")
+      : "";
+    signal.throwIfAborted();
+    const reused = !!completed?.has(key);
+    const result =
+      completed?.get(key) ?? (await analyze(batch.documents, signal));
+    signal.throwIfAborted();
     const remap = (items: AnalysisSuggestion[] | undefined) =>
       items?.map((item) => {
         if (!item.sourceDetailView) return { ...item };
@@ -105,6 +123,11 @@ export async function analyzeBatches(
       dimensions: remap(result.dimensions),
       sourceObservations: remap(result.sourceObservations),
     });
+    // Only completed, remappable responses survive a retry in this browser session.
+    // Never cache partial responses, approvals or quote edits, and never persist to storage.
+    if (completed && !completed.has(key) && completed.size < 24)
+      completed.set(key, result);
+    observed(batch.documents, reused);
   }
   signal.throwIfAborted();
   if (results.length === 1) return results[0];

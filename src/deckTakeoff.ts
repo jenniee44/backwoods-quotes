@@ -1,3 +1,4 @@
+import { isBeamMaterial } from "./beamMaterial";
 import type { Quote, TakeoffItem } from "./model";
 import {
   materialInputUnits,
@@ -142,14 +143,17 @@ export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
   // initialization clears the final/approved quantity field. This is a proposed
   // component count, never a purchase length or a concrete volume.
   if (
-    result.length > 0 &&
+    (result.length > 0 || /joist|deck(?:ing)? board/i.test(t.description)) &&
     t.origin === "ai" &&
     t.quantity !== null &&
     Number.isInteger(t.quantity) &&
     t.quantity > 0 &&
-    /post|footing|pier/i.test(t.description) &&
+    /post|footing|pier|joist|deck(?:ing)? board/i.test(t.description) &&
+    !/hanger|connector|fastener|screw|bolt|beam|girder/i.test(t.description) &&
     !/concrete (?:volume|supply)/i.test(t.description) &&
-    /^(?:each|posts?|footings?|piers?|assemblies)$/i.test(t.unit) &&
+    /^(?:each|pieces?|joists?|boards?|posts?|footings?|piers?|assemblies)$/i.test(
+      t.unit,
+    ) &&
     ["Written", "Counted"].includes(t.quantityMethod ?? "") &&
     !!t.sourceFacts?.length &&
     !t.assumptions?.length &&
@@ -203,6 +207,20 @@ export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
     );
   }
   return result;
+}
+/** Retain source counts before the separate purchase field is cleared. */
+export function preservedDrawingInputs(t: TakeoffItem) {
+  const inputs = [
+    ...(t.materialInputs ?? []),
+    ...materialDrawingInputs(t).filter(
+      (f) =>
+        f.field === "count" &&
+        !(t.materialInputs ?? []).some(
+          (old) => JSON.stringify(old) === JSON.stringify(f),
+        ),
+    ),
+  ];
+  return inputs.length <= 40 ? inputs : t.materialInputs;
 }
 export function supportedMaterialInputs(t: TakeoffItem) {
   const facts = materialDrawingInputs(t),
@@ -260,6 +278,17 @@ export function proposedMaterialRecipe(
     (workScope(t) === "Existing work to remove or modify" &&
       !t.scopeVerified) ||
     !hasReadableSpecification(t)
+  )
+    return t.calculation;
+  if (
+    preservedDrawingInputs(t) === t.materialInputs &&
+    materialDrawingInputs(t).some(
+      (f) =>
+        f.field === "count" &&
+        !(t.materialInputs ?? []).some(
+          (old) => JSON.stringify(old) === JSON.stringify(f),
+        ),
+    )
   )
     return t.calculation;
   const { values: v, sources } = supportedMaterialInputs(t);
@@ -354,6 +383,7 @@ export function prepareDeckTakeoff(q: Quote): Quote {
         return t;
       return {
         ...t,
+        materialInputs: preservedDrawingInputs(t),
         calculation,
         quantity: null,
         unit: calculators.find((c) => c.kind === calculation.kind)!.unit,
@@ -464,6 +494,10 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     sources: Object.values(sources),
     stockSuggestion: null,
   });
+  if (kind === "beam-runs" && !isBeamMaterial(t))
+    return empty(
+      "Verify this ledger/flashing material using its own measured length; saved beam observations are not its quantity",
+    );
   const scopePending =
     workScope(t) === "Requires scope confirmation" && t.status !== "Rejected";
   if (
@@ -633,7 +667,9 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
       ? /post/i.test(t.description)
         ? "posts"
         : "assemblies"
-      : "pieces";
+      : kind === "joists"
+        ? "joists"
+        : "pieces";
     formula = "Explicit unique component count; repeated views are not added";
   }
   if (
@@ -650,6 +686,18 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     formula =
       t.calculationBasis ||
       "Proposed drawing quantity; verify purchasing basis";
+  }
+  if (
+    kind === "joists" &&
+    quantity !== null &&
+    v.count !== undefined &&
+    quantity !== v.count &&
+    !recipe?.verified
+  ) {
+    missing.push(
+      `Counted observation (${v.count} joists) conflicts with the layout calculation (${quantity} joists); verify the assembly and edge conditions`,
+    );
+    conflicts.push("count");
   }
   // A conflicting source must not produce a seemingly usable proposal. The
   // original observations remain available for contractor reconciliation.

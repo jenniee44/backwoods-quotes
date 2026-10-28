@@ -96,3 +96,58 @@ it("retains submitted detail coordinates and orientation privately, without stor
   );
   expect(JSON.stringify(r)).not.toContain("data:image/");
 });
+it("resumes completed batches after a later failure without paying for or re-counting the successful request", async () => {
+  const cache = new Map(),
+    seen: number[] = [],
+    observed: boolean[] = [];
+  let calls = 0;
+  const analyze = async (docs: AnalysisDocument[]) => {
+    calls++;
+    const count = docs[0].detailRegions?.length ?? 0;
+    seen.push(count);
+    if (calls === 2) throw new Error("Provider temporarily unavailable");
+    return analysisFixture();
+  };
+  await expect(
+    analyzeBatches(
+      [source],
+      new AbortController().signal,
+      analyze,
+      () => {},
+      cache,
+    ),
+  ).rejects.toThrow("temporarily");
+  expect(cache.size).toBe(1);
+  const result = await analyzeBatches(
+    [source],
+    new AbortController().signal,
+    analyze,
+    () => {},
+    cache,
+    (_docs, reused) => observed.push(reused),
+  );
+  expect(calls).toBe(3);
+  expect(seen).toEqual([4, 2, 2]);
+  expect(observed).toEqual([true, false]);
+  expect(result.suggestions.length).toBeGreaterThan(0);
+  expect([...cache.keys()].every((key) => /^[a-f0-9]{64}$/.test(key))).toBe(
+    true,
+  );
+  expect(JSON.stringify([...cache.values()])).not.toContain("data:image/");
+  const different = [
+    {
+      ...source,
+      data:
+        "data:application/pdf;base64," +
+        btoa("%PDF-1.7\nchanged source\n%%EOF"),
+    },
+  ];
+  await analyzeBatches(
+    different,
+    new AbortController().signal,
+    analyze,
+    () => {},
+    cache,
+  );
+  expect(calls).toBe(5);
+});
