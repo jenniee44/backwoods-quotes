@@ -1,9 +1,9 @@
+import { materialSpecificationKey } from "../shared/materialGrouping";
 import { sameSpatialBeam, uniqueSpatialBeams } from "../shared/spatialBeams";
 import { unresolvedFoundationAlternative } from "./takeoffScope";
 import { calculateMaterial } from "../shared/materialCalculators";
 import type { Quote, TakeoffItem } from "./model";
 import {
-  normalizeSpecification,
   repeatedMaterialKey,
   repeatEvidenceEligible,
 } from "../shared/componentIdentity";
@@ -58,14 +58,11 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
   for (const t of items) {
     if (preliminaryDisposition(t, q) === "information") continue;
     const name = friendlyMaterialName(t).split(" — ")[0];
-    const spec = normalizeSpecification(
-      (t.specification ?? "")
-        .replace(/@/g, " at ")
-        .replace(/(\d+)\s*(?:["″]|\binches\b)/g, "$1 in")
-        .replace(/\bo\s*[./]?\s*c\b\.?/gi, "on centre")
-        .replace(/\bon center\b/gi, "on centre"),
-    );
-    const key = JSON.stringify([name.toLowerCase(), spec]);
+    const category = materialCategoryFor(t);
+    const spec = materialSpecificationKey(t.specification ?? "", category);
+    // Joist wording is not an assembly identity. Keep distinct assemblies below
+    // the same purchasing category without summing their observations.
+    const key = JSON.stringify([category ?? name.toLowerCase(), spec]);
     const group = groups.get(key);
     if (group) group.items.push(t);
     else groups.set(key, { name, items: [t] });
@@ -129,7 +126,9 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
       (includedScope(t) || workScope(t) === "Requires scope confirmation") &&
       t.status !== "Rejected" &&
       !unresolvedFoundationAlternative(q, t) &&
-      !/conflict|unreadable|uncertain/i.test((t.warnings ?? []).join(" "));
+      !/conflict|unreadable|uncertain (?:quantity|count)|(?:quantity|count)[^.;]*uncertain/i.test(
+        (t.warnings ?? []).join(" "),
+      );
     // Display proposals before approval. Never write them into the approved
     // quantity field or bypass the separate conversion checks.
     const approved = readyForEstimate(q, t);

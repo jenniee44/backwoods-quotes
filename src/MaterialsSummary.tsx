@@ -57,7 +57,7 @@ export default function MaterialsSummary({
     const repaired = prepareDeckTakeoff(q);
     const takeoff = prepareMaterialsSummary(repaired.takeoff, true);
     if (JSON.stringify(takeoff) !== JSON.stringify(q.takeoff))
-      onChange({ ...q, takeoff });
+      onChange({ ...repaired, takeoff });
   }, [q, locked, onChange]);
   // Any edit/source change requires another explicit batch verification.
   useEffect(() => {
@@ -457,6 +457,16 @@ export default function MaterialsSummary({
                         ? "To confirm"
                         : Number(group.quantity.toPrecision(8))}
                     </strong>
+                    {group.quantity === null &&
+                      group.observations.some((ob) => ob.quantity !== null) && (
+                        <small>
+                          Supported observations, not a total:{" "}
+                          {group.observations
+                            .filter((ob) => ob.quantity !== null)
+                            .map((ob) => `${ob.quantity} ${ob.unit}`)
+                            .join("; ")}
+                        </small>
+                      )}
                     {group.items.length === 1 && (
                       <input
                         type="number"

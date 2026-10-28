@@ -87,6 +87,11 @@ export function proposedBeamRecipe(
   )
     return spatialBeamRecipe(item);
   if (
+    item.supportBasis === "Total visible locations" &&
+    !item.beamAssemblies?.length
+  )
+    return null;
+  if (
     item.origin !== "ai" ||
     item.destination !== "Materials" ||
     !isBeamMaterial(item) ||

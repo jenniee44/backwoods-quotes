@@ -1,3 +1,7 @@
+import {
+  explicitlyAssociatedInputs,
+  uncertainDimensionAssociation,
+} from "./dimensionAssociation";
 import { spatialBeamIdentity, mergeSpatialBeams } from "./spatialBeams";
 import {
   evidenceScope,
@@ -135,6 +139,13 @@ function supportBasisFor(
   if (/\bby[- ]others\b/i.test(label)) return "By others";
   return "Not established";
 }
+// A visible SUPPORT count does not invalidate an independently evidenced beam.
+function supportCountOnly(item: AnalysisSuggestion) {
+  return (
+    supportBasisFor(item) === "Total visible locations" &&
+    materialCategoryFor(item) !== "Beams"
+  );
+}
 const readable = (spec: string) =>
   !!spec.trim() &&
   !/^(?:unknown|unreadable|not specified|requires contractor input)|specification unreadable/i.test(
@@ -150,7 +161,7 @@ function promoteObservation(
     !readable(item.specification ?? "") ||
     !item.sourceFacts?.length ||
     metadataDescription.test(item.description.trim()) ||
-    supportBasisFor(item) === "Total visible locations"
+    supportCountOnly(item)
   )
     return null;
   const candidate: AnalysisSuggestion = {
@@ -191,6 +202,7 @@ export function prepareConstructionAnalysis(
     if (!item.location?.trim() || !item.specification?.trim()) continue;
     const matching = (result.dimensions ?? []).filter(
       (dimension) =>
+        !uncertainDimensionAssociation(dimension) &&
         dimension.documentId === item.documentId &&
         dimension.page === item.page &&
         item.page !== null &&
@@ -213,7 +225,14 @@ export function prepareConstructionAnalysis(
     const inputs = matching.reduce(
       (facts, dimension) =>
         mergeMaterialInputs(facts, dimension.materialInputs),
-      item.materialInputs ?? [],
+      mergeMaterialInputs(
+        item.materialInputs,
+        explicitlyAssociatedInputs(
+          item,
+          result.suggestions,
+          result.dimensions ?? [],
+        ),
+      ),
     );
     if (inputs.length <= 40 && inputs.length) item.materialInputs = inputs;
   }
@@ -241,7 +260,7 @@ export function prepareConstructionAnalysis(
         item.itemRole === "Document observation" ||
         item.itemRole === "Supporting evidence" ||
         item.destination === "Informational" ||
-        supportBasisFor(item) === "Total visible locations",
+        supportCountOnly(item),
     ),
   ];
   const observationSeen = new Set<string>();
@@ -321,7 +340,11 @@ export function prepareConstructionAnalysis(
   let reduced = result.duplicatesReduced ?? 0;
   for (const item of [...result.suggestions, ...promoted]) {
     item.warnings = [...(item.warnings ?? [])];
-    if (item.beamAssemblies?.length && /beam/i.test(item.description)) {
+    if (
+      (item.beamAssemblies?.length && /beam/i.test(item.description)) ||
+      (materialCategoryFor(item) === "Beams" &&
+        supportBasisFor(item) === "Total visible locations")
+    ) {
       // Spatial line count is proposed later, independently from purchase boards.
       item.quantity = null;
       item.quantityMethod = "Unknown";
@@ -443,7 +466,7 @@ export function prepareConstructionAnalysis(
         `Support basis: ${item.supportBasis}. Verify existing/new/by-others status and contract inclusion; a visible count is not a purchase quantity.`,
       );
       // Total visible locations are information, not automatically new material.
-      if (item.supportBasis === "Total visible locations") {
+      if (supportCountOnly(item)) {
         summary.observations.push(
           `${item.description}: ${item.quantity ?? "Requires contractor input"} ${item.unit} (${item.documentId}, page ${item.page ?? "unknown"}). Total visible locations, not new work.`,
         );

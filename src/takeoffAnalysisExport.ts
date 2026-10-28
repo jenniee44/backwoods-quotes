@@ -12,6 +12,7 @@ export function takeoffAnalysisExport(q: Quote) {
       "Internal analysis only. Contains drawing evidence; do not send to customers or publish. Original documents and images are not included.",
     reports: (q.analysisReports ?? []).map((r) => ({
       id: r.id,
+      beamSupportRecoveryVersion: r.beamSupportRecoveryVersion,
       createdAt: r.createdAt,
       assumptions: r.assumptions,
       warnings: r.warnings,

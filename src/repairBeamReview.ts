@@ -1,3 +1,4 @@
+import { recoverBeamEvidence } from "./recoverBeamEvidence";
 import { consolidateBeamReviews } from "./consolidateBeamReviews";
 import type { Quote, TakeoffItem } from "./model";
 import { initializeBeamCalculator } from "./initializeBeamCalculator";
@@ -21,6 +22,7 @@ const labels = (t: TakeoffItem) =>
   ].sort();
 export function repairBeamReview(q: Quote): Quote {
   if (q.status !== "Draft") return q;
+  q = recoverBeamEvidence(q);
   let next = {
     ...q,
     takeoff: consolidateBeamReviews(q.takeoff).map((t) => {

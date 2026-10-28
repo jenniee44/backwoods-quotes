@@ -157,6 +157,7 @@ export type Quote = {
   takeoff: TakeoffItem[];
   takeoffPreferences?: { availableStock: number[]; waste: number | null };
   analysisReports?: {
+    beamSupportRecoveryVersion?: 1;
     id: string;
     fingerprint: string;
     createdAt: string;
@@ -1292,6 +1293,8 @@ function validExtensions(v: unknown) {
         (report) =>
           record(report) &&
           strings(report, ["id", "fingerprint", "createdAt"]) &&
+          (report.beamSupportRecoveryVersion === undefined ||
+            report.beamSupportRecoveryVersion === 1) &&
           (report.aiDetails === undefined ||
             (record(report.aiDetails) &&
               Number.isInteger(report.aiDetails.submittedCount) &&

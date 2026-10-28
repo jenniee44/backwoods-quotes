@@ -94,3 +94,76 @@ it.each(["page", "location", "scope", "specification"])(
     ).toBeUndefined();
   },
 );
+it("joins an explicitly identified joist layout to its own dimension record without requiring lumber text on the dimension", () => {
+  const r = fixture();
+  r.suggestions[0].sourceFacts = ["New work Joist layout J1"];
+  r.dimensions![0].sourceFacts = ["Joist layout J1"];
+  r.dimensions![0].description = "Written perpendicular layout dimension";
+  r.dimensions![0].specification = "16 ft";
+  r.dimensions![0].location = "Dimension extension line J1";
+  r.dimensions![0].materialInputs![0].evidence =
+    "Joist layout J1: 16 ft perpendicular to joists";
+  const q = seed().quotes[0];
+  q.status = "Draft";
+  q.takeoff = [];
+  q.documents = [
+    { id: "synthetic", name: "Synthetic.pdf" },
+  ] as typeof q.documents;
+  expect(
+    materialTakeoffProposal(addAnalysisSuggestions(q, r).takeoff[0]),
+  ).toMatchObject({ quantity: 13, unit: "joists", purchase: null });
+});
+it.each([
+  "ambiguous",
+  "overall",
+  "duplicate-layout",
+  "other-page",
+  "missing-axis",
+])("does not use a %s association for joist arithmetic", (failure) => {
+  const r = fixture();
+  r.suggestions[0].sourceFacts = ["New work Joist layout J1"];
+  r.dimensions![0].sourceFacts = ["Joist layout J1"];
+  r.dimensions![0].specification = "16 ft";
+  r.dimensions![0].location = "Dimension string";
+  r.dimensions![0].materialInputs![0].evidence =
+    "Joist layout J1: 16 ft perpendicular to joists";
+  if (failure === "ambiguous")
+    r.dimensions![0].calculationBasis = "Exact assembly association uncertain";
+  if (failure === "overall") {
+    r.dimensions![0].sourceFacts = ["24'-3\" overall dimension"];
+    r.dimensions![0].materialInputs![0].value = 24.25;
+  }
+  if (failure === "duplicate-layout")
+    r.suggestions.push({
+      ...r.suggestions[0],
+      description: "Other physical assembly",
+    });
+  if (failure === "other-page") r.dimensions![0].page = 2;
+  if (failure === "missing-axis")
+    r.dimensions![0].materialInputs![0].evidence =
+      "Overall horizontal dimension";
+  const result = prepareConstructionAnalysis(r);
+  expect(
+    result.suggestions[0].materialInputs?.some(
+      (f) => f.field === "layoutLength",
+    ),
+  ).not.toBe(true);
+});
+it("shows proposed joist arithmetic before approval when geometry is explicitly supported, with no invented stock or waste", () => {
+  const r = fixture(),
+    q = seed().quotes[0];
+  q.status = "Draft";
+  q.takeoff = [];
+  q.documents = [
+    { id: "synthetic", name: "Synthetic.pdf" },
+  ] as typeof q.documents;
+  const next = addAnalysisSuggestions(q, r),
+    t = next.takeoff[0];
+  const proposal = materialTakeoffProposal(t);
+  expect(proposal.quantity).toBe(13);
+  expect(proposal.formula).toContain("ceil(16 ft × 12 / 16 in) + 1");
+  expect(proposal.purchase).toBeNull();
+  expect(proposal.missing.join(" ")).toContain("stock");
+  expect(t.calculation?.inputs.waste).toBeUndefined();
+  expect(t.status).toBe("Proposed");
+});

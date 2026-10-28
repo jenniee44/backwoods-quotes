@@ -124,6 +124,21 @@ export default function MaterialTakeoffSummary(props: Props) {
                 · {g.items.length} source assemblies or overlapping
                 observations. Counts are not added.
               </p>
+              {g.quantity === null &&
+                g.observations.some((ob) => ob.quantity !== null) && (
+                  <p className="tiny">
+                    Supported observations (not a category total):{" "}
+                    {g.observations
+                      .filter((ob) => ob.quantity !== null)
+                      .map(
+                        (ob) =>
+                          `${formatQuantity(ob.quantity!, ob.unit)} at ${ob.location || "location to confirm"}`,
+                      )
+                      .join("; ")}
+                    . Remaining assemblies and purchase quantities need
+                    verification.
+                  </p>
+                )}
               <details>
                 <summary>Compare assemblies before approval</summary>
                 {g.items.map((t) => (
