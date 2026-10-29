@@ -46,7 +46,8 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
       mergeMaterialInputs(existing?.materialInputs, item.materialInputs)
         .length > 40 ||
       (automatic &&
-        (item.origin !== "ai" ||
+        (item.scopeOverride ||
+          item.origin !== "ai" ||
           !item.documentId ||
           !repeatEvidenceEligible(item) ||
           /possibly|may be|unconfirmed|uncertain|could be|alternative/i.test(
@@ -65,6 +66,7 @@ export function consolidateTakeoff(items: TakeoffItem[], automatic = false) {
         !item.convertedLineId &&
         (!automatic ||
           (item.origin === "ai" &&
+            !item.scopeOverride &&
             !!item.documentId &&
             !!repeatEvidenceEligible(item) &&
             !/possibly|may be|unconfirmed|uncertain|could be|alternative/i.test(

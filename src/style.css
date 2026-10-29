@@ -3047,3 +3047,7 @@ details[open] > summary {
     display: none;
   }
 }
+
+.scope-review-row { padding: .75rem 0; border-bottom: 1px solid var(--border, #ddd); display: grid; gap: .4rem; }
+.scope-review-row button { white-space: normal; overflow-wrap: anywhere; }
+.scope-review-row select { width: 100%; }

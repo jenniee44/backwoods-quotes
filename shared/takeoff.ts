@@ -1,3 +1,4 @@
+import { assignDrawingDimensions } from "./assignDrawingDimensions";
 import {
   explicitlyAssociatedInputs,
   uncertainDimensionAssociation,
@@ -62,6 +63,7 @@ export function semanticItemKey(item: AnalysisSuggestion): string {
     .replace(/\brailings\b/g, "railing");
   return JSON.stringify([
     item.documentId,
+    item.assemblyReference ?? "",
     item.page,
     item.destination,
     component,
@@ -189,6 +191,7 @@ export function prepareConstructionAnalysis(
   input: PlanAnalysisResult,
 ): PlanAnalysisResult {
   const result = structuredClone(input);
+  assignDrawingDimensions(result);
   const summary: ContractorSummary = result.summary ?? {
     majorScope: [],
     readableSpecifications: [],
@@ -496,6 +499,8 @@ export function prepareConstructionAnalysis(
     summary.siteVerification.push(...item.warnings);
     const existing = retained.find(
       (candidate) =>
+        (candidate.assemblyReference ?? "") ===
+          (item.assemblyReference ?? "") &&
         spatialBeamIdentity(candidate.beamAssemblies) ===
           spatialBeamIdentity(item.beamAssemblies) &&
         materialInputIdentity(candidate.materialInputs) ===

@@ -1,3 +1,4 @@
+import { validDimensionDecisions } from "../shared/drawingDimensions";
 import { beamStockGroups } from "../shared/beamLumber";
 import { completenessProblem } from "./takeoffRequirements";
 import { purchaseQuantityProblem } from "../shared/componentIdentity";
@@ -157,6 +158,7 @@ export type Quote = {
   takeoff: TakeoffItem[];
   takeoffPreferences?: { availableStock: number[]; waste: number | null };
   analysisReports?: {
+    dimensionDecisions?: import("../shared/drawingDimensions").DimensionDecision[];
     beamSupportRecoveryVersion?: 1;
     id: string;
     fingerprint: string;
@@ -1293,6 +1295,8 @@ function validExtensions(v: unknown) {
         (report) =>
           record(report) &&
           strings(report, ["id", "fingerprint", "createdAt"]) &&
+          (report.dimensionDecisions === undefined ||
+            validDimensionDecisions(report.dimensionDecisions)) &&
           (report.beamSupportRecoveryVersion === undefined ||
             report.beamSupportRecoveryVersion === 1) &&
           (report.aiDetails === undefined ||

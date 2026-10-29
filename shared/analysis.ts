@@ -1,4 +1,11 @@
 import {
+  drawingDimensionsSchema,
+  validDrawingDimensions,
+  validDimensionDecisions,
+  type DrawingDimension,
+  type DimensionDecision,
+} from "./drawingDimensions";
+import {
   spatialBeamSchema,
   validSpatialBeams,
   type SpatialBeam,
@@ -29,6 +36,8 @@ export const classifications = [
 ] as const;
 // Optional on saved V2 records; required (empty when unknown) in new provider output.
 export type ConstructionEvidence = {
+  assemblyReference?: string;
+  drawingDimensions?: DrawingDimension[];
   materialInputs?: MaterialInput[];
   beamAssemblies?: SpatialBeam[];
   sourceDetailView?: number | null;
@@ -85,6 +94,7 @@ export type AnalysisSuggestion = ConstructionEvidence & {
   warnings?: string[];
 };
 export type PlanAnalysisResult = {
+  dimensionDecisions?: DimensionDecision[];
   summary?: ContractorSummary;
   duplicatesReduced?: number;
   sourceObservations?: AnalysisSuggestion[];
@@ -116,6 +126,13 @@ export const materialCategories = [
   "Stairs / stringers",
 ];
 const evidenceProperties = {
+  assemblyReference: {
+    type: "string",
+    maxLength: 100,
+    description:
+      "Stable source assembly identifier shared only by observations of the same physical assembly; empty if unsupported. Never derive from label frequency.",
+  },
+  drawingDimensions: drawingDimensionsSchema,
   materialInputs: materialInputSchema,
   beamAssemblies: spatialBeamSchema,
   sourceDetailView: {
@@ -173,6 +190,7 @@ export function validConstructionEvidence(v: Record<string, unknown>): boolean {
   return Object.entries(evidenceProperties).every(([key, schema]) => {
     const value = v[key];
     if (value === undefined) return true; // Existing saved quotes/older responses.
+    if (key === "drawingDimensions") return validDrawingDimensions(value);
     if (key === "beamAssemblies") return validSpatialBeams(value);
     if (key === "materialInputs") return validMaterialInputs(value);
     if (key === "sourceDetailView")
@@ -316,6 +334,7 @@ export function validateAnalysis(
           "project",
           "summary",
           "duplicatesReduced",
+          "dimensionDecisions",
           "dimensions",
           "sourceObservations",
           "suggestions",
@@ -356,7 +375,13 @@ export function validateAnalysis(
     !texts(value.warnings)
   )
     return fail();
+  if (
+    value.dimensionDecisions !== undefined &&
+    !validDimensionDecisions(value.dimensionDecisions)
+  )
+    return fail();
   let spatialObservations = 0;
+  let dimensionObservations = 0;
   for (const [key, max] of [
     ["sourceObservations", 100],
     ["dimensions", 100],
@@ -412,6 +437,9 @@ export function validateAnalysis(
           source?.detailRegions?.[Number(item.sourceDetailView) - 1];
         if (!region || region.page !== item.page) return fail();
       }
+      dimensionObservations +=
+        (item.drawingDimensions as DrawingDimension[] | undefined)?.length ?? 0;
+      if (dimensionObservations > 500) return fail();
       spatialObservations +=
         (item.beamAssemblies as SpatialBeam[] | undefined)?.length ?? 0;
       if (spatialObservations > 100) return fail();

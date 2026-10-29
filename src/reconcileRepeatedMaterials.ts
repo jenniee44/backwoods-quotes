@@ -1,8 +1,9 @@
+import { mergeAssemblyObservations } from "./mergeAssemblyObservations";
 import type { TakeoffItem } from "./model";
 import { consolidateTakeoff } from "./consolidateTakeoff";
 /** Preserve each source record; only explicit, unreviewed same-assembly observations may become one candidate. */
 export function reconcileRepeatedMaterials(items: TakeoffItem[]) {
-  const next = structuredClone(items);
+  const next = mergeAssemblyObservations(items);
   for (let i = 0; i < next.length; i++) {
     const a = next[i];
     if (!eligible(a)) continue;
@@ -29,6 +30,7 @@ export function reconcileRepeatedMaterials(items: TakeoffItem[]) {
 function eligible(t: TakeoffItem) {
   return (
     t.origin === "ai" &&
+    !t.assemblyReference?.trim() &&
     t.status === "Proposed" &&
     !t.convertedLineId &&
     !t.reviewAcknowledged &&

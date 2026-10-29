@@ -76,6 +76,7 @@ export function equivalentComponentKey(
     return "";
   return JSON.stringify([
     item.documentId,
+    item.assemblyReference ?? "",
     item.destination,
     category,
     normalizeSpecification(item.specification),

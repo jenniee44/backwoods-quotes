@@ -2,6 +2,13 @@ import { evidenceScope } from "../shared/componentIdentity";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
 export type ContractorScope = {
+  scopeOverride?: import("./scopeOverride").ScopeDecision;
+  originalScope?: {
+    workScope?: string;
+    included?: boolean;
+    destination?: string;
+    itemRole?: string;
+  };
   workScope?:
     | "New work"
     | "Existing work"
@@ -50,6 +57,21 @@ export function validScope(value: unknown) {
   if (!value || typeof value !== "object") return false;
   const v = value as ContractorScope;
   return (
+    (v.scopeOverride === undefined ||
+      ["Included", "Excluded", "Existing to Remain", "Subcontracted"].includes(
+        v.scopeOverride,
+      )) &&
+    (v.originalScope === undefined ||
+      (!!v.originalScope &&
+        typeof v.originalScope === "object" &&
+        !Array.isArray(v.originalScope) &&
+        Object.entries(v.originalScope).every(([k, val]) =>
+          ["workScope", "destination", "itemRole"].includes(k)
+            ? val === undefined ||
+              (typeof val === "string" && val.length <= 100)
+            : k === "included" &&
+              (val === undefined || typeof val === "boolean"),
+        ))) &&
     (v.workScope === undefined ||
       [
         "New work",

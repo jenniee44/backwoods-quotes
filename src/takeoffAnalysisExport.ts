@@ -17,6 +17,7 @@ export function takeoffAnalysisExport(q: Quote) {
       assumptions: r.assumptions,
       warnings: r.warnings,
       dimensions: r.dimensions?.map(observation),
+      dimensionDecisions: r.dimensionDecisions,
       sourceObservations: r.sourceObservations?.map(observation),
       duplicateEvidence: r.duplicateEvidence?.map(observation),
       submittedDetailCount: r.aiDetails?.submittedCount,
@@ -28,6 +29,9 @@ export function takeoffAnalysisExport(q: Quote) {
       status: t.status,
       included: t.included,
       workScope: t.workScope,
+      scopeOverride: t.scopeOverride,
+      originalScope: t.originalScope,
+      destination: t.destination,
       calculation: t.calculation,
       proposal: materialTakeoffProposal(t),
       reviewAcknowledged: t.reviewAcknowledged,
@@ -49,6 +53,8 @@ export function takeoffAnalysisExport(q: Quote) {
 }
 function observation(t: import("../shared/analysis").AnalysisSuggestion) {
   return {
+    assemblyReference: t.assemblyReference,
+    drawingDimensions: t.drawingDimensions,
     documentId: t.documentId,
     page: t.page,
     sourceDetailView: t.sourceDetailView,

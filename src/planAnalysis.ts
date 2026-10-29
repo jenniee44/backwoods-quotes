@@ -171,6 +171,8 @@ export function addAnalysisSuggestions(
     )
       throw new Error("Plan suggestion has an invalid measurement or source.");
     return {
+      assemblyReference: item.assemblyReference,
+      drawingDimensions: structuredClone(item.drawingDimensions ?? []),
       sourceDetailView: item.sourceDetailView,
       supportBasis: item.supportBasis,
       scopeVerified: false,
@@ -324,6 +326,7 @@ export function addAnalysisSuggestions(
           name: d.name,
         })),
         dimensions: result.dimensions,
+        dimensionDecisions: result.dimensionDecisions,
         sourceObservations: structuredClone(result.sourceObservations ?? []),
         assumptions: result.assumptions ?? [],
         warnings: result.warnings,

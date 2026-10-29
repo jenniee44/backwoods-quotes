@@ -1,3 +1,4 @@
+import ScopeOverrideReview from "./ScopeOverrideReview";
 import { calculateMaterial } from "../shared/materialCalculators";
 import { materialTakeoffProposal } from "./deckTakeoff";
 import ContractorScopeEditor from "./ContractorScopeEditor";
@@ -232,6 +233,12 @@ export default function MaterialsSummary({
   return (
     <section className="materials-summary" aria-label="Materials Summary">
       <h3>Materials Summary</h3>
+      <ScopeOverrideReview
+        quote={q}
+        locked={locked}
+        onChange={onChange}
+        onError={onError}
+      />
       <p className="tiny">
         Changes save when you leave a cell. Verify the drawing, specifications
         and purchase quantities before approval. Missing measurements are never

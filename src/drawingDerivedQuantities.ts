@@ -1,3 +1,4 @@
+import { preserveDetectedDimensions } from "./detectedDimensions";
 import { derivePurchaseQuantities } from "./drawingPurchaseQuantities";
 import type { AnalysisDocument, PlanAnalysisResult } from "../shared/analysis";
 import { evidenceScope } from "../shared/componentIdentity";
@@ -11,7 +12,7 @@ export function deriveDrawingQuantities(
   result: PlanAnalysisResult,
   documents: AnalysisDocument[],
 ) {
-  const next = structuredClone(result);
+  const next = preserveDetectedDimensions(result, documents);
   for (const t of next.suggestions) {
     if (
       t.quantity !== null ||
