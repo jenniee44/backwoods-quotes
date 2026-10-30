@@ -1,4 +1,5 @@
 import { isBeamMaterial } from "./beamMaterial";
+import { effectiveBeamObservations } from "./effectiveBeamObservations";
 import { useContext } from "react";
 import { DrawingLocationContext } from "./DrawingLocationContext";
 import { beamLayout } from "./framingLayout";
@@ -16,7 +17,7 @@ import { formatFeet } from "../shared/measurementFormatting";
 export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
   const showDrawing = useContext(DrawingLocationContext);
   if (!isBeamMaterial(item) || !item.beamAssemblies?.length) return null;
-  const groups = uniqueSpatialBeams(item.beamAssemblies);
+  const groups = uniqueSpatialBeams(effectiveBeamObservations(item));
   const proposed = groups.filter(
     (g) =>
       g[0].scope === "New work" || g[0].scope === "Requires scope confirmation",

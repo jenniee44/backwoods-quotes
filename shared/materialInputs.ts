@@ -1,4 +1,6 @@
 // Proposed drawing facts, scoped to the parent physical assembly. Never approvals.
+import { drawingMeasurements } from "./constructionMeasurements";
+import { measurementRounding } from "./measurementRounding";
 export const materialInputUnits = {
   layoutLength: "ft",
   layoutWidth: "ft",
@@ -84,7 +86,28 @@ export function validMaterialInputs(value: unknown): value is MaterialInput[] {
 const uncertain =
   /unreadable|illegible|uncertain|approx(?:imate)?|assum|conflict|not confirmed|to confirm|unknown|scaled|pixel/i;
 export function normalizeMaterialInput(f: MaterialInput) {
+  if (!Number.isFinite(f.value)) return NaN;
   const expected = materialInputUnits[f.field];
+  if (
+    (expected === "ft" || expected === "in") &&
+    (f.unit === "ft" || f.unit === "in")
+  ) {
+    const written = drawingMeasurements({
+      documentId: "",
+      page: f.page,
+      confidence: "Medium",
+      sourceFacts: [f.evidence],
+    });
+    if (written.length === 1) {
+      const factor = f.unit === "ft" ? 12 : 1;
+      if (
+        Math.abs(f.value * factor - written[0].inches) >
+        measurementRounding(f.value, factor)
+      )
+        return NaN;
+      return written[0].inches / (expected === "ft" ? 12 : 1);
+    }
+  }
   if (f.unit === expected) return f.value;
   if (expected === "ft" && f.unit === "in") return f.value / 12;
   if (expected === "in" && f.unit === "ft") return f.value * 12;

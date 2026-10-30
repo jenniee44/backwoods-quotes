@@ -79,15 +79,24 @@ it("classifies explicit existing/excluded scope without assuming a subcontract e
   expect(
     evidenceScope({
       ...base,
+      description: "Concrete pier and footing",
       notes: "Existing concrete pier and footing to remain",
     }),
   ).toBe("Existing work to remain");
-  expect(evidenceScope({ ...base, notes: "Existing ledger to modify" })).toBe(
-    "Existing work to remove or modify",
-  );
-  expect(evidenceScope({ ...base, notes: "Guards by others" })).toBe(
-    "By others / excluded",
-  );
+  expect(
+    evidenceScope({
+      ...base,
+      description: "Ledger",
+      notes: "Existing ledger to modify",
+    }),
+  ).toBe("Existing work to remove or modify");
+  expect(
+    evidenceScope({
+      ...base,
+      description: "Guards",
+      notes: "Guards by others",
+    }),
+  ).toBe("By others / excluded");
   expect(evidenceScope({ ...base, notes: "Scope unreadable" })).toBe(
     "Requires scope confirmation",
   );

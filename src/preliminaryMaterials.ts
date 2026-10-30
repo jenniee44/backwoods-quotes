@@ -1,4 +1,5 @@
 import { isGeneralSpecification } from "./materialReferences";
+import { explicitBeamIdentity } from "../shared/componentSubject";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
 import { readyForEstimate } from "./takeoffReview";
@@ -21,6 +22,7 @@ export function friendlyMaterialName(t: TakeoffItem) {
       "Concrete footings / piers",
     ],
     [/deck(?:ing)? boards?|decking/i, "Deck boards"],
+    [/rim|band joists?/i, "Rim joists"],
     [/joists?/i, "Deck joists"],
     [/beams?/i, "Beams"],
     [/posts?/i, "Posts"],
@@ -28,7 +30,9 @@ export function friendlyMaterialName(t: TakeoffItem) {
     [/blocking/i, "Framing blocking"],
     [/flash/i, "Flashing"],
   ];
-  const matched = names.find(([pattern]) => pattern.test(text));
+  const matched = explicitBeamIdentity(t)
+    ? ([/beam/i, "Beams"] as [RegExp, string])
+    : names.find(([pattern]) => pattern.test(text));
   if (!matched)
     return (
       text

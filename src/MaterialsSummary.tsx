@@ -1,4 +1,5 @@
 import ScopeOverrideReview from "./ScopeOverrideReview";
+import DeckReplacementScope from "./DeckReplacementScope";
 import { calculateMaterial } from "../shared/materialCalculators";
 import { materialTakeoffProposal } from "./deckTakeoff";
 import ContractorScopeEditor from "./ContractorScopeEditor";
@@ -233,6 +234,46 @@ export default function MaterialsSummary({
   return (
     <section className="materials-summary" aria-label="Materials Summary">
       <h3>Materials Summary</h3>
+      <DeckReplacementScope
+        quote={q}
+        locked={locked}
+        onError={onError}
+        onApply={(next) => {
+          onChange(next);
+          setView("preliminary");
+        }}
+      />
+      {q.takeoff.some((t) =>
+        t.notes.startsWith("Contractor-confirmed deck replacement scope"),
+      ) && (
+        <details>
+          <summary>Demolition, subcontractors & disposal</summary>
+          <ul>
+            {q.takeoff
+              .filter(
+                (t) =>
+                  t.included &&
+                  t.status !== "Rejected" &&
+                  ["Labour", "Subcontractor", "Other Costs"].includes(
+                    t.destination ?? "",
+                  ),
+              )
+              .map((t) => (
+                <li key={t.id}>
+                  {t.description} — {t.quantity ?? "Quantity needed"} {t.unit} ·{" "}
+                  {t.status}{" "}
+                  <button type="button" onClick={() => onAdvanced(t.id)}>
+                    Review {t.description}
+                  </button>
+                </li>
+              ))}
+          </ul>
+          <p className="tiny">
+            Enter verified labour hours, subcontractor scope and disposal
+            charges before approval. No prices or hours are inferred.
+          </p>
+        </details>
+      )}
       <ScopeOverrideReview
         quote={q}
         locked={locked}
@@ -248,6 +289,12 @@ export default function MaterialsSummary({
         Upload drawing → Preliminary list → Verify missing information → Approve
         → Final list → Send to estimate
       </p>
+      {approved.length === 0 && (
+        <p className="tiny">
+          Final Shopping List is empty until you verify and approve materials.
+          Unresolved required materials remain in the preliminary list.
+        </p>
+      )}
       <div className="heading-actions">
         <button
           className={"button " + (view === "takeoff" ? "" : "secondary")}

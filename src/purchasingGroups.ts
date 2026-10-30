@@ -62,7 +62,17 @@ export function purchasingGroups(q: Quote, items: TakeoffItem[]) {
     const spec = materialSpecificationKey(t.specification ?? "", category);
     // Joist wording is not an assembly identity. Keep distinct assemblies below
     // the same purchasing category without summing their observations.
-    const key = JSON.stringify([category ?? name.toLowerCase(), spec]);
+    const subtype =
+      category === "Ledger"
+        ? /flashing/i.test(t.description)
+          ? "flashing"
+          : "ledger"
+        : category === "Joists"
+          ? /rim|band/i.test(t.description)
+            ? "rim"
+            : "joists"
+          : "";
+    const key = JSON.stringify([category ?? name.toLowerCase(), spec, subtype]);
     const group = groups.get(key);
     if (group) group.items.push(t);
     else groups.set(key, { name, items: [t] });

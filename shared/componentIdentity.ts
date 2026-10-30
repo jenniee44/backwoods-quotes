@@ -1,4 +1,5 @@
 import type { AnalysisSuggestion } from "./analysis";
+import { scopeClauseApplies } from "./componentSubject";
 // Conservative notation aliases only. Never fuzzy-match dimensions, products or locations.
 export const normalizeSpecification = (value: string) =>
   value
@@ -29,26 +30,41 @@ export function evidenceScope(
     | "notes"
     | "supportBasis"
     | "subcontractorBasis"
+    | "specification"
+    | "beamAssemblies"
   >,
 ): ScopeClassification {
   const text = [item.description, ...(item.sourceFacts ?? []), item.notes].join(
     "; ",
   );
-  if (/\b(?:excluded|not in contract)\b/i.test(text))
+  const applies = (pattern: RegExp) =>
+    text
+      .split(/[;\n]/)
+      .some((clause) => scopeClauseApplies(item, clause, pattern));
+  const byOthers = /\bby[- ]others\b/i;
+  const hasByOthers = /by[- ]others|existing|excluded|not in contract/i.test(
+    text,
+  );
+  if (applies(/\b(?:excluded|not in contract)\b/i))
     return "By others / excluded";
   if (
-    item.supportBasis === "By others" ||
-    item.subcontractorBasis === "Explicit by others" ||
-    (/\bby[- ]others\b/i.test(text) &&
+    (!hasByOthers &&
+      (item.supportBasis === "By others" ||
+        item.subcontractorBasis === "Explicit by others")) ||
+    (applies(byOthers) &&
       !/\b(?:no|not|without)\b[^.;\n]{0,45}\bby[- ]others\b/i.test(text) &&
       !/(?:verify|confirm|uncertain|whether)[^.;\n]{0,100}by[- ]others|existing\/new\/by[- ]others/i.test(
         text,
       ))
   )
     return "By others / excluded";
-  if (/\bexisting\b[^.;\n]{0,65}\b(?:remain|retain|retained)\b/i.test(text))
+  if (
+    applies(/\b(?:remain|retain|retained)\b/i) &&
+    /\bexisting\b[^.;\n]{0,65}\b(?:remain|retain|retained)\b/i.test(text)
+  )
     return "Existing work to remain";
   if (
+    applies(/\b(?:remove|modify|demolish|replace)\b/i) &&
     /\bexisting\b[^.;\n]{0,65}\b(?:remove|modify|demolish|replace)\b/i.test(
       text,
     )

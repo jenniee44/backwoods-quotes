@@ -1,4 +1,5 @@
 import type { TakeoffItem } from "./model";
+import { explicitBeamIdentity } from "../shared/componentSubject";
 /** Select an appropriate tool, not a beam quantity. Hardware is not its beam. */
 export function isBeamMaterial(item: TakeoffItem) {
   if (
@@ -14,6 +15,7 @@ export function isBeamMaterial(item: TakeoffItem) {
   )
     return false;
   if (item.beamAssemblies?.length) return true;
+  if (explicitBeamIdentity(item)) return true;
   if (/beam|girder/i.test(item.description)) return true;
   if (
     /joist|post|decking|footing|pier|guard|railing|stair|blocking|fascia/i.test(

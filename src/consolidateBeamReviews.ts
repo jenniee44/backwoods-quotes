@@ -3,6 +3,10 @@ import { normalizeSpecification } from "../shared/componentIdentity";
 import type { TakeoffItem } from "./model";
 import { isBeamMaterial } from "./beamMaterial";
 import {
+  mergeMaterialInputs,
+  materialInputProblem,
+} from "../shared/materialInputs";
+import {
   sameSpatialBeam,
   uniqueSpatialBeams,
   mergeSpatialBeams,
@@ -44,8 +48,9 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
           t.included === item.included &&
           t.alternativeGroup === item.alternativeGroup &&
           t.alternativeOption === item.alternativeOption &&
-          JSON.stringify(t.materialInputs ?? []) ===
-            JSON.stringify(item.materialInputs ?? []) &&
+          !materialInputProblem(
+            mergeMaterialInputs(t.materialInputs, item.materialInputs),
+          ) &&
           t.stockLength === item.stockLength &&
           uniqueSpatialBeams(item.beamAssemblies!).some((g) =>
             t.beamAssemblies!.some((b) => sameSpatialBeam(b, g[0])),
@@ -63,6 +68,10 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
       continue;
     }
     const merged = mergeSpatialBeams(prior.beamAssemblies, item.beamAssemblies);
+    const inputs = mergeMaterialInputs(
+      prior.materialInputs,
+      item.materialInputs,
+    );
     const facts = [
       ...new Set([
         ...(prior.sourceFacts ?? []),
@@ -74,7 +83,9 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
       ]),
     ];
     const conflict =
-      prior.quantity !== item.quantity || prior.unit !== item.unit;
+      prior.quantity !== null &&
+      item.quantity !== null &&
+      (prior.quantity !== item.quantity || prior.unit !== item.unit);
     const warnings = [
       ...new Set([
         ...(prior.warnings ?? []),
@@ -91,6 +102,7 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
     ];
     if (
       merged.length > 20 ||
+      inputs.length > 40 ||
       facts.length > 20 ||
       facts.some((f) => f.length > 1000) ||
       warnings.length > 20 ||
@@ -111,6 +123,7 @@ export function consolidateBeamReviews(items: TakeoffItem[]) {
     // Manual inputs, blanks, stock choices and verified recipes are ineligible.
     if (prior.calculation) delete prior.calculation;
     prior.beamAssemblies = merged;
+    if (inputs.length) prior.materialInputs = inputs;
     prior.sourceFacts = facts;
     prior.warnings = warnings;
     prior.assumptions = assumptions;

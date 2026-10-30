@@ -1,4 +1,5 @@
 import { isBeamMaterial } from "./beamMaterial";
+import { repairDrawingIdentity } from "./repairDrawingIdentity";
 import { writtenAssemblyInputs } from "../shared/writtenAssemblyInputs";
 import type { Quote, TakeoffItem } from "./model";
 import {
@@ -364,7 +365,7 @@ export function proposedMaterialRecipe(
   };
 }
 export function prepareDeckTakeoff(q: Quote): Quote {
-  const repaired = repairBeamReview(q);
+  const repaired = repairBeamReview(repairDrawingIdentity(q));
   if (q.status !== "Draft") return repaired;
   return {
     ...repaired,

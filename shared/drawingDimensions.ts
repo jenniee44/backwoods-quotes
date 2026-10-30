@@ -1,4 +1,5 @@
 import { drawingMeasurements } from "./constructionMeasurements";
+import { measurementRounding } from "./measurementRounding";
 import type { MaterialInput } from "./materialInputs";
 export const dimensionRoles = [
   "Overall",
@@ -190,9 +191,16 @@ export function dimensionValueProblem(d: DrawingDimension) {
   });
   const inches =
     d.value * (d.unit === "ft" ? 12 : d.unit === "mm" ? 1 / 25.4 : 1);
+  // Providers commonly round repeating feet values to four decimals. Accept only
+  // their numeric rounding interval (capped at 1/64 inch), never a different
+  // written measurement or an engineering tolerance. Written notation wins.
+  const rounding = measurementRounding(
+    d.value,
+    d.unit === "ft" ? 12 : d.unit === "mm" ? 1 / 25.4 : 1,
+  );
   return parsed.length === 1 &&
     parsed[0].written.trim() === d.written.trim() &&
-    Math.abs(parsed[0].inches - inches) < 1e-5
+    Math.abs(parsed[0].inches - inches) <= Math.max(1e-5, rounding)
     ? ""
     : "Written measurement does not match numeric value/units";
 }
@@ -237,11 +245,22 @@ export function dimensionInput(
   d: DrawingDimension,
   page: number,
 ): MaterialInput | undefined {
+  const parsed = drawingMeasurements({
+    documentId: "",
+    page,
+    confidence: "Medium",
+    sourceFacts: [d.written],
+  });
+  const exactValue =
+    d.unit !== "each" && parsed.length === 1
+      ? parsed[0].inches /
+        (d.unit === "ft" ? 12 : d.unit === "mm" ? 1 / 25.4 : 1)
+      : d.value!;
   if (!d.field || d.unit === "mm")
     return d.field && d.unit === "mm"
       ? {
           field: d.field,
-          value: d.value! / 25.4,
+          value: exactValue / 25.4,
           unit: "in",
           page,
           evidence: d.evidence,
@@ -250,7 +269,7 @@ export function dimensionInput(
       : undefined;
   return {
     field: d.field,
-    value: d.value!,
+    value: exactValue,
     unit: d.unit,
     page,
     evidence: d.evidence,

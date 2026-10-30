@@ -1,4 +1,6 @@
 import { assignDrawingDimensions } from "./assignDrawingDimensions";
+import { explicitBeamIdentity } from "./componentSubject";
+import { mixedMaterialCallouts } from "./mixedMaterialCallouts";
 import { writtenAssemblyInputs } from "./writtenAssemblyInputs";
 import { materializeDimensionInventory } from "./dimensionInventory";
 import {
@@ -108,6 +110,7 @@ export function materialCategoryFor(
     .slice(0, 8)
     .find(([, pattern]) => pattern.test(label));
   if (special) return special[0];
+  if (explicitBeamIdentity(item)) return "Beams";
   const matches = materialPatterns
     .slice(8)
     .filter(([, pattern]) => pattern.test(label));
@@ -194,6 +197,22 @@ export function prepareConstructionAnalysis(
 ): PlanAnalysisResult {
   const result = structuredClone(input);
   materializeDimensionInventory(result);
+  for (const source of [...result.suggestions])
+    for (const candidate of mixedMaterialCallouts(source)) {
+      if (
+        result.suggestions.length < 150 &&
+        !result.suggestions.some(
+          (item) =>
+            item.documentId === candidate.documentId &&
+            item.page === candidate.page &&
+            item.location === candidate.location &&
+            materialCategoryFor(item) === candidate.category &&
+            normalizeSpecification(item.specification ?? "") ===
+              normalizeSpecification(candidate.specification ?? ""),
+        )
+      )
+        result.suggestions.push(candidate);
+    }
   for (const item of result.suggestions) {
     const inputs = writtenAssemblyInputs(item);
     if (inputs.length) item.materialInputs = inputs;
@@ -373,9 +392,7 @@ export function prepareConstructionAnalysis(
     ].join(" ");
     if (item.destination === "Subcontractor") {
       const byOthers =
-        (item.subcontractorBasis === "Explicit by others" ||
-          item.subcontractorBasis === undefined) &&
-        /\bby[- ]others\b|\bsubcontracted\b/i.test(evidence) &&
+        evidenceScope(item) === "By others / excluded" &&
         !/\b(?:no|not|without)\b[^.;\n]{0,45}\b(?:by[- ]others|subcontract(?:ed|or|ing)?)\b/i.test(
           evidence,
         );

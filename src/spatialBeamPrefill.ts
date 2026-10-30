@@ -1,3 +1,4 @@
+import { effectiveBeamObservations } from "./effectiveBeamObservations";
 import { isBeamMaterial } from "./beamMaterial";
 import { beamLayout } from "./framingLayout";
 import type { TakeoffItem } from "./model";
@@ -72,7 +73,7 @@ export function spatialBeamLength(
 export function spatialBeamRecipe(
   item: TakeoffItem,
 ): MaterialCalculation | null {
-  const observations = item.beamAssemblies ?? [];
+  const observations = effectiveBeamObservations(item);
   const included = observations.filter(
     (b) => b.scope === "New work" || b.scope === "Requires scope confirmation",
   );
@@ -125,7 +126,7 @@ export function spatialBeamRecipe(
 
 export function spatialBeamReviewProblem(item: TakeoffItem) {
   if (!isBeamMaterial(item)) return "";
-  const beams = item.beamAssemblies ?? [];
+  const beams = effectiveBeamObservations(item);
   const overlap = spatialBeamOverlap(beams);
   if (overlap) return overlap;
   for (const group of uniqueSpatialBeams(
