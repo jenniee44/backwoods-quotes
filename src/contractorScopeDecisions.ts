@@ -6,6 +6,7 @@ export const scopeChoices = [
   "Railings / guards",
   "Stairs",
   "Demolition",
+  "Dump / disposal",
 ] as const;
 export type ScopeChoice = (typeof scopeChoices)[number];
 /** Contractor inputs, never engineering substitutions or AI drawing facts. */
@@ -79,7 +80,7 @@ export function addContractorScope(
     destination:
       choice === "Helical piles — subcontractor"
         ? "Subcontractor"
-        : choice === "Demolition"
+        : choice === "Demolition" || choice === "Dump / disposal"
           ? "Other Costs"
           : "Materials",
     category:
@@ -87,8 +88,10 @@ export function addContractorScope(
         ? "Other Subcontractor"
         : choice === "Decking"
           ? "Decking"
-          : choice === "Demolition"
-            ? "Miscellaneous"
+          : choice === "Demolition" || choice === "Dump / disposal"
+            ? choice === "Dump / disposal"
+              ? "Dump / Disposal Fees"
+              : "Miscellaneous"
             : choice === "Stairs"
               ? "Stairs"
               : "Railings / Guards",

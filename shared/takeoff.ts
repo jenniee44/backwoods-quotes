@@ -1,4 +1,6 @@
 import { assignDrawingDimensions } from "./assignDrawingDimensions";
+import { writtenAssemblyInputs } from "./writtenAssemblyInputs";
+import { materializeDimensionInventory } from "./dimensionInventory";
 import {
   explicitlyAssociatedInputs,
   uncertainDimensionAssociation,
@@ -191,6 +193,11 @@ export function prepareConstructionAnalysis(
   input: PlanAnalysisResult,
 ): PlanAnalysisResult {
   const result = structuredClone(input);
+  materializeDimensionInventory(result);
+  for (const item of result.suggestions) {
+    const inputs = writtenAssemblyInputs(item);
+    if (inputs.length) item.materialInputs = inputs;
+  }
   assignDrawingDimensions(result);
   const summary: ContractorSummary = result.summary ?? {
     majorScope: [],

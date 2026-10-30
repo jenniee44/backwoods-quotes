@@ -4,8 +4,45 @@ import { materialSpecificationKey } from "../shared/materialGrouping";
 import {
   materialInputIdentity,
   mergeMaterialInputs,
+  materialInputProblem,
 } from "../shared/materialInputs";
+import type { MaterialCalculation } from "../shared/materialCalculators";
 import { workScope } from "./takeoffScope";
+// Partial cross-view evidence may complement the same explicit physical ID.
+// Only generated inputs with provenance may merge; explicit blanks/manual edits
+// and different calculator methods remain separate, even when product names match.
+function complementaryRecipe(
+  a?: MaterialCalculation,
+  b?: MaterialCalculation,
+): MaterialCalculation | undefined | false {
+  const generated = (r?: MaterialCalculation) =>
+    !r ||
+    (!r.verified &&
+      Object.entries(r.inputs).every(
+        ([key, value]) => value !== null && !!r.inputSources?.[key],
+      ) &&
+      !r.arrangements &&
+      !r.availableStock);
+  if (!generated(a) || !generated(b) || (a && b && a.kind !== b.kind))
+    return false;
+  if (!a) return b;
+  if (!b) return a;
+  if (
+    Object.keys(a.inputs).some(
+      (key) => Object.hasOwn(b.inputs, key) && a.inputs[key] !== b.inputs[key],
+    )
+  )
+    return false;
+  return {
+    ...a,
+    inputs: { ...b.inputs, ...a.inputs },
+    inputSources: { ...b.inputSources, ...a.inputSources },
+    geometryConfirmed:
+      a.geometryConfirmed === false || b.geometryConfirmed === false
+        ? false
+        : a.geometryConfirmed,
+  };
+}
 /** Explicit physical ID only; equal names/products alone never establish identity. */
 export function mergeAssemblyObservations(items: TakeoffItem[]) {
   const next = structuredClone(items);
@@ -40,6 +77,16 @@ export function mergeAssemblyObservations(items: TakeoffItem[]) {
     if (!eligible(a)) continue;
     for (let j = i + 1; j < next.length; j++) {
       const b = next[j];
+      const sameInputs =
+        materialInputIdentity(a.materialInputs) ===
+          materialInputIdentity(b.materialInputs) && recipe(a) === recipe(b);
+      const combinedInputs = mergeMaterialInputs(
+        a.materialInputs,
+        b.materialInputs,
+      );
+      const combinedRecipe = sameInputs
+        ? a.calculation
+        : complementaryRecipe(a.calculation, b.calculation);
       if (
         !eligible(b) ||
         a.documentId !== b.documentId ||
@@ -68,9 +115,9 @@ export function mergeAssemblyObservations(items: TakeoffItem[]) {
         a.supportBasis !== b.supportBasis ||
         a.subcontractorBasis !== b.subcontractorBasis ||
         a.stockLength !== b.stockLength ||
-        materialInputIdentity(a.materialInputs) !==
-          materialInputIdentity(b.materialInputs) ||
-        recipe(a) !== recipe(b) ||
+        (!sameInputs &&
+          (combinedRecipe === false ||
+            !!materialInputProblem(combinedInputs))) ||
         /conflict|unreadable|alternative/i.test(
           [...(a.warnings ?? []), ...(b.warnings ?? [])].join(" "),
         )
@@ -98,6 +145,7 @@ export function mergeAssemblyObservations(items: TakeoffItem[]) {
         continue;
       a.sourceFacts = facts;
       a.materialInputs = inputs;
+      if (!sameInputs && combinedRecipe) a.calculation = combinedRecipe;
       a.warnings = warnings;
       a.assumptions = assumptions;
       // Original record stays intact as non-billable evidence; quantities never sum.

@@ -7,6 +7,12 @@ export const dimensionRoles = [
   "Full beam length",
   "Support spacing",
   "Connection count",
+  "Deck layout length",
+  "Deck layout width",
+  "Stair width",
+  "Linear material length",
+  "Material coverage",
+  "Footing geometry",
   "Other",
 ] as const;
 export const dimensionFields = [
@@ -22,6 +28,10 @@ export const dimensionFields = [
   "plies",
   "diameter",
   "depth",
+  "boardWidth",
+  "gap",
+  "padLength",
+  "padWidth",
 ] as const;
 export type DrawingDimension = {
   written: string;

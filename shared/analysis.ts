@@ -6,6 +6,11 @@ import {
   type DimensionDecision,
 } from "./drawingDimensions";
 import {
+  dimensionInventorySchema,
+  validDimensionInventory,
+  type DimensionInventoryEntry,
+} from "./dimensionInventory";
+import {
   spatialBeamSchema,
   validSpatialBeams,
   type SpatialBeam,
@@ -94,6 +99,7 @@ export type AnalysisSuggestion = ConstructionEvidence & {
   warnings?: string[];
 };
 export type PlanAnalysisResult = {
+  dimensionInventory?: DimensionInventoryEntry[];
   dimensionDecisions?: DimensionDecision[];
   summary?: ContractorSummary;
   duplicatesReduced?: number;
@@ -258,6 +264,7 @@ export const analysisSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
+    dimensionInventory: dimensionInventorySchema,
     summary: {
       type: "object",
       additionalProperties: false,
@@ -300,6 +307,7 @@ export const analysisSchema = {
     warnings: { type: "array", items: { type: "string" }, maxItems: 40 },
   },
   required: [
+    "dimensionInventory",
     "project",
     "summary",
     "dimensions",
@@ -335,6 +343,7 @@ export function validateAnalysis(
           "summary",
           "duplicatesReduced",
           "dimensionDecisions",
+          "dimensionInventory",
           "dimensions",
           "sourceObservations",
           "suggestions",
@@ -380,8 +389,25 @@ export function validateAnalysis(
     !validDimensionDecisions(value.dimensionDecisions)
   )
     return fail();
+  if (
+    value.dimensionInventory !== undefined &&
+    !validDimensionInventory(value.dimensionInventory, documentIds)
+  )
+    return fail();
+  if (
+    documents &&
+    Array.isArray(value.dimensionInventory) &&
+    value.dimensionInventory.some((d) => {
+      const pages = documents.find((source) => source.id === d.documentId)
+        ?.pdfText?.pageCount;
+      return pages !== undefined && d.page > pages;
+    })
+  )
+    return fail();
   let spatialObservations = 0;
-  let dimensionObservations = 0;
+  let dimensionObservations = Array.isArray(value.dimensionInventory)
+    ? value.dimensionInventory.length
+    : 0;
   for (const [key, max] of [
     ["sourceObservations", 100],
     ["dimensions", 100],

@@ -1,4 +1,5 @@
 import { isBeamMaterial } from "./beamMaterial";
+import { writtenAssemblyInputs } from "../shared/writtenAssemblyInputs";
 import type { Quote, TakeoffItem } from "./model";
 import {
   materialInputUnits,
@@ -48,7 +49,7 @@ const legacyLabels: Record<string, MaterialInput["field"]> = {
   "flashing length": "linearLength",
 };
 export function materialDrawingInputs(t: TakeoffItem): MaterialInput[] {
-  const result = [...(t.materialInputs ?? [])];
+  const result = [...writtenAssemblyInputs(t)];
   // Older analyses stored role-labelled measurements as semicolon-separated
   // evidence, before materialInputs existed. Parse only explicit labels on this
   // material's evidence, never unrelated dimensions from the whole PDF.
@@ -641,6 +642,15 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     formula =
       "Explicitly dimensioned included linear length; no perimeter subtraction inferred";
   } else if (
+    ["ledger", "rim-joist", "blocking", "fascia"].includes(kind ?? "") &&
+    has("linearLength") &&
+    !has("count")
+  ) {
+    quantity = v.linearLength;
+    unit = "linear ft";
+    formula =
+      "Explicitly associated written linear length; stock boards, joints and cutting loss remain separate";
+  } else if (
     ["concrete", "rectangular-concrete"].includes(kind ?? "") &&
     has("count", "depth")
   ) {
@@ -648,14 +658,14 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
       quantity =
         (v.count * Math.PI * (v.diameter / 24) ** 2 * (v.depth / 12)) / 27;
       unit = "cu yd";
-      formula = "count × π × (diameter / 24)² × (depth / 12) / 27";
+      formula = `${v.count} × π × (${v.diameter} in / 24)² × (${v.depth} in / 12) / 27; cylinders only, no pads or waste inferred`;
     } else if (
       kind === "rectangular-concrete" &&
       has("padLength", "padWidth")
     ) {
       quantity = (v.count * v.padLength * v.padWidth * v.depth) / 46656;
       unit = "cu yd";
-      formula = "count × pad length × pad width × depth / 46656";
+      formula = `${v.count} × ${v.padLength} in × ${v.padWidth} in × ${v.depth} in / 46656; pads only, no piers or waste inferred`;
     }
   } else if (
     kind &&

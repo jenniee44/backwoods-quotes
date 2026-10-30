@@ -54,6 +54,27 @@ export function assignDrawingDimensions(result: PlanAnalysisResult) {
         reject("Source drawing region is unresolved");
         continue;
       }
+      const requiredRole: Partial<Record<typeof d.field, string>> = {
+        boardWidth: "Material coverage",
+        gap: "Material coverage",
+        padLength: "Footing geometry",
+        padWidth: "Footing geometry",
+      };
+      if (requiredRole[d.field] && requiredRole[d.field] !== d.role) {
+        reject(
+          "Measurement role does not establish material coverage or footing geometry",
+        );
+        continue;
+      }
+      if (
+        (d.role === "Deck layout length" && d.field !== "layoutLength") ||
+        (d.role === "Deck layout width" && d.field !== "layoutWidth") ||
+        (d.role === "Stair width" && d.field !== "layoutWidth") ||
+        (d.role === "Linear material length" && d.field !== "linearLength")
+      ) {
+        reject("Dimension role and calculator field disagree");
+        continue;
+      }
       const targets = result.suggestions.filter(
         (t) =>
           t.documentId === source.documentId &&
@@ -63,6 +84,16 @@ export function assignDrawingDimensions(result: PlanAnalysisResult) {
           t.itemRole !== "Supporting evidence" &&
           (d.role !== "Joist layout width" ||
             materialCategoryFor(t) === "Joists") &&
+          (![
+            "Deck layout length",
+            "Deck layout width",
+            "Material coverage",
+          ].includes(d.role) ||
+            materialCategoryFor(t) === "Decking") &&
+          (d.role !== "Stair width" ||
+            materialCategoryFor(t) === "Stairs / stringers") &&
+          (d.role !== "Footing geometry" ||
+            materialCategoryFor(t) === "Footings / concrete") &&
           (d.role !== "Full beam length" ||
             materialCategoryFor(t) === "Beams") &&
           (d.role !== "Connection count" ||
@@ -157,6 +188,7 @@ export function assignDrawingDimensions(result: PlanAnalysisResult) {
         }
         if (
           d.field === "layoutLength" &&
+          materialCategoryFor(targets[0]) === "Joists" &&
           (d.role !== "Joist layout width" ||
             !/perpendicular|spacing axis|across (?:the )?joists/i.test(
               d.evidence,
