@@ -154,6 +154,7 @@ it("calculator selection puts matching construction work first", () => {
     relevantCalculators({
       ...item,
       description: "Joist hangers",
+      specification: "Simpson LUS26",
       category: "Hangers / connectors",
     })[0],
   ).toBe("hardware");

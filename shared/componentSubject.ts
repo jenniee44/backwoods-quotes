@@ -1,3 +1,4 @@
+import { primaryMaterialDescription } from "./primaryMaterial";
 type Identity = {
   description: string;
   specification?: string;
@@ -19,7 +20,7 @@ const families: [string, RegExp][] = [
   ["joists", /\bjoists?\b/i],
 ];
 export function explicitBeamIdentity(item: Identity) {
-  const description = item.description;
+  const description = primaryMaterialDescription(item.description);
   if (
     /ledger|flashing|rim joist|band joist|hanger|connector|screw|bolt|fastener|post|guard|railing|stair|decking|deck boards|footing|pier|blocking|fascia/i.test(
       description,
@@ -51,7 +52,9 @@ export function explicitBeamIdentity(item: Identity) {
 }
 export function componentSubject(item: Identity) {
   if (explicitBeamIdentity(item)) return "beams";
-  return families.find(([, pattern]) => pattern.test(item.description))?.[0];
+  return families.find(([, pattern]) =>
+    pattern.test(primaryMaterialDescription(item.description)),
+  )?.[0];
 }
 /** A scope qualifier belongs to its nearest named component, not every material
  * sharing a detail. Ambiguous associations stay unresolved, never silently new. */

@@ -1,16 +1,31 @@
 import type { AnalysisSuggestion } from "./analysis";
 import { explicitBeamIdentity } from "./componentSubject";
+import { primaryMaterialDescription } from "./primaryMaterial";
 /** Transcribe separate, explicitly named components from a mixed AI record.
  * Never borrow its beam geometry, overall dimensions, contract scope or counts. */
 export function mixedMaterialCallouts(
   source: AnalysisSuggestion,
 ): AnalysisSuggestion[] {
-  if ((source.warnings ?? []).some((w) => /(?:specification|member size|hanger model).*unreadable|unreadable.*(?:specification|member size|hanger model)/i.test(w))) return [];
+  if (
+    (source.warnings ?? []).some((w) =>
+      /(?:specification|member size|hanger model).*unreadable|unreadable.*(?:specification|member size|hanger model)/i.test(
+        w,
+      ),
+    )
+  )
+    return [];
   const text = [
     source.description,
     ...(source.sourceFacts ?? []),
     ...(source.materialInputs ?? []).map((f) => f.evidence),
-  ].filter((fact) => !/unreadable|illegible|uncertain|possibly|maybe|guessed|assumed|cannot read|not legible|\?/i.test(fact)).join("; ");
+  ]
+    .filter(
+      (fact) =>
+        !/unreadable|illegible|uncertain|possibly|maybe|guessed|assumed|cannot read|not legible|\?/i.test(
+          fact,
+        ),
+    )
+    .join("; ");
   const result: AnalysisSuggestion[] = [];
   const add = (
     description: string,
@@ -49,7 +64,7 @@ export function mixedMaterialCallouts(
     )?.[0];
     if (joist) add("Deck joists", joist, "Joists", [joist]);
   }
-  if (!/hanger|LUS\d+/i.test(source.description)) {
+  if (!/hanger|LUS\d+/i.test(primaryMaterialDescription(source.description))) {
     const hardware = text.match(
       /\b(?:Simpson\s+)?LUS\d+[A-Z0-9-]*(?:\s+(?:joist\s*)?hang(?:er|ers))?(?:\s+or equivalent)?/i,
     )?.[0];

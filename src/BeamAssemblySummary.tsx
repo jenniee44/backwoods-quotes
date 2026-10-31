@@ -1,3 +1,4 @@
+import { detailOnlyBeamEvidence } from "../shared/primaryMaterial";
 import { isBeamMaterial } from "./beamMaterial";
 import { effectiveBeamObservations } from "./effectiveBeamObservations";
 import { useContext } from "react";
@@ -16,6 +17,7 @@ import {
 import { formatFeet } from "../shared/measurementFormatting";
 export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
   const showDrawing = useContext(DrawingLocationContext);
+  if (detailOnlyBeamEvidence(item)) return null;
   if (!isBeamMaterial(item) || !item.beamAssemblies?.length) return null;
   const groups = uniqueSpatialBeams(effectiveBeamObservations(item));
   const proposed = groups.filter(

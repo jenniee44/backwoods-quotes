@@ -1,6 +1,8 @@
 import type { Quote } from "./model";
 import { materialTakeoffProposal } from "./deckTakeoff";
 import { purchasingGroups } from "./purchasingGroups";
+import { materialIdentityProblem } from "../shared/materialIdentity";
+import { materialCategoryFor } from "../shared/takeoff";
 
 /** Explicit internal export: never used by customer documents or quote sharing. */
 export function takeoffAnalysisExport(q: Quote) {
@@ -24,8 +26,28 @@ export function takeoffAnalysisExport(q: Quote) {
     })),
     materials: q.takeoff.map((t) => ({
       id: t.id,
+      identitySource: t.identitySource
+        ? {
+            ...observation(t.identitySource),
+            status: t.identitySource.status,
+            calculation: t.identitySource.calculation,
+            included: t.identitySource.included,
+            workScope: t.identitySource.workScope,
+          }
+        : undefined,
       analysisId: t.analysisId,
       ...observation(t),
+      materialIdentity: {
+        category: materialCategoryFor(t),
+        problem: materialIdentityProblem(t),
+      },
+      quantityBasis: materialIdentityProblem(t)
+        ? "Unresolved component identity"
+        : materialTakeoffProposal(t).quantity === null
+          ? "Unknown component quantity"
+          : /^(?:beam )?runs?$/i.test(materialTakeoffProposal(t).unit)
+            ? "Physical beam runs, not purchasing boards"
+            : "Proposed material quantity; purchasing and contractor approval remain separate",
       status: t.status,
       included: t.included,
       workScope: t.workScope,

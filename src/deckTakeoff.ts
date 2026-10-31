@@ -1,5 +1,8 @@
+import { detailOnlyBeamEvidence } from "../shared/primaryMaterial";
 import { isBeamMaterial } from "./beamMaterial";
+import { materialIdentityProblem } from "../shared/materialIdentity";
 import { repairDrawingIdentity } from "./repairDrawingIdentity";
+import { repairMaterialIdentity } from "./repairMaterialIdentity";
 import { writtenAssemblyInputs } from "../shared/writtenAssemblyInputs";
 import type { Quote, TakeoffItem } from "./model";
 import {
@@ -365,7 +368,9 @@ export function proposedMaterialRecipe(
   };
 }
 export function prepareDeckTakeoff(q: Quote): Quote {
-  const repaired = repairBeamReview(repairDrawingIdentity(q));
+  const repaired = repairBeamReview(
+    repairDrawingIdentity(repairMaterialIdentity(q)),
+  );
   if (q.status !== "Draft") return repaired;
   return {
     ...repaired,
@@ -496,6 +501,11 @@ export function materialTakeoffProposal(t: TakeoffItem): TakeoffProposal {
     sources: Object.values(sources),
     stockSuggestion: null,
   });
+  if (detailOnlyBeamEvidence(t))
+    return empty(
+      "Connection detail retained as reference; identify physical plan beam lines and their lengths",
+    );
+  if (materialIdentityProblem(t)) return empty(materialIdentityProblem(t));
   if (kind === "beam-runs" && !isBeamMaterial(t))
     return empty(
       "Verify this ledger/flashing material using its own measured length; saved beam observations are not its quantity",

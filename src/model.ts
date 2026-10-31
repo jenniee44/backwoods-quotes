@@ -156,6 +156,7 @@ export type Quote = {
   details: QuoteDetails;
   documents: PlanDocument[];
   takeoff: TakeoffItem[];
+  takeoffProjectScope?: "deck-replacement";
   takeoffPreferences?: { availableStock: number[]; waste: number | null };
   analysisReports?: {
     dimensionDecisions?: import("../shared/drawingDimensions").DimensionDecision[];
@@ -205,6 +206,7 @@ export type PlanDocument = {
 };
 export type TakeoffItem = ConstructionEvidence &
   ContractorScope & {
+    identitySource?: Omit<TakeoffItem, "identitySource">;
     overlapReviews?: string[];
     purchaseVerified?: boolean;
     conflictsVerified?: boolean;
@@ -1176,12 +1178,82 @@ function validDetails(v: unknown) {
     )
   );
 }
+function validTakeoffRecord(t: unknown, allowIdentitySource = true): boolean {
+  return (
+    record(t) &&
+    strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
+    validConstructionEvidence(t) &&
+    validScope(t) &&
+    (t.stockLength === undefined ||
+      t.stockLength === null ||
+      (typeof t.stockLength === "number" &&
+        Number.isFinite(t.stockLength) &&
+        t.stockLength > 0)) &&
+    (t.conflictsVerified === undefined ||
+      typeof t.conflictsVerified === "boolean") &&
+    (t.purchaseVerified === undefined ||
+      typeof t.purchaseVerified === "boolean") &&
+    (t.overlapReviews === undefined ||
+      (Array.isArray(t.overlapReviews) &&
+        t.overlapReviews.length <= 200 &&
+        t.overlapReviews.every(
+          (s: unknown) => typeof s === "string" && s.length <= 200000,
+        ))) &&
+    (t.calculation === undefined || validCalculation(t.calculation)) &&
+    (t.quantity === null || numbers(t, ["quantity"])) &&
+    (t.page === null ||
+      (typeof t.page === "number" &&
+        Number.isInteger(t.page) &&
+        t.page >= 1)) &&
+    ["Proposed", "Reviewed", "Approved", "Rejected"].includes(
+      String(t.status),
+    ) &&
+    ["Unspecified", "Low", "Medium", "High"].includes(String(t.confidence)) &&
+    (t.origin === undefined || t.origin === "ai") &&
+    (t.scopeVerified === undefined || typeof t.scopeVerified === "boolean") &&
+    (t.reviewAcknowledged === undefined ||
+      typeof t.reviewAcknowledged === "boolean") &&
+    ["category", "analysisId", "analysisSourceKey", "sourceDocumentName"].every(
+      (key) => t[key] === undefined || typeof t[key] === "string",
+    ) &&
+    ["assumptions", "warnings"].every(
+      (key) =>
+        t[key] === undefined ||
+        (Array.isArray(t[key]) &&
+          (t[key] as unknown[]).every((text) => typeof text === "string")),
+    ) &&
+    (t.destination === undefined ||
+      [
+        "Labour",
+        "Materials",
+        "Subcontractor",
+        "Other Costs",
+        "Informational",
+      ].includes(String(t.destination))) &&
+    (t.classification === undefined ||
+      [
+        "Plan fact",
+        "Calculated quantity",
+        "Estimating suggestion",
+        "Contractor input required",
+      ].includes(String(t.classification))) &&
+    (t.convertedLineId === undefined ||
+      typeof t.convertedLineId === "string") &&
+    (t.identitySource === undefined ||
+      (allowIdentitySource && validTakeoffRecord(t.identitySource, false)))
+  );
+}
 function validExtensions(v: unknown) {
   if (
     !record(v) ||
     !validDetails(v.details) ||
     !Array.isArray(v.documents) ||
     !Array.isArray(v.takeoff)
+  )
+    return false;
+  if (
+    v.takeoffProjectScope !== undefined &&
+    v.takeoffProjectScope !== "deck-replacement"
   )
     return false;
   if (v.snapshot !== undefined && !estimate(v.snapshot)) return false;
@@ -1217,77 +1289,7 @@ function validExtensions(v: unknown) {
     )
   )
     return false;
-  if (
-    !v.takeoff.every(
-      (t) =>
-        record(t) &&
-        strings(t, ["id", "description", "unit", "documentId", "notes"]) &&
-        validConstructionEvidence(t) &&
-        validScope(t) &&
-        (t.stockLength === undefined ||
-          t.stockLength === null ||
-          (typeof t.stockLength === "number" &&
-            Number.isFinite(t.stockLength) &&
-            t.stockLength > 0)) &&
-        (t.conflictsVerified === undefined ||
-          typeof t.conflictsVerified === "boolean") &&
-        (t.purchaseVerified === undefined ||
-          typeof t.purchaseVerified === "boolean") &&
-        (t.overlapReviews === undefined ||
-          (Array.isArray(t.overlapReviews) &&
-            t.overlapReviews.length <= 200 &&
-            t.overlapReviews.every(
-              (s: unknown) => typeof s === "string" && s.length <= 200000,
-            ))) &&
-        (t.calculation === undefined || validCalculation(t.calculation)) &&
-        (t.quantity === null || numbers(t, ["quantity"])) &&
-        (t.page === null ||
-          (typeof t.page === "number" &&
-            Number.isInteger(t.page) &&
-            t.page >= 1)) &&
-        ["Proposed", "Reviewed", "Approved", "Rejected"].includes(
-          String(t.status),
-        ) &&
-        ["Unspecified", "Low", "Medium", "High"].includes(
-          String(t.confidence),
-        ) &&
-        (t.origin === undefined || t.origin === "ai") &&
-        (t.scopeVerified === undefined ||
-          typeof t.scopeVerified === "boolean") &&
-        (t.reviewAcknowledged === undefined ||
-          typeof t.reviewAcknowledged === "boolean") &&
-        [
-          "category",
-          "analysisId",
-          "analysisSourceKey",
-          "sourceDocumentName",
-        ].every((key) => t[key] === undefined || typeof t[key] === "string") &&
-        ["assumptions", "warnings"].every(
-          (key) =>
-            t[key] === undefined ||
-            (Array.isArray(t[key]) &&
-              (t[key] as unknown[]).every((text) => typeof text === "string")),
-        ) &&
-        (t.destination === undefined ||
-          [
-            "Labour",
-            "Materials",
-            "Subcontractor",
-            "Other Costs",
-            "Informational",
-          ].includes(String(t.destination))) &&
-        (t.classification === undefined ||
-          [
-            "Plan fact",
-            "Calculated quantity",
-            "Estimating suggestion",
-            "Contractor input required",
-          ].includes(String(t.classification))) &&
-        (t.convertedLineId === undefined ||
-          typeof t.convertedLineId === "string"),
-    )
-  )
-    return false;
+  if (!v.takeoff.every((t) => validTakeoffRecord(t))) return false;
   if (
     v.analysisReports !== undefined &&
     (!Array.isArray(v.analysisReports) ||

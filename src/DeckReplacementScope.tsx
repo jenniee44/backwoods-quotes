@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Quote } from "./model";
 import { applyDeckReplacementScope } from "./deckReplacementScope";
+import { hasDeckReplacementScope } from "./deckScopeState";
 export default function DeckReplacementScope({
   quote,
   locked,
@@ -16,6 +17,13 @@ export default function DeckReplacementScope({
   return (
     <details className="deck-replacement-scope">
       <summary>Deck replacement — confirm the work included</summary>
+      {hasDeckReplacementScope(quote) && (
+        <p>
+          Confirmed replacement scope is saved for this quote and reapplied to
+          new analysis results. Material verification and approval are still
+          required.
+        </p>
+      )}
       <p>
         Replace the wooden deck, framing, deck boards, wood railings and stairs.
         Retain existing steel and its supporting posts. Include subcontracted

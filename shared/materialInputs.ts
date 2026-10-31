@@ -1,3 +1,4 @@
+import { referenceCountInput } from "./quantityEvidence";
 // Proposed drawing facts, scoped to the parent physical assembly. Never approvals.
 import { drawingMeasurements } from "./constructionMeasurements";
 import { measurementRounding } from "./measurementRounding";
@@ -117,7 +118,9 @@ export function resolveMaterialInputs(facts: MaterialInput[] = []) {
   const values: Partial<Record<MaterialInput["field"], number>> = {};
   const conflicts: string[] = [];
   for (const field of materialInputFields) {
-    const group = facts.filter((v) => v.field === field);
+    const group = facts.filter(
+      (v) => v.field === field && !referenceCountInput(v),
+    );
     if (!group.length) continue;
     const normalized = group.map(normalizeMaterialInput);
     const expected = materialInputUnits[field];
@@ -131,10 +134,33 @@ export function resolveMaterialInputs(facts: MaterialInput[] = []) {
           (expected === "each" && !Number.isInteger(v)) ||
           (expected === "option" && ![0, 1].includes(v)),
       ) ||
-      new Set(normalized).size !== 1
+      (new Set(normalized).size !== 1 &&
+        !(
+          (expected === "ft" || expected === "in") &&
+          normalized.every(
+            (v, i) =>
+              Math.abs(v - normalized[0]) * (expected === "ft" ? 12 : 1) <=
+              Math.min(
+                1 / 1024,
+                measurementRounding(
+                  group[i].value,
+                  group[i].unit === "ft" ? 12 : 1,
+                ) +
+                  measurementRounding(
+                    group[0].value,
+                    group[0].unit === "ft" ? 12 : 1,
+                  ),
+              ),
+          )
+        ))
     )
       conflicts.push(field);
-    else values[field] = normalized[0];
+    else
+      values[field] = normalized.reduce(
+        (best, value) =>
+          String(value).length > String(best).length ? value : best,
+        normalized[0],
+      );
   }
   return { values, conflicts };
 }

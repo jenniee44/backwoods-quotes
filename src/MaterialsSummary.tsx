@@ -1,5 +1,7 @@
 import ScopeOverrideReview from "./ScopeOverrideReview";
 import DeckReplacementScope from "./DeckReplacementScope";
+import { hasDeckReplacementScope } from "./deckScopeState";
+import { applyDeckReplacementScope } from "./deckReplacementScope";
 import { calculateMaterial } from "../shared/materialCalculators";
 import { materialTakeoffProposal } from "./deckTakeoff";
 import ContractorScopeEditor from "./ContractorScopeEditor";
@@ -50,15 +52,27 @@ export default function MaterialsSummary({
   const [revision, setRevision] = useState(0);
   const [view, setView] = useState<
     "summary" | "shopping" | "preliminary" | "takeoff"
-  >(q.analysisReports?.length ? "takeoff" : "summary");
+  >(
+    hasDeckReplacementScope(q)
+      ? "preliminary"
+      : q.analysisReports?.length
+        ? "takeoff"
+        : "summary",
+  );
   const [unresolvedOnly, setUnresolvedOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [verified, setVerified] = useState(false);
   useEffect(() => {
     if (locked) return;
-    const repaired = prepareDeckTakeoff(q);
+    const repaired =
+      hasDeckReplacementScope(q) && q.status === "Draft" && !q.job
+        ? applyDeckReplacementScope(q, true)
+        : prepareDeckTakeoff(q);
     const takeoff = prepareMaterialsSummary(repaired.takeoff, true);
-    if (JSON.stringify(takeoff) !== JSON.stringify(q.takeoff))
+    if (
+      JSON.stringify(takeoff) !== JSON.stringify(q.takeoff) ||
+      repaired.takeoffProjectScope !== q.takeoffProjectScope
+    )
       onChange({ ...repaired, takeoff });
   }, [q, locked, onChange]);
   // Any edit/source change requires another explicit batch verification.

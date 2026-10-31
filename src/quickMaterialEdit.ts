@@ -1,4 +1,5 @@
 import { editTakeoff } from "./planAnalysis";
+import { materialIdentityProblem } from "../shared/materialIdentity";
 import type { TakeoffItem } from "./model";
 import { includedScope, workScope } from "./takeoffScope";
 import { requiresScopeVerification } from "../shared/takeoff";
@@ -56,6 +57,12 @@ export function quickMaterialChanges(
   t: TakeoffItem,
   d: QuickMaterialDraft,
 ): Partial<TakeoffItem> {
+  const identityProblem = materialIdentityProblem({
+    ...t,
+    description: d.description,
+    specification: d.specification,
+  });
+  if (identityProblem) throw new Error(identityProblem);
   if (d.quantity !== null && (!Number.isFinite(d.quantity) || d.quantity < 0))
     throw new Error(
       "Enter a non-negative verified quantity, or leave it blank.",

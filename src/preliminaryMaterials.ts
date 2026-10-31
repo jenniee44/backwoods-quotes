@@ -1,4 +1,5 @@
 import { isGeneralSpecification } from "./materialReferences";
+import { primaryMaterialDescription } from "../shared/primaryMaterial";
 import { explicitBeamIdentity } from "../shared/componentSubject";
 import { unresolvedOverlaps } from "./takeoffOverlap";
 import type { Quote, TakeoffItem } from "./model";
@@ -6,7 +7,7 @@ import { readyForEstimate } from "./takeoffReview";
 import { summaryApprovalProblem } from "./materialsSummary";
 import { includedScope, workScope } from "./takeoffScope";
 export function friendlyMaterialName(t: TakeoffItem) {
-  const text = t.description;
+  const text = primaryMaterialDescription(t.description);
   // Presentation only: never rewrite original evidence or use these names to merge.
   const names: [RegExp, string][] = [
     [/joist hangers?|LUS26/i, "Joist hangers"],

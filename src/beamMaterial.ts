@@ -1,16 +1,18 @@
 import type { TakeoffItem } from "./model";
+import { primaryMaterialDescription } from "../shared/primaryMaterial";
 import { explicitBeamIdentity } from "../shared/componentSubject";
 /** Select an appropriate tool, not a beam quantity. Hardware is not its beam. */
 export function isBeamMaterial(item: TakeoffItem) {
+  const description = primaryMaterialDescription(item.description);
   if (
     /ledger|flashing|waterproof/i.test(
-      `${item.description} ${item.specification ?? ""}`,
+      `${description} ${item.specification ?? ""}`,
     )
   )
     return false;
   if (
     /ledger|rim joist|band joist|hanger|fastener|screw|bolt|connector|flashing|waterproof/i.test(
-      item.description,
+      description,
     )
   )
     return false;

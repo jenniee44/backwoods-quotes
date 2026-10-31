@@ -1,6 +1,9 @@
 import { isBeamMaterial } from "./beamMaterial";
+import { primaryMaterialDescription } from "../shared/primaryMaterial";
+import { materialIdentityProblem } from "../shared/materialIdentity";
 import type { TakeoffItem } from "./model";
 export function relevantCalculators(item: TakeoffItem) {
+  if (materialIdentityProblem(item)) return [];
   const identity = `${item.description} ${item.specification ?? ""}`;
   if (/flashing|waterproof/i.test(identity)) return ["railing"];
   if (
@@ -9,7 +12,7 @@ export function relevantCalculators(item: TakeoffItem) {
   )
     return ["ledger"];
   if (isBeamMaterial(item)) return ["beam-runs", "beams"];
-  const specific = matchingCalculators(item.description);
+  const specific = matchingCalculators(primaryMaterialDescription(item.description));
   return specific.length ? specific : matchingCalculators(item.category ?? "");
 }
 function matchingCalculators(text: string) {

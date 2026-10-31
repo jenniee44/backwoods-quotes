@@ -1,10 +1,11 @@
+import { detailOnlyBeamEvidence } from "../shared/primaryMaterial";
 import { id, type Quote, type TakeoffItem } from "./model";
 import { materialCategoryFor } from "../shared/takeoff";
 import { applyScopeOverride, scopeReviewItems } from "./scopeOverride";
 import { prepareDeckTakeoff } from "./deckTakeoff";
 import { evidenceScope } from "../shared/componentIdentity";
 import { componentSubject } from "../shared/componentSubject";
-const marker = "Contractor-confirmed deck replacement scope";
+import { deckScopeMarker as marker } from "./deckScopeState";
 const requirements = [
   ["Deck joists", "Joists", "Materials", "each"],
   ["Built-up beams", "Beams", "Materials", "runs"],
@@ -68,7 +69,9 @@ export function applyDeckReplacementScope(q: Quote, confirmed: boolean): Quote {
       "Confirm the deck replacement scope on an editable draft first.",
     );
   let next = prepareDeckTakeoff(structuredClone(q));
+  next.takeoffProjectScope = "deck-replacement";
   for (const t of scopeReviewItems(next)) {
+    if (detailOnlyBeamEvidence(t)) continue;
     if (
       t.status === "Approved" ||
       t.status === "Reviewed" ||

@@ -3,6 +3,7 @@ import { materialCategoryFor } from "../shared/takeoff";
 import { evidenceScope } from "../shared/componentIdentity";
 import { explicitBeamIdentity } from "../shared/componentSubject";
 import { mixedMaterialCallouts } from "../shared/mixedMaterialCallouts";
+import { materialInputProblem } from "../shared/materialInputs";
 /** Repair only untouched proposals; contractor scope decisions and calculator
  * blanks/manual entries remain authoritative. Original reports stay unchanged. */
 export function repairDrawingIdentity(q: Quote): Quote {
@@ -21,6 +22,12 @@ export function repairDrawingIdentity(q: Quote): Quote {
       )
         return t;
       const next = { ...t };
+      if (!materialInputProblem(t.materialInputs))
+        next.warnings = t.warnings?.filter(
+          (w) =>
+            w !==
+            "Conflicting/unconfirmed drawing input observations: Reconcile conflicting, unreadable or unconfirmed drawing inputs before approval.",
+        );
       if (
         t.quantity === null &&
         t.warnings?.includes(
@@ -49,7 +56,12 @@ export function repairDrawingIdentity(q: Quote): Quote {
           );
       }
       if (explicitBeamIdentity(t)) {
-        if (t.category === "Joists") next.category = "Beams";
+        if (
+          ["Joists", "Hangers / connectors", "Structural fasteners"].includes(
+            t.category ?? "",
+          )
+        )
+          next.category = "Beams";
         if (
           t.calculation?.kind === "joists" &&
           Object.entries(t.calculation.inputs).every(

@@ -1,3 +1,4 @@
+import { detailOnlyBeamEvidence } from "../shared/primaryMaterial";
 import { effectiveBeamObservations } from "./effectiveBeamObservations";
 import { isBeamMaterial } from "./beamMaterial";
 import { beamLayout } from "./framingLayout";
@@ -73,6 +74,7 @@ export function spatialBeamLength(
 export function spatialBeamRecipe(
   item: TakeoffItem,
 ): MaterialCalculation | null {
+  if (detailOnlyBeamEvidence(item)) return null;
   const observations = effectiveBeamObservations(item);
   const included = observations.filter(
     (b) => b.scope === "New work" || b.scope === "Requires scope confirmation",

@@ -1,6 +1,15 @@
 import { assignDrawingDimensions } from "./assignDrawingDimensions";
+import {
+  primaryMaterialDescription,
+  detailOnlyBeamEvidence,
+} from "./primaryMaterial";
+import { referenceCountOnly, referenceCountInput } from "./quantityEvidence";
 import { explicitBeamIdentity } from "./componentSubject";
 import { mixedMaterialCallouts } from "./mixedMaterialCallouts";
+import {
+  materialIdentityProblem,
+  separateMixedHardware,
+} from "./materialIdentity";
 import { writtenAssemblyInputs } from "./writtenAssemblyInputs";
 import { materializeDimensionInventory } from "./dimensionInventory";
 import {
@@ -104,7 +113,8 @@ const materialPatterns: [string, RegExp][] = [
 export function materialCategoryFor(
   item: AnalysisSuggestion,
 ): string | undefined {
-  const label = item.description;
+  if (materialIdentityProblem(item)) return undefined;
+  const label = primaryMaterialDescription(item.description);
   // Hardware must be classified before its attached framing member.
   const special = materialPatterns
     .slice(0, 8)
@@ -163,6 +173,8 @@ function promoteObservation(
 ): AnalysisSuggestion | null {
   const category = materialCategoryFor(item);
   if (
+    materialIdentityProblem(item) ||
+    detailOnlyBeamEvidence(item) ||
     item.itemRole === "Document observation" ||
     !category ||
     !readable(item.specification ?? "") ||
@@ -197,6 +209,31 @@ export function prepareConstructionAnalysis(
 ): PlanAnalysisResult {
   const result = structuredClone(input);
   materializeDimensionInventory(result);
+  const identityEvidence: AnalysisSuggestion[] = [];
+  result.suggestions = result.suggestions.flatMap((item) => {
+    const split = separateMixedHardware(item);
+    if (!split) return [item];
+    identityEvidence.push({
+      ...split.original,
+      sourceFacts: [
+        ...(split.original.sourceFacts ?? []),
+        `Original mixed identity: ${item.description}; ${item.specification ?? ""}; ${item.quantity ?? "unknown"} ${item.unit}.`,
+      ].slice(0, 20),
+    });
+    return split.related ? [split.primary, split.related] : [split.primary];
+  });
+  if (
+    result.suggestions.length > 150 ||
+    (result.sourceObservations?.length ?? 0) + identityEvidence.length > 100
+  )
+    throw new Error(
+      "Mixed material identities exceed the safe review limits. No partial results were added.",
+    );
+  if (identityEvidence.length)
+    result.sourceObservations = [
+      ...(result.sourceObservations ?? []),
+      ...identityEvidence,
+    ];
   for (const source of [...result.suggestions])
     for (const candidate of mixedMaterialCallouts(source)) {
       if (
@@ -369,6 +406,22 @@ export function prepareConstructionAnalysis(
   let reduced = result.duplicatesReduced ?? 0;
   for (const item of [...result.suggestions, ...promoted]) {
     item.warnings = [...(item.warnings ?? [])];
+    if (referenceCountOnly(item)) {
+      item.quantity = null;
+      item.quantityMethod = "Unknown";
+      item.materialInputs = (item.materialInputs ?? []).filter(
+        (f) => !["count", "connections"].includes(f.field),
+      );
+    } else
+      item.materialInputs = item.materialInputs?.filter(
+        (f) => !referenceCountInput(f),
+      );
+    if (detailOnlyBeamEvidence(item)) {
+      item.quantity = null;
+      item.quantityMethod = "Unknown";
+      item.destination = "Informational";
+      item.itemRole = "Supporting evidence";
+    }
     if (
       (item.beamAssemblies?.length && /beam/i.test(item.description)) ||
       (materialCategoryFor(item) === "Beams" &&
