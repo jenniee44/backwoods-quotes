@@ -100,6 +100,40 @@ export default function BeamRunsEditor({
         </small>
         {stockError && <p role="alert">{stockError}</p>}
       </details>
+      <section aria-label="Visual beam layout review">
+        <h5>Visual beam layout review</h5>
+        <p className="tiny">
+          Confirm each distinct beam line against the original drawing. The diagram
+          shows order and support count only: it is NOT to scale, does not infer
+          span lengths, and does not set lumber purchase quantities.
+        </p>
+        <p>
+          <strong>{count} beam {count === 1 ? "line" : "lines"} in this calculator.</strong>{" "}
+          {count < 20 && !disabled && (
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() =>
+                onChange({
+                  ...recipe,
+                  verified: false,
+                  inputs: { ...recipe.inputs, runs: count + 1 },
+                  runLabels: {
+                    ...recipe.runLabels,
+                    [String(count + 1)]: `Beam line ${count + 1} — confirm on drawing`,
+                  },
+                })
+              }
+            >
+              Add another beam line for review
+            </button>
+          )}
+        </p>
+        <small>
+          Only add a distinct physical line you can verify. Repeated labels,
+          detail drawings, and individual spans are not extra beam lines.
+        </small>
+      </section>
       {Array.from({ length: count }, (_, i) => i + 1).map((n) => {
         const length = recipe.inputs["length" + n],
           feet = length == null ? null : Math.floor(length),
@@ -124,6 +158,101 @@ export default function BeamRunsEditor({
                 .replace(/(\d+)\s*[x×]\s*(\d+)/gi, "$1×$2")}
             </h5>
             <p className="tiny">{beamNextStep(recipe, n)}</p>
+            <div className="fields compact" aria-label={`Beam ${n} support review`}>
+              <label className="field">
+                <span>Beam line identifier (as seen on plan)</span>
+                <input
+                  aria-label={`Beam ${n} drawing label`}
+                  maxLength={150}
+                  disabled={disabled}
+                  value={recipe.runLabels?.[String(n)] ?? ""}
+                  placeholder="Upper, middle, lower, or drawing label"
+                  onChange={(e) =>
+                    onChange({
+                      ...recipe,
+                      verified: false,
+                      runLabels: { ...recipe.runLabels, [String(n)]: e.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Visible support positions — not new pile count</span>
+                <NumberInput
+                  nullable
+                  step="1"
+                  value={recipe.supportReviews?.[String(n)]?.count ?? null}
+                  onChange={(value) => {
+                    const supportCount =
+                      Number.isInteger(value) && value >= 2 && value <= 20
+                        ? value
+                        : null;
+                    onChange({
+                      ...recipe,
+                      verified: false,
+                      supportReviews: {
+                        ...recipe.supportReviews,
+                        [String(n)]: { count: supportCount, confirmed: false },
+                      },
+                    });
+                  }}
+                />
+              </label>
+            </div>
+            {(() => {
+              const review = recipe.supportReviews?.[String(n)];
+              const supports = review?.count ?? 0;
+              return (
+                <div className="beam-support-visual">
+                  <svg
+                    viewBox="0 0 480 88"
+                    role="img"
+                    aria-label={`Schematic for beam ${n}: ${supports ? supports + " support positions" : "supports not yet entered"}`}
+                    style={{ width: "100%", maxWidth: 550, height: 100 }}
+                  >
+                    <line x1="24" y1="40" x2="456" y2="40" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
+                    {Array.from({ length: supports }, (_, i) => {
+                      const x = 24 + (432 * i) / (supports - 1);
+                      return (
+                        <g key={i}>
+                          <circle cx={x} cy="40" r="9" stroke="currentColor" strokeWidth="2" fill="white" />
+                          <text x={x} y="73" fontSize="12" textAnchor="middle" fill="currentColor">{i + 1}</text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <p className="tiny">
+                    {supports
+                      ? `${supports} support positions → ${supports - 1} intervals (not stock boards or confirmed pile counts).`
+                      : "Enter the number of visible supports to display a schematic."}
+                  </p>
+                  <label className="check-options">
+                    <input
+                      type="checkbox"
+                      disabled={disabled || supports < 2}
+                      checked={review?.confirmed === true}
+                      onChange={(e) =>
+                        onChange({
+                          ...recipe,
+                          verified: false,
+                          supportReviews: {
+                            ...recipe.supportReviews,
+                            [String(n)]: { count: supports, confirmed: e.target.checked },
+                          },
+                        })
+                      }
+                    />
+                    I compared this beam line and its support count against the original plan.
+                  </label>
+                  <small>
+                    Confirmation is saved with this quote but does not approve engineering,
+                    beam cut lengths, splices or purchasing quantities. Use the original
+                    drawing viewer for precise support locations.
+                  </small>
+                </div>
+              );
+            })()}
+
             <div className="fields compact">
               <label className="field">
                 <span>Beam length — feet</span>
