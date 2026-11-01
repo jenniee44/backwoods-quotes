@@ -172,3 +172,34 @@ it("prioritizes a bounded beam assembly context image for repeated labels withou
   expect(context).not.toHaveProperty("beamCount");
   expect(context).not.toHaveProperty("length");
 });
+it("retains bounded connected raster linework as context alongside an overlapping fine crop", () => {
+  const s = { width: 600, height: 600, ink: new Uint8Array(360000) };
+  // Generic connected framing grid, no drawing-specific dimensions or run count.
+  for (let y = 150; y <= 450; y++) s.ink[y * 600 + 150] = 1;
+  for (const y of [150, 250, 350, 450])
+    for (let x = 150; x <= 450; x++) s.ink[y * 600 + x] = 1;
+  const selected = selectAnalysisRegions(
+    analysisPageRegions(1, 1200, 1200, [], s),
+    8,
+  );
+  const context = selected.filter((r) =>
+    r.label.startsWith("Connected drawing context"),
+  );
+  expect(context).toHaveLength(1);
+  expect(context[0].x).toBeLessThanOrEqual(300);
+  expect(context[0].x + context[0].width).toBeGreaterThanOrEqual(900);
+  expect(context[0].y + context[0].height).toBeGreaterThanOrEqual(900);
+  expect(
+    selected.some(
+      (r) =>
+        !r.label.startsWith("Connected drawing context") &&
+        overlap(r, context[0]) > 0.3,
+    ),
+  ).toBe(true);
+  expect(selected.length).toBeLessThanOrEqual(8);
+  expect(() =>
+    detailRenderSize(context[0].width, context[0].height),
+  ).not.toThrow();
+  expect(context[0]).not.toHaveProperty("beamCount");
+  expect(context[0]).not.toHaveProperty("length");
+});

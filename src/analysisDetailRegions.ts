@@ -11,12 +11,13 @@ import {
   intersects,
 } from "./detailReadability";
 import {
+  connectedInkBounds,
   contentRegions,
   regionInk,
   type DrawingSurvey,
 } from "./drawingContent";
-// Reading windows, not measured construction geometry. Never grow a window to
-// an entire connected framing grid: that can make its annotations small again.
+// Fine reading windows are separate from bounded whole-diagram context images.
+// Neither kind establishes measured construction geometry.
 type ReadingCandidate = DetailSuggestion & { evidenceKeys?: string[] };
 const evidenceKey = (page: number, m: TextMark) =>
   `${page}:${Math.round(m.x * 10)}:${Math.round(m.y * 10)}:${Math.round(m.width * 10)}:${Math.round(m.height * 10)}`;
@@ -128,11 +129,52 @@ export function analysisPageRegions(
   // optional visual aids; no OCR or invented specification/measurement is added.
   return candidates.length || marks.some((m) => m.text.trim())
     ? candidates
-    : contentRegions(page, width, height, [], survey).map((r) => ({
-        ...r,
-        score: 4,
-      }));
+    : [
+        ...rasterContextRegions(page, width, height, survey),
+        ...contentRegions(page, width, height, [], survey).map((r) => ({
+          ...r,
+          score: 4,
+        })),
+      ];
 }
+/** A raster-only plan has no label anchors. Preserve one bounded connected
+ * diagram as context alongside fine reading crops. Pixels locate evidence only;
+ * they never identify beams, measure construction lengths, or establish counts. */
+function rasterContextRegions(
+  page: number,
+  width: number,
+  height: number,
+  survey: DrawingSurvey,
+): ReadingCandidate[] {
+  return connectedInkBounds(survey).flatMap((c) => {
+    const area = (c.width * c.height) / (survey.width * survey.height);
+    const density = c.pixels / (c.width * c.height);
+    const w = (c.width / survey.width) * width,
+      h = (c.height / survey.height) * height;
+    if (area < 0.02 || area > 0.4 || density > 0.12 || Math.min(w, h) < 240)
+      return [];
+    const pad = 8;
+    const x = Math.max(0, (c.x / survey.width) * width - pad),
+      y = Math.max(0, (c.y / survey.height) * height - pad);
+    const region = {
+      page,
+      x,
+      y,
+      width: Math.min(width - x, w + pad * 2),
+      height: Math.min(height - y, h + pad * 2),
+      label: "Connected drawing context — trace whole linework",
+      score: 6 + area * 20,
+    };
+    try {
+      detailRenderSize(region.width, region.height);
+    } catch {
+      return [];
+    }
+    return [region];
+  });
+}
+const contextRegion = (r: DetailSuggestion) =>
+  r.label.startsWith("Connected drawing context");
 export function selectAnalysisRegions(
   candidates: ReadingCandidate[],
   limit = 8,
@@ -143,7 +185,14 @@ export function selectAnalysisRegions(
     const seen = new Set(selected.flatMap((r) => r.evidenceKeys ?? []));
     const eligible = candidates.filter(
       (c) =>
-        ![...selected, ...existing].some((p) => overlap(c, p) > 0.3) &&
+        !existing.some((p) => overlap(c, p) > 0.3) &&
+        !(
+          contextRegion(c) &&
+          selected.some((p) => p.page === c.page && contextRegion(p))
+        ) &&
+        !selected.some(
+          (p) => contextRegion(c) === contextRegion(p) && overlap(c, p) > 0.3,
+        ) &&
         (!c.evidenceKeys?.length ||
           c.evidenceKeys.some((key) => !seen.has(key))),
     );

@@ -1,4 +1,9 @@
 import {
+  beamLayoutInventorySchema,
+  validBeamLayoutInventory,
+  type BeamLayoutEntry,
+} from "./beamLayoutInventory";
+import {
   drawingDimensionsSchema,
   validDrawingDimensions,
   validDimensionDecisions,
@@ -99,6 +104,7 @@ export type AnalysisSuggestion = ConstructionEvidence & {
   warnings?: string[];
 };
 export type PlanAnalysisResult = {
+  beamLayoutInventory?: BeamLayoutEntry[];
   dimensionInventory?: DimensionInventoryEntry[];
   dimensionDecisions?: DimensionDecision[];
   summary?: ContractorSummary;
@@ -264,6 +270,7 @@ export const analysisSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
+    beamLayoutInventory: beamLayoutInventorySchema,
     dimensionInventory: dimensionInventorySchema,
     summary: {
       type: "object",
@@ -307,6 +314,7 @@ export const analysisSchema = {
     warnings: { type: "array", items: { type: "string" }, maxItems: 40 },
   },
   required: [
+    "beamLayoutInventory",
     "dimensionInventory",
     "project",
     "summary",
@@ -343,6 +351,7 @@ export function validateAnalysis(
           "summary",
           "duplicatesReduced",
           "dimensionDecisions",
+          "beamLayoutInventory",
           "dimensionInventory",
           "dimensions",
           "sourceObservations",
@@ -404,7 +413,14 @@ export function validateAnalysis(
     })
   )
     return fail();
-  let spatialObservations = 0;
+  if (
+    value.beamLayoutInventory !== undefined &&
+    !validBeamLayoutInventory(value.beamLayoutInventory, documentIds, documents)
+  )
+    return fail();
+  let spatialObservations = Array.isArray(value.beamLayoutInventory)
+    ? value.beamLayoutInventory.length * 2
+    : 0;
   let dimensionObservations = Array.isArray(value.dimensionInventory)
     ? value.dimensionInventory.length
     : 0;

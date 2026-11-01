@@ -22,7 +22,9 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
   const groups = uniqueSpatialBeams(effectiveBeamObservations(item));
   const proposed = groups.filter(
     (g) =>
-      g[0].scope === "New work" || g[0].scope === "Requires scope confirmation",
+      (!g[0].view || g[0].view === "Framing plan") &&
+      (g[0].scope === "New work" ||
+        g[0].scope === "Requires scope confirmation"),
   );
   return (
     <section
@@ -110,6 +112,26 @@ export default function BeamAssemblySummary({ item }: { item: TakeoffItem }) {
                       : "Confirm stock lengths and approved cutting/splice requirements before purchasing.")}
             </p>
             <div className="framing-layout-facts">
+              {!!layout.dimensions.length && (
+                <p className="tiny">
+                  Written dimensions:{" "}
+                  {layout.dimensions
+                    .map(
+                      (d) =>
+                        `${d.role}: ${d.written}${d.association === "Uncertain" ? " (association to confirm)" : ""}`,
+                    )
+                    .join("; ")}
+                  . Support spans and overall dimensions are not full run or
+                  stock lengths.
+                </p>
+              )}
+              {length == null && (
+                <p className="tiny">
+                  Missing: a written full-run dimension associated with both
+                  endpoints of this beam. No board length or splice arrangement
+                  is inferred.
+                </p>
+              )}
               <p className="tiny">
                 Support positions: {layout.supports.length || "To confirm"} ·
                 Proposed intervals between supports:{" "}

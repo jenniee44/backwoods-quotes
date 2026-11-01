@@ -10,7 +10,14 @@ export type BeamDimension = {
   end: DrawingPoint;
   evidence: string;
 };
+export const beamViews = [
+  "Framing plan",
+  "Connection detail",
+  "Elevation",
+  "Uncertain",
+] as const;
 export type SpatialBeam = {
+  view?: (typeof beamViews)[number];
   page: number;
   sheet: string;
   drawingLabel: string;
@@ -64,6 +71,12 @@ export const spatialBeamSchema = {
     type: "object",
     additionalProperties: false,
     properties: {
+      view: {
+        type: "string",
+        enum: beamViews,
+        description:
+          "Source view of this observation. A connection-detail example is never a physical plan run.",
+      },
       page: { type: "integer", minimum: 1, maximum: 50 },
       sheet: { type: "string", maxLength: 80 },
       drawingLabel: { type: "string", maxLength: 80 },
@@ -135,6 +148,7 @@ export const spatialBeamSchema = {
       evidence: text,
     },
     required: [
+      "view",
       "page",
       "sheet",
       "drawingLabel",
@@ -170,6 +184,7 @@ export function validSpatialBeams(v: unknown): v is SpatialBeam[] {
     (b) =>
       record(b) &&
       keys(b, [
+        "view",
         "page",
         "sheet",
         "drawingLabel",
@@ -183,6 +198,7 @@ export function validSpatialBeams(v: unknown): v is SpatialBeam[] {
         "confidence",
         "evidence",
       ]) &&
+      (b.view === undefined || beamViews.includes(b.view as never)) &&
       Number.isInteger(b.page) &&
       Number(b.page) >= 1 &&
       Number(b.page) <= 50 &&
@@ -250,6 +266,7 @@ export function pointToBeam(p: DrawingPoint, b: SpatialBeam) {
   return distance(p, { x: b.start.x + t * dx, y: b.start.y + t * dy });
 }
 export function sameSpatialBeam(a: SpatialBeam, b: SpatialBeam) {
+  if (a.view && b.view && a.view !== b.view) return false;
   const spec = (v: string) =>
     normalizeSpecification(v).replace(/[^a-z0-9]/g, "");
   if (a.scope !== b.scope || spec(a.specification) !== spec(b.specification))
@@ -313,6 +330,8 @@ export function uniqueSpatialBeams(beams: SpatialBeam[]) {
   return groups;
 }
 export function beamGeometryProblem(b: SpatialBeam) {
+  if (b.view && b.view !== "Framing plan")
+    return "Reference view only; identify this beam on the framing plan before counting a physical run.";
   if (distance(b.start, b.end) < 0.02)
     return "Confirm the physical beam line; geometry is ambiguous.";
   if (b.confidence === "Low" || !b.evidence.trim())
@@ -378,6 +397,7 @@ export function spatialBeamIdentity(beams: SpatialBeam[] | undefined) {
     (beams ?? [])
       .map((b) => [
         b.page,
+        b.view,
         b.start,
         b.end,
         b.specification,

@@ -10,13 +10,18 @@ export function primaryMaterialDescription(description: string) {
 export function detailOnlyBeamEvidence(item: {
   description: string;
   location?: string;
-  beamAssemblies?: { evidence: string }[];
+  beamAssemblies?: { evidence: string; view?: string }[];
 }) {
   if (
     !/\bbeam|girder\b/i.test(primaryMaterialDescription(item.description)) &&
     !item.beamAssemblies?.length
   )
     return false;
+  if (
+    item.beamAssemblies?.length &&
+    item.beamAssemblies.every((b) => b.view && b.view !== "Framing plan")
+  )
+    return true;
   const view = [item.description, item.location].join(" ");
   return (
     /connection detail|hanger detail|beam.to.joist support/i.test(view) &&

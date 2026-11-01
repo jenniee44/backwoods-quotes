@@ -77,7 +77,9 @@ export function spatialBeamRecipe(
   if (detailOnlyBeamEvidence(item)) return null;
   const observations = effectiveBeamObservations(item);
   const included = observations.filter(
-    (b) => b.scope === "New work" || b.scope === "Requires scope confirmation",
+    (b) =>
+      (!b.view || b.view === "Framing plan") &&
+      (b.scope === "New work" || b.scope === "Requires scope confirmation"),
   );
   if (
     !included.length ||

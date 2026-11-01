@@ -1,3 +1,4 @@
+import { materializeBeamLayoutInventory } from "./beamLayoutInventory";
 import { assignDrawingDimensions } from "./assignDrawingDimensions";
 import {
   primaryMaterialDescription,
@@ -208,6 +209,7 @@ export function prepareConstructionAnalysis(
   input: PlanAnalysisResult,
 ): PlanAnalysisResult {
   const result = structuredClone(input);
+  materializeBeamLayoutInventory(result);
   materializeDimensionInventory(result);
   const identityEvidence: AnalysisSuggestion[] = [];
   result.suggestions = result.suggestions.flatMap((item) => {
