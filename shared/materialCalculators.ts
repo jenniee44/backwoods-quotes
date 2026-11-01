@@ -16,6 +16,7 @@ export type MaterialCalculation = {
   lengthSources?: Record<string, string>;
   specificationSources?: Record<string, string>;
   runLabels?: Record<string, string>;
+  supportReviews?: Record<string, { count: number | null; confirmed: boolean }>;
   availableStock?: number[];
   runCountSource?: string;
   inputSources?: Record<string, string>;
@@ -425,6 +426,23 @@ export function validCalculation(value: unknown): value is MaterialCalculation {
             /^(?:[1-9]|1[0-9]|20)$/.test(key) &&
             typeof text === "string" &&
             text.length <= 2000,
+        ))) &&
+    (v.supportReviews === undefined ||
+      (v.supportReviews !== null &&
+        typeof v.supportReviews === "object" &&
+        !Array.isArray(v.supportReviews) &&
+        Object.entries(v.supportReviews).every(
+          ([key, review]) =>
+            /^(?:[1-9]|1[0-9]|20)$/.test(key) &&
+            review !== null &&
+            typeof review === "object" &&
+            !Array.isArray(review) &&
+            (review.count === null ||
+              (Number.isInteger(review.count) &&
+                review.count >= 2 &&
+                review.count <= 20)) &&
+            typeof review.confirmed === "boolean" &&
+            (!review.confirmed || review.count !== null),
         ))) &&
     (v.specifications === undefined ||
       (v.specifications !== null &&
