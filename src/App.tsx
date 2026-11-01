@@ -178,6 +178,7 @@ export default function App() {
     [mobileMenu, setMobileMenu] = useState(false),
     [reviewing, setReviewing] = useState(false),
     [quoteDefaults, setQuoteDefaults] = useState(store.quoteDefaults);
+  const [advancedEditor, setAdvancedEditor] = useState(false);
   const [company, setCompany] = useState(store.company ?? companyDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
@@ -622,6 +623,42 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+                {!current.job && !advancedEditor && (
+                  <section className="panel" aria-label="Simple quote workflow" style={{ marginBottom: 12 }}>
+                    <h2>Build your quote in four steps</h2>
+                    <p className="muted">
+                      Upload the drawing, analyze it once, check the estimate and create the quote.
+                      Unverified measurements and prices remain clearly marked; nothing is approved automatically.
+                    </p>
+                    <div className="tabs">
+                      {[
+                        { name: "1. Project", target: "Customer & job" },
+                        { name: "2. Plans & AI", target: "Plans & Takeoff" },
+                        { name: "3. Review estimate", target: "Simple review" },
+                      ].map((step) => (
+                        <button
+                          key={step.name}
+                          type="button"
+                          className={tab === step.target ? "active" : ""}
+                          onClick={() => setTab(step.target)}
+                        >
+                          {step.name}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setPreview(current)}
+                        disabled={!current.customer.name.trim() || !current.name.trim()}
+                      >
+                        4. Customer quote
+                      </button>
+                    </div>
+                    <button className="button secondary" type="button" onClick={() => setAdvancedEditor(true)}>
+                      Show advanced tools
+                    </button>
+                  </section>
+                )}
+                {(advancedEditor || !!current.job) && (
                 <div className="tabs">
                   {[
                     "Customer & job",
@@ -651,6 +688,13 @@ export default function App() {
                     Private totals · {money(totals!.total)}
                   </button>
                 </div>
+                )}
+                                {(advancedEditor || !!current.job) && (
+                  <button type="button" className="button secondary" onClick={() => { setAdvancedEditor(false); setTab("Simple review"); }}>
+                    Use simple workflow
+                  </button>
+                )}
+                
                 <div className="builder">
                   <section className="panel editor">
                     <div className="section-heading">
@@ -966,6 +1010,42 @@ export default function App() {
                           })
                         }
                       />
+                    )}
+                    {tab === "Simple review" && (
+                      <>
+                        <p className="muted">
+                          Review everything in one place. These are the current quote lines,
+                          not unverified drawing suggestions. Missing materials or prices
+                          must be added or checked before sending.
+                        </p>
+                        {(["Materials", "Labour", "Other Costs"] as Kind[]).map((kind) => (
+                          <section key={kind} style={{ marginBottom: 24 }}>
+                            <h3>{kind === "Other Costs" ? "Subcontractors & other costs" : kind}</h3>
+                            <LineEditor
+                              quote={current}
+                              kind={kind}
+                              locked={locked}
+                              onChange={(lines) => patch({ lines })}
+                              onGroup={(group) =>
+                                patch({ scopeGroups: [...new Set([...(current.scopeGroups ?? []), group])] })
+                              }
+                            />
+                          </section>
+                        ))}
+                        <h3>Pricing & totals</h3>
+                        <PricingFields
+                          value={current.pricing}
+                          disabled={locked}
+                          onChange={(pricing) => patch({ pricing })}
+                        />
+                        <p className="muted">
+                          Supplier prices, subcontractor costs, labour hours and structural
+                          quantities require review. Blank figures are not estimates.
+                        </p>
+                        <button className="button" type="button" onClick={() => setPreview(current)}>
+                          Preview customer quote
+                        </button>
+                      </>
                     )}
                     {tab === "Plans & Takeoff" && (
                       <PlansTakeoff
