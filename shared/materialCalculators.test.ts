@@ -306,3 +306,27 @@ it("beam run purchasing requires every length, ply, stock, cut plan and explicit
     validCalculation({ ...beamRuns, arrangements: { "1": "x".repeat(2001) } }),
   ).toBe(false);
 });
+
+it("persists independent beam support review without generating lumber quantities", () => {
+  const pending = {
+    kind: "beam-runs",
+    inputs: { runs: 3, waste: null },
+    verified: false,
+    runLabels: { "1": "Upper", "2": "Middle", "3": "Lower" },
+    supportReviews: {
+      "1": { count: 4, confirmed: true },
+      "2": { count: 4, confirmed: false },
+      "3": { count: 4, confirmed: false },
+    },
+  };
+  expect(validCalculation(pending)).toBe(true);
+  expect(calculateMaterial(pending).quantity).toBeNull();
+  expect(validCalculation({
+    ...pending,
+    supportReviews: { "1": { count: 1, confirmed: true } },
+  })).toBe(false);
+  expect(validCalculation({
+    ...pending,
+    supportReviews: { "1": { count: null, confirmed: true } },
+  })).toBe(false);
+});
