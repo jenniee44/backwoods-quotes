@@ -42,7 +42,7 @@ describe("preliminary saved-analysis budget", () => {
   it("does not generate without saved analysis or on locked quotes", () => {
     const q = draft();
     q.analysisReports = [];
-    expect(() => generatePreliminaryBudget(q)).toThrow(/No saved plan analysis/);
+    expect(() => generatePreliminaryBudget(q)).toThrow(/No saved plan document or analysis/);
     q.status = "Sent";
     expect(() => generatePreliminaryBudget(q)).toThrow(/editable draft/);
   });
