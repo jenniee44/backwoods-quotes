@@ -1014,7 +1014,7 @@ export default function App() {
                     )}
                     {tab === "Simple review" && (
                       <>
-                        {!locked && !!(current.analysisReports?.length || current.takeoff.length) && (
+                        {!locked && !!(current.documents?.length || current.analysisReports?.length || current.takeoff.length) && (
                           <section className="info" style={{ marginBottom: 20 }}>
                             <h3>Generate a preliminary deck budget</h3>
                             <p>
