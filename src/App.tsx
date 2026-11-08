@@ -8,6 +8,7 @@ import QuoteDetailsEditor from "./QuoteDetailsEditor";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
+import { cowanTrial, cowanBeamLinearFeet, isCowanOriginalPlanTrial, cowanTrialPileLine, hasCowanTrialPiles, applyCowanTrialPiles } from "./cowanTrial";
 import {
   TreePine,
   Plus,
@@ -1052,6 +1053,47 @@ export default function App() {
                             confirmed prices or an approved material takeoff.
                             Verify every item before creating a customer quote.
                           </p>
+                        )}
+                        {isCowanOriginalPlanTrial(current) && (
+                          <section className="info" style={{ marginBottom: 20 }}>
+                            <h3>Cowan Park original-plan trial benchmark</h3>
+                            <p>
+                              Test settings only: {cowanTrial.pileCount} new helical piles;
+                              { " " }{cowanTrial.beamRuns} timber beam runs, each {cowanTrial.beamLengthFeet.toFixed(2)} ft,
+                              { " " }{cowanTrial.beamPlies}-ply 2x10 PT ({cowanBeamLinearFeet.toFixed(2)} linear feet of individual plies);
+                              { " " }{cowanTrial.joistSize} joists at {cowanTrial.joistSpacingInches} in. on centre.
+                            </p>
+                            <p>
+                              These are test assumptions and structural layout quantities,
+                              not a purchase list. Board cut lengths and splices, joist counts,
+                              decking area, guard length, hardware and verified pile price
+                              remain unresolved. No new AI analysis is needed.
+                            </p>
+                            {cowanTrialPileLine(current) && !hasCowanTrialPiles(current) && !locked && (
+                              <button
+                                type="button"
+                                className="button"
+                                onClick={() => {
+                                  try {
+                                    const next = applyCowanTrialPiles(current);
+                                    patch({ lines: next.lines });
+                                    setNotice("12-pile trial scenario applied. The existing pile budget total is unchanged; the calculated per-pile rate is NOT a subcontractor quote.");
+                                    setError("");
+                                  } catch (e) {
+                                    setError((e as Error).message);
+                                  }
+                                }}
+                              >
+                                Apply 12-pile trial scenario (keep budget total)
+                              </button>
+                            )}
+                            {hasCowanTrialPiles(current) && (
+                              <p className="margin-warning">
+                                12-pile trial scenario applied. The unit cost is calculated
+                                from the old lump-sum allowance, NOT a verified pile price.
+                              </p>
+                            )}
+                          </section>
                         )}
                         <p className="muted">
                           Review everything in one place. These are the current quote lines,
