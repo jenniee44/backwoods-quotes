@@ -7,6 +7,7 @@ import LineEditor from "./LineEditor";
 import QuoteDetailsEditor from "./QuoteDetailsEditor";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
+import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
 import {
   TreePine,
   Plus,
@@ -1013,6 +1014,45 @@ export default function App() {
                     )}
                     {tab === "Simple review" && (
                       <>
+                        {!locked && !!(current.analysisReports?.length || current.takeoff.length) && (
+                          <section className="info" style={{ marginBottom: 20 }}>
+                            <h3>Generate a preliminary deck budget</h3>
+                            <p>
+                              Uses this quote's already-saved plan analysis and deck
+                              replacement scope. Adds editable materials, labour and
+                              subcontractor allowance lines with illustrative costs.
+                              No new AI request, purchased quantities, verified pile
+                              count or engineer approval is implied.
+                            </p>
+                            <button
+                              type="button"
+                              className="button"
+                              disabled={preliminaryBudgetAlreadyExists(current)}
+                              onClick={() => {
+                                try {
+                                  const next = generatePreliminaryBudget(current);
+                                  patch({ lines: next.lines, details: next.details });
+                                  setNotice("Preliminary budget added to this quote. Review every allowance before sending or ordering.");
+                                  setError("");
+                                } catch (e) {
+                                  setError((e as Error).message);
+                                }
+                              }}
+                            >
+                              {preliminaryBudgetAlreadyExists(current)
+                                ? "Preliminary budget created"
+                                : "Generate Preliminary Estimate"}
+                            </button>
+                          </section>
+                        )}
+                        {preliminaryBudgetAlreadyExists(current) && (
+                          <p className="margin-warning">
+                            Preliminary budget only: quantities, labour hours and
+                            costs below are illustrative assumptions, not
+                            confirmed prices or an approved material takeoff.
+                            Verify every item before creating a customer quote.
+                          </p>
+                        )}
                         <p className="muted">
                           Review everything in one place. These are the current quote lines,
                           not unverified drawing suggestions. Missing materials or prices
