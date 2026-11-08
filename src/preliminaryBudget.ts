@@ -53,8 +53,8 @@ export function preliminaryBudgetAlreadyExists(q: Quote): boolean {
 export function generatePreliminaryBudget(q: Quote): Quote {
   if (q.status !== "Draft" || q.job)
     throw new Error("Only an editable draft can receive a preliminary estimate.");
-  if (!q.analysisReports?.length && !q.takeoff.length)
-    throw new Error("No saved plan analysis or takeoff is available. Open a quote with existing plan results first.");
+  if (!q.documents?.length && !q.analysisReports?.length && !q.takeoff.length)
+    throw new Error("No saved plan document or analysis is available. Open a quote with existing plans first.");
   if (preliminaryBudgetAlreadyExists(q))
     throw new Error("A preliminary budget already exists. Edit the existing lines instead of generating duplicates.");
   const combined = [
