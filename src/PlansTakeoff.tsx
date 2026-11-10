@@ -105,6 +105,7 @@ export default function PlansTakeoff({
   onChange,
   onError,
   onViewEstimate,
+  simpleMode = false,
 }: {
   orientations: PdfOrientations;
   setOrientations: React.Dispatch<React.SetStateAction<PdfOrientations>>;
@@ -113,7 +114,10 @@ export default function PlansTakeoff({
   onChange: (q: Quote) => void;
   onError: (s: string) => void;
   onViewEstimate?: () => void;
+  simpleMode?: boolean;
 }) {
+  const [showTechnical, setShowTechnical] = useState(false);
+  const simplified = simpleMode && !showTechnical;
   const [excludedDocuments, setExcludedDocuments] = useState<string[]>([]);
   // Temporary full-resolution detail views. Bound to exact source bytes; not saved in
   // customer records, persisted attachments, or reused after PDF replacement.
@@ -759,6 +763,14 @@ export default function PlansTakeoff({
         );
       }}
     >
+      {simpleMode && (
+        <section className="info" aria-label="Simple plan analysis">
+          <h3>Upload your plans and let AI read them</h3>
+          <p>Upload once, then analyze once. Your saved drawings stay attached to the quote. We will show a preliminary budget next; uncertain quantities will be marked as allowances, not confirmed lumber orders.</p>
+          {q.analysisReports?.length ? <p><strong>Saved analysis available.</strong> You can review your preliminary estimate without paying for another analysis.</p> : null}
+          <button className="button secondary" type="button" onClick={() => setShowTechnical((value) => !value)}>{showTechnical ? "Hide technical details" : "Show technical details (optional)"}</button>
+        </section>
+      )}
       <section
         className="drawing-workspace"
         aria-label="Original construction plans"
@@ -856,7 +868,7 @@ export default function PlansTakeoff({
             </div>
           ))}
         </div>
-        {current && (
+        {current && !simplified && (
           <DocumentPreview
             document={current}
             location={
@@ -931,7 +943,7 @@ export default function PlansTakeoff({
       </section>
       <div className="info">
         <b>
-          1 Upload → 2 Analyze → 3 Review → 4 Approve → 5 Convert to Estimate
+          {simplified ? "1 Upload → 2 AI analysis → 3 Review estimate → 4 Customer quote" : "1 Upload → 2 Analyze → 3 Review → 4 Approve → 5 Convert to Estimate"}
         </b>
         <p>
           AI-assisted takeoff for estimating purposes only. Verify dimensions,
@@ -983,7 +995,7 @@ export default function PlansTakeoff({
           }
           onClick={analyze}
         >
-          Analyze Plans
+          {simplified ? "Analyze plans with AI" : "Analyze Plans"}
         </button>
         {busy && (
           <button
@@ -1000,6 +1012,7 @@ export default function PlansTakeoff({
         )}
       </div>
       <div
+        style={simplified ? { display: "none" } : undefined}
         className="analysis-package"
         aria-label="Analysis package"
         aria-live="polite"
@@ -1124,14 +1137,14 @@ export default function PlansTakeoff({
         {uploading ? "Uploading/preparing" : analysisState}
       </p>
       {busy && <progress aria-label="Plan analysis progress" />}
-      {inputNotes
+      {!simplified && inputNotes
         .filter((n) => n.startsWith("Submitted detail views:"))
         .map((n) => (
           <p role="status" key={n}>
             Last analysis run: {n}
           </p>
         ))}
-      {!!inputNotes.length && (
+      {!simplified && !!inputNotes.length && (
         <details className="analysis-report">
           <summary>Analysis source quality</summary>
           <ul>
@@ -1146,6 +1159,15 @@ export default function PlansTakeoff({
           {analysisError}
         </p>
       )}
+      {simplified ? (
+        <section className="panel" ref={summaryRef} aria-label="Next step: estimate">
+          <h3>{q.analysisReports?.length ? "Your plan analysis is saved" : "Your next step"}</h3>
+          <p>{q.analysisReports?.length ? "The AI has captured drawing information. Quantities that cannot be safely measured are still uncertain. Open the simple estimate to generate or review editable cost allowances." : "After analyzing the plans, continue to one editable preliminary estimate."}</p>
+          <button type="button" className="button" onClick={onViewEstimate}>Continue to estimate</button>
+          <p className="tiny">Preliminary budget allowances are not supplier quotes, verified cut lists, structural approval, or confirmed site costs.</p>
+        </section>
+      ) : (
+      <>
       {!!q.analysisReports?.length && (
         <details className="analysis-export">
           <summary>Export saved takeoff analysis</summary>
@@ -1699,6 +1721,11 @@ export default function PlansTakeoff({
           Add takeoff item
         </button>
       </details>
+      </>
+      )}
+      {simpleMode && showTechnical && (
+        <button className="button secondary" type="button" onClick={() => setShowTechnical(false)}>Return to simple steps</button>
+      )}
     </DrawingLocationContext.Provider>
   );
 }
