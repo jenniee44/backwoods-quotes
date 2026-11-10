@@ -33,4 +33,39 @@ describe("read-only material evidence", () => {
     q.takeoff = [item("unknown", {quantity:null})];
     expect(buildMaterialEvidence(q)[0].quantity).toBeNull();
   });
+  it("recovers only saved raw material observations without modifying the quote", () => {
+    const q = quote();
+    q.analysisReports = [{
+      id: "existing-report", fingerprint: "old", createdAt: "2026-10-01",
+      assumptions: [], warnings: [],
+      sourceDocuments: [{id:"drawing",name:"Plans.pdf"}],
+      sourceObservations: [
+        { description: "2x6 PT joists", quantity: 12, unit: "each", documentId: "drawing",
+          page: 1, notes: "", confidence: "Low", destination: "Materials" },
+        { description: "2x6 PT joists", quantity: 12, unit: "each", documentId: "drawing",
+          page: 1, notes: "", confidence: "Low", destination: "Materials" },
+        { description: "Deck demolition", quantity: 2, unit: "hours", documentId: "drawing",
+          page: 1, notes: "", confidence: "Low", destination: "Labour" },
+      ],
+    }];
+    const snapshot = JSON.stringify(q);
+    const rows = buildMaterialEvidence(q);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].quantity).toBe(12);
+    expect(rows[0].needsReview).toContain("Recovered from saved report, not indexed takeoff");
+    expect(rows[0].source).toContain("Plans.pdf");
+    expect(JSON.stringify(q)).toBe(snapshot);
+  });
+  it("does not combine report observations with indexed material quantities", () => {
+    const q = quote();
+    q.takeoff = [item("indexed")];
+    q.analysisReports = [{
+      id: "old", fingerprint: "old", createdAt: "2026-10-01", assumptions: [], warnings: [],
+      sourceObservations: [{description:"PT beams",quantity:9,unit:"each",
+        documentId:"drawing",page:1,notes:"",confidence:"Medium",destination:"Materials"}],
+    }];
+    const rows = buildMaterialEvidence(q);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].key).toBe("indexed");
+  });
 });
