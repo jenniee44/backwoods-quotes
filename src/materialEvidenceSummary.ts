@@ -48,5 +48,45 @@ export function buildMaterialEvidence(q: Quote): MaterialEvidenceRow[] {
       needsReview,
     });
   }
+  // Older quotes may retain the raw observations only in their saved analysis
+  // reports. Show them as provisional evidence, NEVER as verified takeoff or
+  // purchasing quantities. Do not mix/aggregate with indexed takeoff entries.
+  if (rows.length === 0) {
+    const reportSeen = new Set<string>();
+    for (const report of q.analysisReports ?? []) {
+      for (const item of report.sourceObservations ?? []) {
+        if (item.destination !== "Materials") continue;
+        const identity = JSON.stringify([
+          item.documentId, item.page, item.description.trim().toLowerCase(),
+          item.category ?? "", item.quantity, item.unit,
+        ]);
+        if (reportSeen.has(identity)) continue;
+        reportSeen.add(identity);
+        rows.push({
+          key: report.id + ":" + reportSeen.size,
+          description: item.description || item.specification || "Unidentified material",
+          category: item.category || "Uncategorized",
+          quantity: Number.isFinite(item.quantity) && (item.quantity ?? 0) > 0
+            ? item.quantity : null,
+          unit: item.unit || "unspecified",
+          status: "Proposed",
+          confidence: item.confidence,
+          source: [
+            report.sourceDocuments?.find(d => d.id === item.documentId)?.name ||
+              q.documents.find(d => d.id === item.documentId)?.name || "Saved analysis report",
+            item.page != null ? "page " + item.page : "",
+          ].filter(Boolean).join(", "),
+          needsReview: [
+            "Recovered from saved report, not indexed takeoff",
+            "Purchase count unverified",
+            "Scope unverified",
+            "Overlaps/conflicts unverified",
+            "Not approved",
+            ...(item.warnings ?? []).slice(0, 2),
+          ],
+        });
+      }
+    }
+  }
   return rows;
 }
