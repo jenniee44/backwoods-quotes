@@ -808,7 +808,7 @@ export default function PlansTakeoff({
               >
                 {d.name}
               </button>
-              <label className="check-options">
+              {!simplified && <label className="check-options">
                 <input
                   type="checkbox"
                   disabled={busy || locked}
@@ -824,8 +824,8 @@ export default function PlansTakeoff({
                   }}
                 />
                 Include in analysis
-              </label>
-              <fieldset disabled={locked || uploading || busy}>
+              </label>}
+              {!simplified && <fieldset disabled={locked || uploading || busy}>
                 <label className="replace-document">
                   Replace
                   <input
@@ -864,7 +864,7 @@ export default function PlansTakeoff({
                 >
                   <Trash2 size={17} />
                 </button>
-              </fieldset>
+              </fieldset>}
             </div>
           ))}
         </div>
@@ -995,7 +995,7 @@ export default function PlansTakeoff({
           }
           onClick={analyze}
         >
-          {simplified ? "Analyze plans with AI" : "Analyze Plans"}
+          {simplified ? (q.analysisReports?.length ? "Analyze again (new AI request)" : "Analyze plans with AI") : "Analyze Plans"}
         </button>
         {busy && (
           <button
