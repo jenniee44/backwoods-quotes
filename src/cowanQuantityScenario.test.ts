@@ -9,7 +9,8 @@ describe("Cowan trial only: conditional quantity math, not procurement", () => {
   it("computes rectangle scenarios, never claiming verified full footprint", () => {
     expect(cowanQuantityScenario.narrowArea).toBeCloseTo((28 + 10 / 12) * (6 + 10.25 / 12));
     expect(cowanQuantityScenario.wideArea).toBe(315.25);
-    expect(cowanQuantityScenario.combinedArea).toBeCloseTo(513.0, 0);\n    expect(cowanQuantityScenario.conditionalJoistPieces).toBe(63);
+    expect(cowanQuantityScenario.combinedArea).toBeCloseTo(513.0, 0);
+    expect(cowanQuantityScenario.conditionalJoistPieces).toBe(63);
     expect(cowanQuantityScenario.deckingLinearFeet).toBeCloseTo(
       cowanQuantityScenario.combinedArea * 12 / cowanLayout.assumedDeckingFaceInches * 1.1
     );
