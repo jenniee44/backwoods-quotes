@@ -1054,7 +1054,7 @@ export default function App() {
                             Verify every item before creating a customer quote.
                           </p>
                         )}
-                        {isCowanOriginalPlanTrial(current) && advancedEditor && (
+                        {isCowanOriginalPlanTrial(current) && (
                           <section className="info" style={{ marginBottom: 20 }}>
                             <h3>Cowan Park original-plan trial benchmark</h3>
                             <p>
