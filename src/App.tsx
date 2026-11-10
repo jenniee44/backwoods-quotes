@@ -1111,6 +1111,11 @@ export default function App() {
                                     <td>Assumes {cowanLayout.assumedDeckingFaceInches} in effective board coverage and {Math.round(cowanLayout.assumedDeckingWasteFraction * 100)}% waste; not an order or stock-board count</td>
                                   </tr>
                                   <tr>
+                                    <td>Conditional 2x6 PT joist segments</td>
+                                    <td>{cowanQuantityScenario.conditionalJoistPieces} projected segments</td>
+                                    <td>Assumes one narrow-section piece per station plus two wide-section spans per station. Not a board order, count of hangers or approved layout.</td>
+                                  </tr>
+                                  <tr>
                                     <td>Joist hangers, double joists and structural connectors</td>
                                     <td>Not calculated</td>
                                     <td>Requires verified connection and actual joist layout</td>
@@ -1123,9 +1128,23 @@ export default function App() {
                                 </tbody>
                               </table>
                             </div>
+                            <h4>Trial material schedule — what can actually be counted</h4>
+                            <div className="table-scroll">
+                              <table>
+                                <thead><tr><th>Item</th><th>Preliminary scope</th><th>Before ordering</th></tr></thead>
+                                <tbody>
+                                  <tr><td>2x10 PT 3-ply beams</td><td>9 plies × 24 ft 3 in; 218.25 linear ft</td><td>Stock length, engineered splices and cutting layout unverified</td></tr>
+                                  <tr><td>2x6 PT joists</td><td>{cowanQuantityScenario.conditionalJoistPieces} projected segments; 16 in on centre</td><td>Verify actual joist orientations, span and double-edge pieces</td></tr>
+                                  <tr><td>PT decking</td><td>About {Math.ceil(cowanQuantityScenario.deckingLinearFeet)} linear ft conditionally</td><td>Choose board profile, orientation, gaps, joinery and confirm actual footprint</td></tr>
+                                  <tr><td>6x6 PT posts / helical pile caps</td><td>{cowanTrial.pileCount} test pile positions</td><td>Do not equate pile count to post count; verify retained supports and heights</td></tr>
+                                  <tr><td>2x6 ledger, blocking and flashing</td><td>Specified on original drawing</td><td>Measure true ledger length and blocking layout</td></tr>
+                                  <tr><td>LUS26 hangers and structural fasteners</td><td>Specified type, not counted</td><td>Verify every supported joist end and connection detail</td></tr>
+                                  <tr><td>PT railings, stair stringers and treads</td><td>Included in trial scope</td><td>Guard lengths, post spacing, stair rise/run and openings missing</td></tr>
+                                </tbody>
+                              </table>
+                            </div>
                             <p className="margin-warning">
-                              This trial takeoff is separate from the preliminary cost allowances.
-                              Do not order lumber from linear-foot totals: beam joining, stock lengths,
+                              This material schedule is a conditional trial worksheet, NOT an automatic purchasable bill of materials. The narrow extension is marked approximately 6 ft 10 1/4 in wide on the source plan (earlier 8 ft assumption corrected). Confirm the L-shaped footprint and what areas are rebuilt before treating the displayed decking result as a takeoff. Do not order lumber from linear-foot totals: beam joining, stock lengths,
                               hardware, joist layout and site dimensions still need verification.
                               No additional AI analysis is needed.
                             </p>
