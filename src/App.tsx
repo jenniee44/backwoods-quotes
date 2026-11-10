@@ -1065,9 +1065,10 @@ export default function App() {
                           </p>
                           {buildMaterialEvidence(current).length === 0 ? (
                             <p className="margin-warning">
-                              No material observations are currently saved in this quote's takeoff index.
-                              The attached PDF and preliminary budget alone do not provide an
-                              automatically verified materials list. Existing pricing is unchanged.
+                              No recoverable material observations were found in this quote's
+                              saved takeoff index or saved analysis reports. An attached PDF
+                              and the preliminary budget cannot reconstruct past AI results.
+                              Your existing pricing remains unchanged.
                             </p>
                           ) : (
                             <div className="table-scroll">
