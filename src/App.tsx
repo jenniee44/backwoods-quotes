@@ -9,6 +9,7 @@ import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
 import { cowanTrial, cowanBeamLinearFeet, isCowanOriginalPlanTrial, cowanTrialPileLine, hasCowanTrialPiles, applyCowanTrialPiles } from "./cowanTrial";
+import { cowanLayout, cowanQuantityScenario } from "./cowanQuantityScenario";
 import {
   TreePine,
   Plus,
@@ -1076,6 +1077,49 @@ export default function App() {
                                   <tr><td>Deck boards / fasteners</td><td>To measure</td><td>Not a purchase quantity</td></tr>
                                   <tr><td>Hangers / connectors</td><td>To count</td><td>Not a purchase quantity</td></tr>
                                   <tr><td>PT guards / stairs</td><td>To measure</td><td>Guard lengths and stair geometry unverified</td></tr>
+                                </tbody>
+                              </table>
+                            </div>
+                            <h4>Calculated layout scenarios (not order quantities)</h4>
+                            <div className="table-scroll">
+                              <table>
+                                <thead><tr><th>Calculation</th><th>Result</th><th>Limits</th></tr></thead>
+                                <tbody>
+                                  <tr>
+                                    <td>Joist stations along 28 ft 10 in run</td>
+                                    <td>{cowanQuantityScenario.narrowStations} station positions</td>
+                                    <td>16 in spacing, assumes an end station; not joist-board count</td>
+                                  </tr>
+                                  <tr>
+                                    <td>Joist stations along 24 ft 3 in run</td>
+                                    <td>{cowanQuantityScenario.wideStations} station positions</td>
+                                    <td>16 in spacing, assumes an end station; not joist-board count</td>
+                                  </tr>
+                                  <tr>
+                                    <td>Illustrative rectangle areas</td>
+                                    <td>{cowanQuantityScenario.narrowArea.toFixed(1)} + {cowanQuantityScenario.wideArea.toFixed(1)} sq ft</td>
+                                    <td>Two independent rectangular scenarios, not confirmed non-overlapping deck area</td>
+                                  </tr>
+                                  <tr>
+                                    <td>Conditional decking surface</td>
+                                    <td>{cowanQuantityScenario.combinedArea.toFixed(1)} sq ft</td>
+                                    <td>Valid only if the two rectangles do not overlap and cover the exact deck footprint</td>
+                                  </tr>
+                                  <tr>
+                                    <td>Conditional decking linear footage</td>
+                                    <td>{Math.ceil(cowanQuantityScenario.deckingLinearFeet)} linear ft</td>
+                                    <td>Assumes {cowanLayout.assumedDeckingFaceInches} in effective board coverage and {Math.round(cowanLayout.assumedDeckingWasteFraction * 100)}% waste; not an order or stock-board count</td>
+                                  </tr>
+                                  <tr>
+                                    <td>Joist hangers, double joists and structural connectors</td>
+                                    <td>Not calculated</td>
+                                    <td>Requires verified connection and actual joist layout</td>
+                                  </tr>
+                                  <tr>
+                                    <td>Railings and stairs</td>
+                                    <td>Not calculated</td>
+                                    <td>Requires measured exposed edges, openings, height and stair geometry</td>
+                                  </tr>
                                 </tbody>
                               </table>
                             </div>
