@@ -8,6 +8,7 @@ import QuoteDetailsEditor from "./QuoteDetailsEditor";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
+import { buildMaterialEvidence } from "./materialEvidenceSummary";
 import { cowanTrial, cowanBeamLinearFeet, isCowanOriginalPlanTrial, cowanTrialPileLine, hasCowanTrialPiles, applyCowanTrialPiles } from "./cowanTrial";
 import { cowanLayout, cowanQuantityScenario } from "./cowanQuantityScenario";
 import {
@@ -1055,6 +1056,39 @@ export default function App() {
                             Verify every item before creating a customer quote.
                           </p>
                         )}
+                        <section className="info" style={{ marginBottom: 20 }}>
+                          <h3>Materials found in saved plan analysis</h3>
+                          <p>
+                            Read-only summary of material observations already saved with this quote.
+                            No new AI request and no change to prices. Quantities listed here may
+                            describe spans, supports or suggestions rather than purchasing units.
+                          </p>
+                          {buildMaterialEvidence(current).length === 0 ? (
+                            <p className="margin-warning">
+                              No material observations are currently saved in this quote's takeoff index.
+                              The attached PDF and preliminary budget alone do not provide an
+                              automatically verified materials list. Existing pricing is unchanged.
+                            </p>
+                          ) : (
+                            <div className="table-scroll">
+                              <table>
+                                <thead>
+                                  <tr><th>Material</th><th>Recorded quantity</th><th>Evidence</th><th>To verify</th></tr>
+                                </thead>
+                                <tbody>
+                                  {buildMaterialEvidence(current).map((item) => (
+                                    <tr key={item.key}>
+                                      <td>{item.description}<small> {item.category}</small></td>
+                                      <td>{item.quantity == null ? "Unknown" : item.quantity} {item.unit}</td>
+                                      <td>{item.source}; {item.status}; {item.confidence} confidence</td>
+                                      <td>{item.needsReview.length ? item.needsReview.join("; ") : "No review flags recorded; check ordering and engineer requirements"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </section>
                         {isCowanOriginalPlanTrial(current) && (
                           <section className="info" style={{ marginBottom: 20 }}>
                             <h3>Cowan Park original-plan trial benchmark</h3>
