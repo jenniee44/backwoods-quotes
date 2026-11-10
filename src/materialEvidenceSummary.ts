@@ -66,7 +66,7 @@ export function buildMaterialEvidence(q: Quote): MaterialEvidenceRow[] {
           key: report.id + ":" + reportSeen.size,
           description: item.description || item.specification || "Unidentified material",
           category: item.category || "Uncategorized",
-          quantity: Number.isFinite(item.quantity) && (item.quantity ?? 0) > 0
+          quantity: item.quantity !== null && Number.isFinite(item.quantity) && item.quantity > 0
             ? item.quantity : null,
           unit: item.unit || "unspecified",
           status: "Proposed",
