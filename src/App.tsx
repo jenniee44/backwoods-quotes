@@ -1017,7 +1017,7 @@ export default function App() {
                       <>
                         {!locked && !!(current.documents?.length || current.analysisReports?.length || current.takeoff.length) && (
                           <section className="info" style={{ marginBottom: 20 }}>
-                            <h3>Generate a preliminary deck budget</h3>
+                            <h3>Create your editable preliminary estimate</h3>
                             <p>
                               Uses this quote's already-saved plan analysis and deck
                               replacement scope. Adds editable materials, labour and
@@ -1054,7 +1054,7 @@ export default function App() {
                             Verify every item before creating a customer quote.
                           </p>
                         )}
-                        {isCowanOriginalPlanTrial(current) && (
+                        {isCowanOriginalPlanTrial(current) && advancedEditor && (
                           <section className="info" style={{ marginBottom: 20 }}>
                             <h3>Cowan Park original-plan trial benchmark</h3>
                             <p>
@@ -1133,7 +1133,8 @@ export default function App() {
                       <PlansTakeoff
                         orientations={pdfOrientations}
                         setOrientations={setPdfOrientations}
-                        onViewEstimate={() => setTab("Materials")}
+                        simpleMode={!advancedEditor && !current.job}
+                        onViewEstimate={() => setTab(!advancedEditor && !current.job ? "Simple review" : "Materials")}
                         quote={current}
                         locked={locked}
                         onChange={(q) => {
