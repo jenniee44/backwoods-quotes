@@ -30,7 +30,8 @@ export function deckingLinearFeet(areaSquareFeet: number, exposedFaceInches: num
 export const cowanQuantityScenario = (() => {
   const narrowArea = cowanLayout.narrowRunFeet * cowanLayout.narrowDepthFeet;
   const wideArea = cowanLayout.wideRunFeet * cowanLayout.wideDepthFeet;
-  // Pure rectangular scenario; NOT an approved footprint: the drawing shows an L-shaped joint.\n  const combinedArea = narrowArea + wideArea;
+  // Pure rectangular scenario; NOT an approved footprint: the drawing shows an L-shaped joint.
+  const combinedArea = narrowArea + wideArea;
   return {
     narrowStations: joistStations(cowanLayout.narrowRunFeet, cowanLayout.joistSpacingInches),
     wideStations: joistStations(cowanLayout.wideRunFeet, cowanLayout.joistSpacingInches),
