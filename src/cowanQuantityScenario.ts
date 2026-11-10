@@ -34,6 +34,9 @@ export const cowanQuantityScenario = (() => {
   return {
     narrowStations: joistStations(cowanLayout.narrowRunFeet, cowanLayout.joistSpacingInches),
     wideStations: joistStations(cowanLayout.wideRunFeet, cowanLayout.joistSpacingInches),
+    // Only a trial layout where narrow stations use one member and wide stations use two spans.
+    // Does NOT include double joists, rim, cuts, or allowance for shared junctions.
+    conditionalJoistPieces: joistStations(cowanLayout.narrowRunFeet, cowanLayout.joistSpacingInches) + 2 * joistStations(cowanLayout.wideRunFeet, cowanLayout.joistSpacingInches),
     narrowArea,
     wideArea,
     combinedArea,
