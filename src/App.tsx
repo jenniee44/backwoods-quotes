@@ -1063,11 +1063,27 @@ export default function App() {
                               { " " }{cowanTrial.beamPlies}-ply 2x10 PT ({cowanBeamLinearFeet.toFixed(2)} linear feet of individual plies);
                               { " " }{cowanTrial.joistSize} joists at {cowanTrial.joistSpacingInches} in. on centre.
                             </p>
-                            <p>
-                              These are test assumptions and structural layout quantities,
-                              not a purchase list. Board cut lengths and splices, joist counts,
-                              decking area, guard length, hardware and verified pile price
-                              remain unresolved. No new AI analysis is needed.
+                            <div className="table-scroll">
+                              <table>
+                                <thead>
+                                  <tr><th>Material / component</th><th>Trial quantity</th><th>Verification</th></tr>
+                                </thead>
+                                <tbody>
+                                  <tr><td>Helical piles</td><td>{cowanTrial.pileCount} locations</td><td>Trial assumption only; subcontractor price unverified</td></tr>
+                                  <tr><td>2x10 PT timber beam runs</td><td>{cowanTrial.beamRuns} × 24 ft 3 in</td><td>Contractor-confirmed trial measurements</td></tr>
+                                  <tr><td>2x10 PT beam plies</td><td>{cowanTrial.beamRuns * cowanTrial.beamPlies} plies; {cowanBeamLinearFeet.toFixed(2)} linear ft</td><td>Geometric length only, not stock-board count</td></tr>
+                                  <tr><td>2x6 PT joists</td><td>16 in on centre</td><td>Spacing from drawing; count and cut lengths unverified</td></tr>
+                                  <tr><td>Deck boards / fasteners</td><td>To measure</td><td>Not a purchase quantity</td></tr>
+                                  <tr><td>Hangers / connectors</td><td>To count</td><td>Not a purchase quantity</td></tr>
+                                  <tr><td>PT guards / stairs</td><td>To measure</td><td>Guard lengths and stair geometry unverified</td></tr>
+                                </tbody>
+                              </table>
+                            </div>
+                            <p className="margin-warning">
+                              This trial takeoff is separate from the preliminary cost allowances.
+                              Do not order lumber from linear-foot totals: beam joining, stock lengths,
+                              hardware, joist layout and site dimensions still need verification.
+                              No additional AI analysis is needed.
                             </p>
                             {cowanTrialPileLine(current) && !hasCowanTrialPiles(current) && !locked && (
                               <button
