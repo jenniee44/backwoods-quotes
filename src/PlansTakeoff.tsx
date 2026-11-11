@@ -14,7 +14,7 @@ import {
 } from "./analysisImageArchive";
 import type { PreparedDetail } from "./detailReadability";
 import { assertDetailInclusion } from "./detailPackage";
-import { analysisBatches, analyzeBatches } from "./analysisBatches";
+import { analysisBatches, analyzeBatches } from "./analysisBatches";\nimport { recoverSavedPlanAnalysis } from "./planAnalysis";
 import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
@@ -625,11 +625,10 @@ export default function PlansTakeoff({
         prepared,
         controller.signal,
         (docs, signal) => {
-          if (recoverOnly)
-            throw new Error(
-              "Not all completed analysis batches were saved in this browser. " +
-              "No paid AI request was made. An in-flight analysis interrupted by a refresh cannot be recovered from local checkpoints."
-            );
+          if (recoverOnly) return recoverSavedPlanAnalysis(docs, signal).then(saved => {
+              if (!saved) throw new Error("No completed server-side result was found for this batch. No paid AI request was made.");
+              return saved;
+            });
           return planAnalysisService.analyze(docs, signal);
         },
         (number, total) =>
