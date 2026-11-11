@@ -131,6 +131,7 @@ export function analysisPageRegions(
     ? candidates
     : [
         ...rasterContextRegions(page, width, height, survey),
+        ...rasterReadingTiles(page, width, height, survey),
         ...contentRegions(page, width, height, [], survey).map((r) => ({
           ...r,
           score: 4,
@@ -172,6 +173,39 @@ function rasterContextRegions(
     }
     return [region];
   });
+}
+/**
+ * Bounded automatic scan tiles for raster-only drawings without text anchors.
+ * These are crops of occupied pixels, not construction interpretations.
+ * Avoids the previous zero-detail outcome on scanned plans with disconnected
+ * tiny annotations that fail the connected-components selection.
+ */
+export function rasterReadingTiles(
+  page: number, width: number, height: number, survey: DrawingSurvey,
+): ReadingCandidate[] {
+  if (!(width > 0 && height > 0)) return [];
+  const tileWidth = Math.min(width, 620);
+  const tileHeight = Math.min(height, 480);
+  const columns = Math.max(1, Math.ceil(width / tileWidth));
+  const rows = Math.max(1, Math.ceil(height / tileHeight));
+  const output: ReadingCandidate[] = [];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < columns; x++) {
+    const xx = Math.max(0, Math.min(width - tileWidth, x * tileWidth));
+    const yy = Math.max(0, Math.min(height - tileHeight, y * tileHeight));
+    const region: ReadingCandidate = {
+      page, x:xx, y:yy, width:tileWidth, height:tileHeight,
+      label:"Automatically located drawing area (raster only)",
+      score:0,
+    };
+    try { detailRenderSize(region.width, region.height); } catch { continue; }
+    const ink = regionInk(survey,region,width,height);
+    const areaPixels = Math.max(1,Math.round(region.width / width * survey.width) *
+      Math.round(region.height / height * survey.height));
+    if (ink < Math.max(12,areaPixels * 0.001)) continue;
+    region.score = 5 + Math.min(8, ink / areaPixels * 60);
+    output.push(region);
+  }
+  return output;
 }
 const contextRegion = (r: DetailSuggestion) =>
   r.label.startsWith("Connected drawing context");
