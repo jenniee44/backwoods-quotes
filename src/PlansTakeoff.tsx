@@ -354,6 +354,21 @@ export default function PlansTakeoff({
             pageTurns,
           );
       const prepared = automatic.documents;
+      // Prevent another paid request when an image-only PDF has no readable
+      // detail images. The unchanged original is still retained in the quote.
+      const unreadableImageOnly = prepared.filter(d =>
+        d.type === "application/pdf" &&
+        d.pdfText?.pages.length &&
+        d.pdfText.pages.every(page => !page.text.trim()) &&
+        !(d.detailRegions?.length)
+      );
+      if (unreadableImageOnly.length) {
+        throw new Error(
+          "No selectable text or detail images are available for: " +
+          unreadableImageOnly.map(d => d.name).join(", ") +
+          ". No AI request was made. Review the PDF detail preparation or add readable detail views before analyzing."
+        );
+      }
       // Explicit selections remain intact. Automatic supplements are temporary and
       // bound to these exact original bytes, never persisted in quote attachments.
       assertDetailInclusion(
