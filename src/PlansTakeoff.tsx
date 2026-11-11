@@ -23,6 +23,7 @@ import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
 import { loadPdfSource } from "./pdfSource";
 import { normalizeRotation } from "../shared/pdf";
+import { restorePdfOrientations, savePdfOrientations } from "./pdfOrientationStorage";
 import { revealMaterial } from "./materialReviewNavigation";
 import { assertScope } from "./takeoffScope";
 import { consolidateTakeoff } from "./consolidateTakeoff";
@@ -260,6 +261,13 @@ export default function PlansTakeoff({
     )
       completedBatches.current = null;
   }, [q.id, q.documents]);
+  useEffect(() => {
+    try {
+      const restored=restorePdfOrientations(q.id,q.documents);
+      if(Object.keys(restored).length)
+        setOrientations(previous=>({...previous,...restored}));
+    } catch { /* local browser storage is optional */ }
+  },[q.id,q.documents,setOrientations]);
   const [readingBudget, setReadingBudget] = useState(8);
   const [preflightBusy, setPreflightBusy] = useState(false);
   const [preflightMessage, setPreflightMessage] = useState("");
@@ -357,6 +365,8 @@ export default function PlansTakeoff({
         }
       }
       setOrientations(revised);
+      try { savePdfOrientations(q.id,q.documents,revised); }
+      catch { /* preview still works in private browsing */ }
       setPreflightImages([]);
       setPreflightMessage("Rotation applied. Rebuilding drawing previews locally…");
       await checkAutomaticDrawingDetails(revised);
