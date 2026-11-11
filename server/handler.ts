@@ -14,7 +14,8 @@ import type { AnalysisProvider } from "./provider";
 export type Env = AccessEnv & {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
-  ANALYSIS_RESULTS?: { get(key: string): Promise<string | null>; put(key: string, value: string, options: { expirationTtl: number }): Promise<void> };\n  ANALYSIS_LIMITS?: {
+  ANALYSIS_RESULTS?: { get(key: string): Promise<string | null>; put(key: string, value: string, options: { expirationTtl: number }): Promise<void> };
+  ANALYSIS_LIMITS?: {
     get(key: string): Promise<string | null>;
     put(
       key: string,
@@ -112,10 +113,12 @@ export async function handleAnalysis(
       },
       503,
     );
-  let documents;\n  let recoveryOnly = false;
+  let documents;
+  let recoveryOnly = false;
   try {
     const input = await boundedBody(request);
-    documents = validateDocuments(input.documents);\n    recoveryOnly = input.recoveryOnly === true;
+    documents = validateDocuments(input.documents);
+    recoveryOnly = input.recoveryOnly === true;
   } catch (e) {
     return json(
       {
@@ -127,7 +130,8 @@ export async function handleAnalysis(
       400,
     );
   }
-  if (!recoveryOnly && !env.OPENAI_API_KEY && !provider) return json({error:"Plan analysis is not configured."},503);\n  let lease: AnalysisLease | undefined;
+  if (!recoveryOnly && !env.OPENAI_API_KEY && !provider) return json({error:"Plan analysis is not configured."},503);
+  let lease: AnalysisLease | undefined;
   let tracking = false;
   try {
     {
