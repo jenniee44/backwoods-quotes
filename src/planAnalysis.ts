@@ -37,6 +37,16 @@ export interface PlanAnalysisService {
     signal?: AbortSignal,
   ): Promise<PlanAnalysisResult>;
 }
+export async function recoverSavedPlanAnalysis(documents: import("../shared/analysis").AnalysisDocument[], signal?: AbortSignal): Promise<PlanAnalysisResult | null> {
+  const payload = validateDocuments(documents);
+  const response = await fetch("/api/plan-analysis", {
+    method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({documents:payload,recoveryOnly:true}), signal,
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("The free server recovery check could not complete. No new analysis was requested.");
+  return validateAnalysis(await response.json(), documents.map(d=>d.id), payload);
+}
 export const planAnalysisService: PlanAnalysisService = {
   async analyze(documents, signal) {
     const payload = validateDocuments(documents);
