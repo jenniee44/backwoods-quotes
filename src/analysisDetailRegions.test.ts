@@ -216,3 +216,19 @@ it("auto-selects occupied raster-only drawing areas without manual zoom", () => 
   expect(selectAnalysisRegions(analysisPageRegions(1,width,height,[],raster),8).length).toBeGreaterThan(0);
   expect(rasterReadingTiles(1,width,height,{...raster,ink:new Uint8Array(240*160)})).toEqual([]);
 });
+
+it("ranks interior linework ahead of dense sheet-edge title blocks", () => {
+  const width=2400,height=1600;
+  const raster={width:240,height:160,ink:new Uint8Array(240*160)};
+  // Solid title-block/logo patch near the top-left
+  for(let y=3;y<45;y++)for(let x=3;x<58;x++)raster.ink[y*240+x]=1;
+  // Typical thin engineering linework nearer the middle
+  for(let y=55;y<115;y++)for(let x=85;x<160;x++)
+    if((x+y)%5===0)raster.ink[y*240+x]=1;
+  const tiles=rasterReadingTiles(1,width,height,raster);
+  const center=tiles.find(t=>t.x>=620&&t.x<1240&&t.y>=480&&t.y<960);
+  const edge=tiles.find(t=>t.x===0&&t.y===0);
+  expect(center).toBeDefined();
+  expect(edge).toBeDefined();
+  expect(center!.score).toBeGreaterThan(edge!.score);
+});
