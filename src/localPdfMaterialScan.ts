@@ -57,7 +57,15 @@ export function proposePdfTextMaterials(
   return proposed.length ? {...q, takeoff:[...q.takeoff,...proposed]} : q;
 }
 
-export async function scanAttachedPdfText(q: Quote): Promise<Quote> {
+export type PdfMaterialScanResult = {
+  quote: Quote;
+  pdfCount: number;
+  pagesRead: number;
+  pagesWithText: number;
+  textCharacters: number;
+  matchesAdded: number;
+};
+export async function scanAttachedPdfTextWithReport(q: Quote): Promise<PdfMaterialScanResult> {
   if (q.status !== "Draft" || q.job) throw new Error("Only draft quotes can add proposed material observations.");
   const docs=q.documents.filter(d => d.type==="application/pdf");
   if(!docs.length) throw new Error("Attach a PDF drawing to scan for selectable material labels.");
@@ -73,5 +81,16 @@ export async function scanAttachedPdfText(q: Quote): Promise<Quote> {
       }
     } finally {await task.destroy();}
   }
-  return proposePdfTextMaterials(q,sources);
+  const next=proposePdfTextMaterials(q,sources);
+  return {
+    quote: next,
+    pdfCount: docs.length,
+    pagesRead: sources.length,
+    pagesWithText: sources.filter(p => p.text.trim().length > 0).length,
+    textCharacters: sources.reduce((n,p) => n+p.text.length,0),
+    matchesAdded: next.takeoff.length-q.takeoff.length,
+  };
+}
+export async function scanAttachedPdfText(q: Quote): Promise<Quote> {
+  return (await scanAttachedPdfTextWithReport(q)).quote;
 }
