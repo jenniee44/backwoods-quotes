@@ -86,6 +86,38 @@ export async function scanPdfImagesForMaterials(
             const text = result.data.text || "";
             recognizedCharacters += text.length;
             sources.push({documentId:doc.id,name:doc.name,page:pageIndex,text});
+
+            // A whole engineering sheet shrinks 6pt callouts. Read four
+            // separate quadrants at a higher effective scale when the first
+            // pass cannot identify any supported material specification.
+            const firstPass = proposePdfTextMaterials(q, [
+              {documentId:doc.id,name:doc.name,page:pageIndex,text},
+            ]);
+            if (firstPass.takeoff.length === q.takeoff.length) {
+              const tileScale = Math.min(3, 5000 / Math.max(plain.width, plain.height));
+              const tileViewport = page.getViewport({scale:tileScale});
+              for (let row=0;row<2;row++) for(let col=0;col<2;col++) {
+                const width=Math.ceil(tileViewport.width/2);
+                const height=Math.ceil(tileViewport.height/2);
+                const left=col*width, top=row*height;
+                const tile=document.createElement("canvas");
+                tile.width=Math.min(width,Math.ceil(tileViewport.width-left));
+                tile.height=Math.min(height,Math.ceil(tileViewport.height-top));
+                try {
+                  const tileContext=tile.getContext("2d");
+                  if (!tileContext) throw new Error("Cannot render OCR region.");
+                  progress?.(`Reading drawing detail ${row*2+col+1}/4 on page ${pageIndex}…`);
+                  await page.render({
+                    canvas:tile, canvasContext:tileContext,
+                    viewport:tileViewport, transform:[1,0,0,1,-left,-top],
+                  }).promise;
+                  const region=await worker.recognize(tile);
+                  const regionText=region.data.text || "";
+                  recognizedCharacters += regionText.length;
+                  sources.push({documentId:doc.id,name:doc.name,page:pageIndex,text:regionText});
+                } finally { tile.width=0; tile.height=0; }
+              }
+            }
           } finally {
             canvas.width = 0;
             canvas.height = 0;
@@ -102,8 +134,8 @@ export async function scanPdfImagesForMaterials(
   const next = proposePdfTextMaterials(q, sources);
   return {
     quote: next,
-    pagesRead: sources.length,
-    pagesWithRecognizedText: sources.filter(s => !!s.text.trim()).length,
+    pagesRead: new Set(sources.map(s => s.documentId+":"+s.page)).size,
+    pagesWithRecognizedText: new Set(sources.filter(s => !!s.text.trim()).map(s=>s.documentId+":"+s.page)).size,
     recognizedCharacters,
     matchesAdded: next.takeoff.length - q.takeoff.length,
   };
