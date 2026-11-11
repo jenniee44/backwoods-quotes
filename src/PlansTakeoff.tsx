@@ -1077,7 +1077,7 @@ export default function PlansTakeoff({
           <p>The app finds occupied drawing areas and prepares close-ups itself. You do not need to zoom or select regions. This check runs locally and does not charge for AI.</p>
           <button type="button" className="button secondary"
             disabled={preflightBusy || busy || detailProcessing}
-            onClick={checkAutomaticDrawingDetails}>
+            onClick={() => void checkAutomaticDrawingDetails()}>
             {preflightBusy ? "Preparing drawing automatically…" : "Check automatic drawing details — free"}
           </button>
           <div className="heading-actions">
