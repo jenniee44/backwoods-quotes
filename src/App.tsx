@@ -189,6 +189,7 @@ export default function App() {
   const [pdfScanFeedback, setPdfScanFeedback] = useState("");
   const [visualScanBusy, setVisualScanBusy] = useState(false);
   const [visualScanFeedback, setVisualScanFeedback] = useState("");
+  const [visualOcrPreview, setVisualOcrPreview] = useState("");
   const [company, setCompany] = useState(store.company ?? companyDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
@@ -1108,10 +1109,12 @@ export default function App() {
                                 onClick={async () => {
                                   if (!confirm("Experimental image-based PDF reading downloads the Tesseract OCR engine and English language data from external CDN servers. It reads the drawing image in this browser without using paid AI, but results may be incomplete or wrong. Continue?")) return;
                                   setVisualScanBusy(true);
+                                  setVisualOcrPreview("");
                                   setVisualScanFeedback("Preparing image scan…");
                                   try {
                                     const result = await scanPdfImagesForMaterials(current, setVisualScanFeedback);
                                     if (result.quote !== current) patch({takeoff: result.quote.takeoff});
+                                    setVisualOcrPreview(result.matchesAdded === 0 ? result.recognizedTextPreview : "");
                                     setVisualScanFeedback(`Image scan finished: ${result.pagesRead} page(s), ${result.pagesWithRecognizedText} with recognized words, ${result.matchesAdded} new material label(s). Nothing added to quote prices.`);
                                     setError("");
                                   } catch (e) {
@@ -1129,6 +1132,7 @@ export default function App() {
                                 engineered material takeoff. Review all labels, locations and scope.
                               </p>
                               {visualScanFeedback && <p className="margin-warning" role="status">{visualScanFeedback}</p>}
+                              {visualOcrPreview && <p className="muted">Sample of text recognized locally (not verified): {visualOcrPreview}</p>}
                             </>
                           )}
                           {pdfScanFeedback && (
