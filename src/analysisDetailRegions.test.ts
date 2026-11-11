@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   analysisPageRegions,
+  rasterReadingTiles,
   selectAnalysisRegions,
 } from "./analysisDetailRegions";
 import { detailRenderSize } from "../shared/pdf";
@@ -202,4 +203,16 @@ it("retains bounded connected raster linework as context alongside an overlappin
   ).not.toThrow();
   expect(context[0]).not.toHaveProperty("beamCount");
   expect(context[0]).not.toHaveProperty("length");
+});
+
+it("auto-selects occupied raster-only drawing areas without manual zoom", () => {
+  const width=2400,height=1600;
+  const raster={width:240,height:160,ink:new Uint8Array(240*160)};
+  for(let y=25;y<125;y++) for(let x=20;x<210;x++)
+    if((x+y)%4===0)raster.ink[y*240+x]=1;
+  const tiles=rasterReadingTiles(1,width,height,raster);
+  expect(tiles.length).toBeGreaterThan(0);
+  expect(tiles.every(t=>t.width<=620&&t.height<=480)).toBe(true);
+  expect(selectAnalysisRegions(analysisPageRegions(1,width,height,[],raster),8).length).toBeGreaterThan(0);
+  expect(rasterReadingTiles(1,width,height,{...raster,ink:new Uint8Array(240*160)})).toEqual([]);
 });
