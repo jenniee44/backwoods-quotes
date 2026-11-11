@@ -202,7 +202,17 @@ export function rasterReadingTiles(
     const areaPixels = Math.max(1,Math.round(region.width / width * survey.width) *
       Math.round(region.height / height * survey.height));
     if (ink < Math.max(12,areaPixels * 0.001)) continue;
-    region.score = 5 + Math.min(8, ink / areaPixels * 60);
+    const density = ink / areaPixels;
+    // Dense title blocks and large solid logos can otherwise outrank actual
+    // plan linework. Prefer moderate line density and central drawing regions.
+    const centerX = (xx + tileWidth / 2) / width;
+    const centerY = (yy + tileHeight / 2) / height;
+    const inOuterStrip = centerX < 0.16 || centerX > 0.84 ||
+      centerY < 0.16 || centerY > 0.84;
+    const centered = 1 - Math.min(1, Math.hypot(centerX - 0.5, centerY - 0.5) / 0.71);
+    const densePenalty = density > 0.22 ? 12 : density > 0.12 ? 5 : 0;
+    region.score = 8 + Math.min(5, density * 80) + centered * 8 -
+      (inOuterStrip ? 6 : 0) - densePenalty;
     output.push(region);
   }
   return output;
