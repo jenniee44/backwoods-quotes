@@ -1257,10 +1257,10 @@ export default function PlansTakeoff({
         >
           {simplified ? (q.analysisReports?.length ? "Analyze again (new AI request)" : "Analyze plans with AI") : "Analyze Plans"}
         </button>
-        {interrupted && !busy && (
+        {!busy && !locked && q.documents.length > 0 && (
           <button type="button" className="button secondary"
             onClick={() => void analyze(true)}>
-            Recover completed AI results — free
+            Check for saved AI results — free
           </button>
         )}
         {busy && (
