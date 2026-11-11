@@ -14,7 +14,7 @@ import type { AnalysisProvider } from "./provider";
 export type Env = AccessEnv & {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
-  ANALYSIS_LIMITS?: {
+  ANALYSIS_RESULTS?: { get(key: string): Promise<string | null>; put(key: string, value: string, options: { expirationTtl: number }): Promise<void> };\n  ANALYSIS_LIMITS?: {
     get(key: string): Promise<string | null>;
     put(
       key: string,
@@ -96,7 +96,7 @@ export async function handleAnalysis(
       (e as Error).message === "CONFIG_AUTH" ? 503 : 401,
     );
   }
-  if (!env.OPENAI_API_KEY && !provider)
+  if (!env.OPENAI_API_KEY && !provider && !request.url.includes("recoveryOnly"))
     return json(
       {
         error:
@@ -112,10 +112,10 @@ export async function handleAnalysis(
       },
       503,
     );
-  let documents;
+  let documents;\n  let recoveryOnly = false;
   try {
     const input = await boundedBody(request);
-    documents = validateDocuments(input.documents);
+    documents = validateDocuments(input.documents);\n    recoveryOnly = input.recoveryOnly === true;
   } catch (e) {
     return json(
       {
@@ -127,10 +127,10 @@ export async function handleAnalysis(
       400,
     );
   }
-  let lease: AnalysisLease | undefined;
+  if (!recoveryOnly && !env.OPENAI_API_KEY && !provider) return json({error:"Plan analysis is not configured."},503);\n  let lease: AnalysisLease | undefined;
   let tracking = false;
   try {
-    if (env.ANALYSIS_LIMITS) {
+    {
       const hash = async (text: string) =>
         Array.from(
           new Uint8Array(
