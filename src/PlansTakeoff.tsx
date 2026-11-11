@@ -247,6 +247,42 @@ export default function PlansTakeoff({
       completedBatches.current = null;
   }, [q.id, q.documents]);
   const [readingBudget, setReadingBudget] = useState(8);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [preflightMessage, setPreflightMessage] = useState("");
+  const [preflightImages, setPreflightImages] = useState<
+    { source: string; label: string; page: number }[]
+  >([]);
+  async function checkAutomaticDrawingDetails() {
+    if (preflightBusy || request.current || locked) return;
+    const controller = new AbortController();
+    setPreflightBusy(true);
+    setPreflightImages([]);
+    setPreflightMessage("Preparing drawing details locally — no AI request…");
+    try {
+      const documents = structuredClone(selectedDocuments);
+      const pageTurns = Object.fromEntries(documents.map(d => [
+        d.id, orientations[d.id]?.source === d.data
+          ? orientations[d.id].pages : {},
+      ]));
+      const result = await supplementWholePdfs(
+        documents, controller.signal, setPreflightMessage, readingBudget, pageTurns,
+      );
+      const images = result.reviewViews.map(v => ({
+        source: v.region.data,
+        label: v.region.label || "Automatic drawing detail",
+        page: v.region.page,
+      }));
+      setPreflightImages(images);
+      setPreflightMessage(images.length
+        ? `Prepared ${images.length} automatic 250 DPI drawing detail(s), without paid AI. The original plan is included separately in analysis. Review is still needed before ordering materials.`
+        : "No high-resolution drawing details could be prepared automatically. Do not run paid analysis yet; inspect source PDF quality or preparation errors.");
+    } catch(e) {
+      setPreflightMessage("Free drawing preparation failed: " + (e as Error).message);
+    } finally {
+      setPreflightBusy(false);
+    }
+  }
+
   const [analysisError, setAnalysisError] = useState("");
   const lastFailure = useRef<{ fingerprint: string; message: string } | null>(
     null,
@@ -1002,6 +1038,29 @@ export default function PlansTakeoff({
             cancellation adds no partial takeoff.
           </p>
         )}
+      {q.documents.some(d=>d.type==="application/pdf" && !excludedDocuments.includes(d.id)) && (
+        <div className="info">
+          <p><strong>Automatic drawing detail check</strong></p>
+          <p>The app finds occupied drawing areas and prepares close-ups itself. You do not need to zoom or select regions. This check runs locally and does not charge for AI.</p>
+          <button type="button" className="button secondary"
+            disabled={preflightBusy || busy || detailProcessing}
+            onClick={checkAutomaticDrawingDetails}>
+            {preflightBusy ? "Preparing drawing automatically…" : "Check automatic drawing details — free"}
+          </button>
+          {preflightMessage && <p role="status">{preflightMessage}</p>}
+          {preflightImages.length > 0 && (
+            <div className="grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+              {preflightImages.slice(0,6).map((view,index)=>(
+                <div key={index}>
+                  <img src={view.source} alt={view.label+" on page "+view.page}
+                    style={{width:"100%",height:"auto"}} />
+                  <small>Page {view.page}: {view.label}</small>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="heading-actions">
         <button
           className="button"
