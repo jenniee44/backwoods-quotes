@@ -395,7 +395,8 @@ export default function PlansTakeoff({
 
   const busy =
     analysisState === "Uploading/preparing" ||
-    analysisState === "Analyzing plans";
+    analysisState === "Analyzing plans" ||
+    analysisState === "Recovering saved analysis";
   useEffect(
     () => () => {
       request.current?.abort();
@@ -403,7 +404,7 @@ export default function PlansTakeoff({
     },
     [],
   );
-  async function analyze() {
+  async function analyze(recoverOnly = false) {
     if (
       (validDetails.some(
         (v) =>
@@ -418,7 +419,7 @@ export default function PlansTakeoff({
       detailProcessing ||
       !packageReady ||
       analysisPackage.error ||
-      interrupted
+      (interrupted && !recoverOnly)
     )
       return;
     const controller = new AbortController();
@@ -426,7 +427,7 @@ export default function PlansTakeoff({
     setAnalysisError("");
     setReviewError("");
     setInputNotes([]);
-    setAnalysisState("Uploading/preparing");
+    setAnalysisState(recoverOnly ? "Uploading/preparing" : "Uploading/preparing");
     let attemptFingerprint = "";
     try {
       const documents = structuredClone(analysisPackage.documents);
@@ -548,9 +549,11 @@ export default function PlansTakeoff({
       ]);
       // The marker is only written just before a potentially paid request.
       // No file bytes, personal details or AI output are stored in it.
-      try { window.localStorage.setItem(pendingKey, String(Date.now())); }
-      catch { /* private browser storage may be disabled */ }
-      setAnalysisState("Analyzing plans");
+      if (!recoverOnly) {
+        try { window.localStorage.setItem(pendingKey, String(Date.now())); }
+        catch { /* private browser storage may be disabled */ }
+      }
+      setAnalysisState(recoverOnly ? "Recovering saved analysis" : "Analyzing plans");
       if (completedBatches.current?.fingerprint !== fingerprint)
         completedBatches.current = {
           quoteId: q.id,
@@ -621,11 +624,20 @@ export default function PlansTakeoff({
       const result = await analyzeBatches(
         prepared,
         controller.signal,
-        (docs, signal) => planAnalysisService.analyze(docs, signal),
+        (docs, signal) => {
+          if (recoverOnly)
+            throw new Error(
+              "Not all completed analysis batches were saved in this browser. " +
+              "No paid AI request was made. An in-flight analysis interrupted by a refresh cannot be recovered from local checkpoints."
+            );
+          return planAnalysisService.analyze(docs, signal);
+        },
         (number, total) =>
           setInputNotes((notes) => [
             ...notes.filter((n) => !n.startsWith("Analyzing batch")),
-            `Analyzing batch ${number} of ${total}. Original PDFs accompany every batch; nothing is added until all succeed.`,
+            recoverOnly
+              ? `Checking saved batch ${number} of ${total} without paid AI.`
+              : `Analyzing batch ${number} of ${total}. Original PDFs accompany every batch; nothing is added until all succeed.`,
           ]),
         batchCache,
         rememberSubmitted,
@@ -1240,10 +1252,16 @@ export default function PlansTakeoff({
             !!analysisPackage?.error ||
             !q.documents.some((d) => !excludedDocuments.includes(d.id))
           }
-          onClick={analyze}
+          onClick={() => void analyze()}
         >
           {simplified ? (q.analysisReports?.length ? "Analyze again (new AI request)" : "Analyze plans with AI") : "Analyze Plans"}
         </button>
+        {interrupted && !busy && (
+          <button type="button" className="button secondary"
+            onClick={() => void analyze(true)}>
+            Recover completed AI results — free
+          </button>
+        )}
         {busy && (
           <button
             className="button secondary"
