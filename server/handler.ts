@@ -1,3 +1,9 @@
+import {
+  persistentAnalysis,
+  recoverResults,
+  validIdentity,
+  type ResultsKV,
+} from "./analysisResults";
 import { AnalysisFailure, analysisErrors } from "../shared/analysisErrors";
 import { abortableAnalysis } from "../shared/abortableAnalysis";
 import {
@@ -12,6 +18,7 @@ import { validateDocuments, validateAnalysis } from "../shared/analysis";
 import { openAIProvider } from "./provider";
 import type { AnalysisProvider } from "./provider";
 export type Env = AccessEnv & {
+  ANALYSIS_RESULTS?: ResultsKV;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
   ANALYSIS_LIMITS?: {
@@ -69,6 +76,7 @@ export async function handleAnalysis(
   request: Request,
   env: Env,
   provider?: AnalysisProvider,
+  waitUntil?: (work: Promise<unknown>) => void,
 ): Promise<Response> {
   if (request.method !== "POST")
     return json({ error: "Use Analyze Plans to send attached files." }, 405);
@@ -96,6 +104,21 @@ export async function handleAnalysis(
       (e as Error).message === "CONFIG_AUTH" ? 503 : 401,
     );
   }
+  let input: Record<string, unknown>;
+  try {
+    input = await boundedBody(request);
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      throw new Error("Invalid request.");
+  } catch {
+    return json(
+      {
+        error:
+          "The plan request could not be read. Existing estimates are unchanged.",
+      },
+      400,
+    );
+  }
+  if (input.action === "recover") return recoverResults(input, user, env);
   if (!env.OPENAI_API_KEY && !provider)
     return json(
       {
@@ -114,7 +137,6 @@ export async function handleAnalysis(
     );
   let documents;
   try {
-    const input = await boundedBody(request);
     documents = validateDocuments(input.documents);
   } catch (e) {
     return json(
@@ -127,6 +149,41 @@ export async function handleAnalysis(
       400,
     );
   }
+  if (input.analysis !== undefined) {
+    if (!validIdentity(input.analysis, documents))
+      return json(
+        {
+          error:
+            "The analysis reference or detail mapping is invalid. No AI request was made.",
+        },
+        400,
+      );
+    if (request.signal.aborted)
+      return json(
+        {
+          code: "ANALYSIS_INTERRUPTED",
+          error: "The request was cancelled before analysis started.",
+        },
+        409,
+      );
+    return persistentAnalysis(
+      request,
+      env,
+      user,
+      documents,
+      input.analysis,
+      provider,
+      waitUntil,
+    );
+  }
+  if (!local)
+    return json(
+      {
+        error:
+          "Reload the app to use recoverable analysis before sending a new AI request.",
+      },
+      400,
+    );
   let lease: AnalysisLease | undefined;
   let tracking = false;
   try {

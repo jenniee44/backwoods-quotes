@@ -1,3 +1,8 @@
+import {
+  globalAnalysis,
+  type AnalysisIdentity,
+} from "../shared/analysisRecovery";
+import { markAnalysisTransport } from "./analysisTransport";
 import { AnalysisFailure, isAnalysisErrorCode } from "../shared/analysisErrors";
 import { abortableAnalysis } from "../shared/abortableAnalysis";
 import { consolidateBeamReviews } from "./consolidateBeamReviews";
@@ -35,12 +40,16 @@ export interface PlanAnalysisService {
   analyze(
     documents: import("../shared/analysis").AnalysisDocument[],
     signal?: AbortSignal,
+    analysis?: AnalysisIdentity,
   ): Promise<PlanAnalysisResult>;
 }
 export const planAnalysisService: PlanAnalysisService = {
-  async analyze(documents, signal) {
+  async analyze(documents, signal, analysis) {
     const payload = validateDocuments(documents);
-    const requestBody = JSON.stringify({ documents: payload });
+    const requestBody = JSON.stringify({
+      documents: payload,
+      ...(analysis ? { analysis } : {}),
+    });
     if (new TextEncoder().encode(requestBody).length > maxAnalysisBodyBytes)
       throw new Error(
         "The original plans, text and detail views exceed the request limit. Select fewer files/details; originals will not be reduced.",
@@ -59,9 +68,7 @@ export const planAnalysisService: PlanAnalysisService = {
             });
           } catch (error) {
             if (requestSignal.aborted) throw requestSignal.reason ?? error;
-            throw new Error(
-              "The analysis service could not be reached. Check your connection or sign in through Cloudflare Access.",
-            );
+            throw new AnalysisFailure("ANALYSIS_CLIENT_CONNECTION");
           }
           if (
             !response.headers.get("Content-Type")?.includes("application/json")
@@ -101,11 +108,70 @@ export const planAnalysisService: PlanAnalysisService = {
                 ? body.error
                 : "Plan analysis failed. Try again or use manual takeoff.",
             );
-          return validateAnalysis(
+          if (analysis && body?.state === "completed" && body.result) {
+            if (body.analysisId !== analysis.analysisId)
+              throw new Error(
+                "The analysis result reference did not match this request.",
+              );
+            const result = validateAnalysis(
+              body.result,
+              documents.map((d) => d.id),
+            );
+            for (const item of [
+              ...result.suggestions,
+              ...(result.dimensions ?? []),
+              ...(result.sourceObservations ?? []),
+            ]) {
+              const source = payload.find((d) => d.id === item.documentId);
+              if (
+                source?.pdfText &&
+                ((item.page ?? 1) > source.pdfText.pageCount ||
+                  item.beamAssemblies?.some(
+                    (b) => b.page > source.pdfText!.pageCount,
+                  ))
+              )
+                throw new Error(
+                  "The result referenced an unavailable source page.",
+                );
+              if (item.sourceDetailView) {
+                const localIndex = analysis.indices[item.documentId]?.indexOf(
+                  item.sourceDetailView,
+                );
+                if (
+                  localIndex === undefined ||
+                  localIndex < 0 ||
+                  source?.detailRegions?.[localIndex]?.page !== item.page
+                )
+                  throw new Error(
+                    "The result referenced an unsubmitted detail.",
+                  );
+              }
+            }
+            return markAnalysisTransport(result, {
+              global: true,
+              analysisId: analysis.analysisId,
+              reused: body.reused === true,
+              warning:
+                body.persistence !== "confirmed"
+                  ? "AI completed, but server persistence was not confirmed. Keep this tab open and save/export the quote; do not pay to analyze again."
+                  : body.trackingWarning
+                    ? "Completed results were preserved, but request tracking cleanup was not confirmed."
+                    : undefined,
+              persistence:
+                body.persistence === "confirmed" ? "confirmed" : "failed",
+            });
+          }
+          const result = validateAnalysis(
             body,
             documents.map((d) => d.id),
             payload,
           );
+          return analysis
+            ? markAnalysisTransport(
+                globalAnalysis(result, payload, analysis.indices),
+                { global: true, persistence: "unknown" },
+              )
+            : result;
         },
         signal,
         120000,

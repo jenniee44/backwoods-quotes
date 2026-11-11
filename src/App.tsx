@@ -1339,10 +1339,10 @@ export default function App() {
                           );
                           setNotice("");
                         }}
-                        onPersistAnalysis={(q) => {
+                        onPersistAnalysis={(q, phase) => {
                           const saved = saveQuote(q, false, true);
                           if (saved) {
-                            setNotice("AI analysis and material observations saved on this device.");
+                            setNotice(phase === "source" ? "Quote and original drawing saved before analysis. AI results are not yet complete." : "AI analysis and material observations saved on this device.");
                           }
                           return saved;
                         }}

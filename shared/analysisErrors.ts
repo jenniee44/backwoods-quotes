@@ -1,5 +1,30 @@
 // Safe, finite error catalogue. Never forward provider bodies, keys or document text.
 export const analysisErrors = {
+  ANALYSIS_CLIENT_CONNECTION: {
+    status: 502,
+    message:
+      "The browser did not receive the analysis response. Check your connection or sign-in. The server may have saved completed results; use the free recovery check before starting another paid request.",
+  },
+  ANALYSIS_RESULT_MISSING: {
+    status: 404,
+    message: "No saved AI result was found. No paid AI request was made.",
+  },
+  ANALYSIS_RESULTS_UNAVAILABLE: {
+    status: 503,
+    message:
+      "Saved-result storage is unavailable in this deployment environment. No new AI request can start safely.",
+  },
+  ANALYSIS_PERSISTENCE_FAILED: {
+    status: 503,
+    message:
+      "AI completed but server persistence was not confirmed. Do not pay to analyze again; keep any returned result open and save/export it.",
+  },
+  ANALYSIS_SOURCE_MISMATCH: {
+    status: 409,
+    message:
+      "Saved results belong to different source files. No AI request was made.",
+  },
+
   ANALYSIS_IN_PROGRESS: {
     status: 409,
     message:

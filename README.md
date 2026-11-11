@@ -239,19 +239,19 @@ Optional takeoff metadata includes origin, evidence type, category/destination, 
 ### Required external services
 
 - An **OpenAI API account with API billing** and a project API key. A ChatGPT subscription alone does not provide API credits. Create a project/key at <https://platform.openai.com/api-keys>. Use a dedicated project, review billing and configure usage alerts/limits supported by your account. Budget alerts are not necessarily hard spending caps.
-- Cloudflare Pages Functions, **Cloudflare Access** (allow only your team's email addresses) and a **KV namespace** for private analysis quotas. No shared quote database or authentication migration is introduced. The existing development role switch remains unrelated to endpoint authorization.
+- Cloudflare Pages Functions, **Cloudflare Access** (allow only your team's email addresses) and private **KV bindings** `ANALYSIS_LIMITS` (quotas/locks) and `ANALYSIS_RESULTS` (completed-result recovery). No shared quote database or authentication migration is introduced. The existing development role switch remains unrelated to endpoint authorization.
 
 No live credentials are configured in this workspace. The owner reports a successful live residential deck-plan analysis on the existing preview. The subsequent takeoff-quality improvements below have been tested locally with isolated fixtures, not revalidated against that drawing through a live provider call. Automated tests use clearly isolated fixtures, never product-side pretend AI results.
 
 ### Beginner-friendly Cloudflare setup — only after approval
 
-These instructions apply to a **separate V2 preview hostname/environment**. Do not change the production V1 hostname, its Access rules or Production variables.
+These instructions apply only to the **separate V2 test Pages project**, not the original V1/production project. First open **Workers & Pages → backwoods-quotes-v2-test → Settings → Builds & deployments → Production branch** (shown as Branch control in some dashboard versions). If the production branch is `v2-preview`, that branch's test deployment uses this test project's **Production** environment. Otherwise its branch deployment uses **Preview**. The word "preview" in the Git branch name does not select the environment. Do not change the original production project's hostname, settings or Access rules.
 
 1. In OpenAI, create the API project/key and enable API billing. Keep the key private; do not paste it into this chat, React code, GitHub, a `VITE_` variable or browser Settings.
-2. In Cloudflare, open the Pages project → **Settings → Variables and Secrets** → select **Preview**. Add **Secret** `OPENAI_API_KEY` with your OpenAI API key. Add **Text** variable `OPENAI_MODEL` with `gpt-5.4-mini` (optional; this is the default). Do not set `DEV_ALLOW_LOCAL` in Cloudflare.
+2. In Cloudflare, open the V2 test Pages project → **Settings → Variables and Secrets** → select its active **Production** or **Preview** environment as determined above. Add **Secret** `OPENAI_API_KEY` with your OpenAI API key. Add **Text** variable `OPENAI_MODEL` with `gpt-5.4-mini` (optional; this is the default). Do not set `DEV_ALLOW_LOCAL` in Cloudflare.
 3. In Cloudflare **Zero Trust → Access → Applications**, add a **Self-hosted** application for the exact V2 preview alias (for example, `v2-preview.YOUR-PROJECT.pages.dev`). Protect the whole preview hostname, not the V1 domain. Add an Allow policy containing only your approved email addresses, with email one-time PIN or your chosen identity provider. If a separate Preview project is used, use its actual hostname instead.
-4. Copy that application's **Application Audience (AUD)**. In Pages **Preview** variables, add `CF_ACCESS_AUD` with that value. Find your Access **team domain** (for example, `your-team.cloudflareaccess.com`) in Zero Trust settings; add it as `CF_ACCESS_TEAM_DOMAIN`, without `https://` or a slash. These identify the Access application; they are not provider API keys.
-5. In Cloudflare **Storage & databases → KV**, create a namespace such as `backwoods-preview-analysis-limits`. In Pages **Settings → Bindings**, add a **KV Namespace** binding named exactly `ANALYSIS_LIMITS`, pointing to that namespace for Preview. It stores only hashed identity/file keys and counters/short-lived locks, not plans, extracted text or provider keys.
+4. Copy that application's **Application Audience (AUD)**. In the same active V2 test environment, add `CF_ACCESS_AUD` with that value. Find your Access **team domain** (for example, `your-team.cloudflareaccess.com`) in Zero Trust settings; add it as `CF_ACCESS_TEAM_DOMAIN`, without `https://` or a slash. These identify the Access application; they are not provider API keys.
+5. In the active V2 test environment's **Settings → Bindings**, verify private **KV Namespace** bindings named exactly `ANALYSIS_LIMITS` and `ANALYSIS_RESULTS`. Reuse existing namespaces when already configured; only create a private namespace under **Storage & databases → KV** if one is missing. `ANALYSIS_LIMITS` stores quota/lock metadata. `ANALYSIS_RESULTS` stores private validated results for seven-day free recovery. Inspect Preview separately if you also serve branch previews.
 6. Use a **Git-based Pages preview build** with command `npm run build`, output directory `dist`, and the repository root as the root directory. Pages must also compile the repository's `functions/` folder. Dragging only static `dist` files into the old static-site uploader does **not** install the API function. Publishing `v2-preview` triggers its connected Cloudflare build; do not change the V1 deployment.
 7. Open the protected V2 preview alias and sign in using your allowed email. Create a draft, upload a redacted/readable deck plan, select its files, and click **Analyze Plans**. First verify all source pages, dimensions, notes, units, evidence classifications and missing quantities. Mark reviewed, approve, then convert. Enter your own supplier costs/waste and verify quote rates before sending anything to a customer.
 
@@ -270,7 +270,7 @@ cp .dev.vars.example .dev.vars
 Edit `.dev.vars` **locally** to put the API key in `OPENAI_API_KEY`. It is ignored by Git. Do not change the empty tracked example to contain a real key. `DEV_ALLOW_LOCAL="true"` bypasses Access only for actual localhost/127.0.0.1 request URLs; keep this development server private. Run the API in one terminal:
 
 ```sh
-npm run dev:api -- --ip 127.0.0.1 --compatibility-date 2026-10-06
+npm run dev:api -- --ip 127.0.0.1 --compatibility-date 2026-10-06 --kv ANALYSIS_LIMITS --kv ANALYSIS_RESULTS
 ```
 
 Run Vite in another, restricted to your own machine when using a paid key:
@@ -644,14 +644,12 @@ overwrite a newer request. Older `in-progress` markers retain their original
 120-second TTL during rollout. Attempts still consume the existing 20/day limit;
 there is no automatic retry or rate-limit bypass.
 
-KV stores only hashed keys, random ownership IDs, phase and expiration timestamps,
-never drawings, extracted text, provider messages, takeoff results or credentials.
+`ANALYSIS_LIMITS` stores only hashed keys, random ownership IDs, phase and expiration timestamps, never plans or results. `ANALYSIS_RESULTS` separately stores private validated takeoff evidence, safe status codes and stable recovery identifiers for seven days. It never stores original PDFs, submitted images, API keys, Access tokens, pricing or customer quote records. Drawing evidence can itself be sensitive; keep this namespace private.
 An isolate-local metadata guard prevents simultaneous duplicate calls in that
 isolate. KV is eventually consistent, so this remains best-effort cross-isolate
 duplicate/rate protection, not an atomic distributed lock. Timestamped expiration
 bounds abandoned requests. KV outages fail closed; if cleanup fails, the actual
-failure remains visible with a bounded-wait recovery explanation. No binding or
-Cloudflare/OpenAI configuration changes are required.
+failure remains visible with a bounded-wait recovery explanation. Recoverable requests additionally require `ANALYSIS_RESULTS` in the active V2 Pages environment. The provider model and credentials are unchanged.
 
 The server bounds provider work to 90 seconds; the client bounds both fetch and
 response-body reading to 120 seconds and clears pending UI state on failure or
@@ -662,13 +660,20 @@ and document content are not returned or logged. Pending/successful cooldowns ar
 shown separately from failures, with retry timing; a blocked retry retains the
 previous failure explanation for the same input.
 
-For a multi-batch request, completed valid batches may be reused for identical
-inputs during this mounted browser session. Only unfinished batches are sent
-again. Results remain provisional and no partial takeoff is written to the quote.
-The temporary cache is bounded, cleared on success, source removal/replacement or
-unmount, and is never written to browser storage, exports or customer documents.
-Changing inputs requires a new analysis. A reload loses this temporary cache and
-may require waiting for successful server cooldowns to expire.
+### Completed-result recovery and exact deployment checks
+
+1. Open **Workers & Pages → backwoods-quotes-v2-test → Settings → Bindings**. Use the **Production / Preview environment selector** to inspect each environment separately. If your dashboard shows KV under **Settings → Functions → KV namespace bindings**, select Preview there. Seeing a binding once does not prove it exists in both environments.
+2. Verify exact names **ANALYSIS_LIMITS** and **ANALYSIS_RESULTS**, both bound to private KV namespaces. Check the environment that actually serves your V2 URL using the Production-branch setting above. If you use branch previews too, verify their Preview bindings separately. Do not recreate an existing namespace or modify the original production project.
+3. Binding changes apply to a new deployment: redeploy the V2 feature commit through the existing Git integration after correcting missing bindings. This repository does not contain account-specific namespace IDs or secrets.
+4. Sign into the V2 site through existing Cloudflare Access. Open the saved draft and click **Check for saved AI results — free**. This POST contains only the quote ID and an original-source digest; the server never invokes OpenAI, reserves quota or starts missing batches from a recovery request. A missing binding/storage failure has its own status; a missing record says **No saved AI results found**, not **Analysis failed**.
+
+New paid requests include a stable analysis ID, quote ID, batch index/count and validated detail mapping. The server scopes private storage to the authenticated principal, exact quote and original-source digest. The browser first confirms that the quote ID and original drawing are saved locally; a failed source save blocks paid work. The server records the job before provider work and awaits the result-store write acknowledgement before reporting server persistence confirmed. Completed results remain available if the response is lost or request-tracking cleanup fails. Existing successfully stored results are returned without a new paid call. Browser checkpoints remain an optional seven-day fallback; storage failures are visible, not silently described as saved. Completed quotes still use the existing synchronous browser save path.
+
+Every batch includes the unchanged complete original PDFs and their all-page text metadata; bounded automatic reading images are corroborating views, not extra material quantities. Recovery uses the stored original detail provenance rather than regenerating image pixels to find a server result. Only an entirely completed, validated set of batches becomes one editable takeoff. No materials, stock lengths or prices are automatically approved. If the user allows a new analysis after a partial job, already completed server batches are reused; recovery itself never sends unfinished work.
+
+Provider work remains bounded to 90 seconds. Pages `waitUntil` protects already-started work from immediate browser disconnect, but it is not an indefinite durable workflow: Cloudflare can terminate work after its disconnected-request lifetime. Expired running records are therefore reported as **interrupted / outcome uncertain**, never presumed complete or automatically resent. KV remains eventually consistent and the existing rate-limit lease remains best-effort across isolates. A brief **running** or **missing** state can precede propagation of a completed result; check again rather than paying again.
+
+Analyses predating server persistence cannot be recreated from an identifier. Recovery can reuse their exact browser checkpoint if one exists, but cannot retrieve a response that was never stored. No live paid OpenAI test is part of the automated suite. Dashboard environment bindings require owner verification when this workspace is not authenticated to Cloudflare.
 
 The Pages Function (`functions/api/plan-analysis.ts`) serves this API independently
 of a separately connected Workers Builds project. A successful Pages deployment

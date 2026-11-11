@@ -1,3 +1,10 @@
+import { RecoveryFailure } from "./analysisRecovery";
+import { digest, type AnalysisIdentity } from "../shared/analysisRecovery";
+import {
+  analysisTransport,
+  markAnalysisTransport,
+  type AnalysisTransport,
+} from "./analysisTransport";
 import { validateDocuments, validateAnalysis } from "../shared/analysis";
 import type {
   AnalysisDocument,
@@ -11,7 +18,10 @@ import {
   maxAnalysisBytes,
 } from "../shared/analysisPackage";
 import { maxDetailRegions } from "../shared/pdf";
-import { readAnalysisCheckpoint, saveAnalysisCheckpoint } from "./analysisCheckpoints";
+import {
+  readAnalysisCheckpoint,
+  saveAnalysisCheckpoint,
+} from "./analysisCheckpoints";
 export type AnalysisBatch = {
   documents: AnalysisDocument[];
   indices: Record<string, number[]>;
@@ -66,11 +76,17 @@ export async function analyzeBatches(
   analyze: (
     d: AnalysisDocument[],
     s: AbortSignal,
+    analysis?: AnalysisIdentity,
   ) => Promise<PlanAnalysisResult>,
   progress: (n: number, total: number) => void = () => {},
   completed?: Map<string, PlanAnalysisResult>,
-  observed: (documents: AnalysisDocument[], reused: boolean) => void = () => {},
+  observed: (
+    documents: AnalysisDocument[],
+    reused: boolean,
+    storage?: AnalysisTransport,
+  ) => void = () => {},
   checkpointScope = "",
+  recovery?: { quoteId: string; fingerprint: string; recoverOnly?: boolean },
 ): Promise<PlanAnalysisResult> {
   const batches = analysisBatches(sources);
   const results: PlanAnalysisResult[] = [];
@@ -94,38 +110,75 @@ export async function analyzeBatches(
     // request is made when the exact submitted batch is available locally.
     let checkpoint: PlanAnalysisResult | null = null;
     if (key && checkpointScope && !completed?.has(key)) {
-      try { checkpoint = await readAnalysisCheckpoint(checkpointScope+":"+key); } catch { /* storage optional */ }
+      try {
+        const saved = await readAnalysisCheckpoint(checkpointScope + ":" + key);
+        if (saved) {
+          const transport = analysisTransport(saved);
+          checkpoint = markAnalysisTransport(
+            validateAnalysis(
+              saved,
+              batch.documents.map((d) => d.id),
+              transport.global ? undefined : batch.documents,
+            ),
+            transport,
+          );
+        }
+      } catch {
+        if (recovery?.recoverOnly)
+          throw new RecoveryFailure("browser-storage-unavailable");
+      }
     }
     signal.throwIfAborted();
     const reused = !!completed?.has(key) || !!checkpoint;
-    const result = completed?.get(key) ?? checkpoint ??
-      (await analyze(batch.documents, signal));
+    const result =
+      completed?.get(key) ??
+      checkpoint ??
+      (await analyze(
+        batch.documents,
+        signal,
+        recovery
+          ? {
+              analysisId: await digest(
+                `takeoff-recovery-v1:${recovery.quoteId}:${recovery.fingerprint}`,
+              ),
+              quoteId: recovery.quoteId,
+              batchIndex: index,
+              batchCount: batches.length,
+              indices: batch.indices,
+            }
+          : undefined,
+      ));
     signal.throwIfAborted();
     const remap = (items: AnalysisSuggestion[] | undefined) =>
-      items?.map((item) => {
-        if (!item.sourceDetailView) return { ...item };
-        const region = batch.documents.find((d) => d.id === item.documentId)
-          ?.detailRegions?.[item.sourceDetailView - 1];
-        if (!region)
-          throw new Error(
-            "Analysis referenced a detail that was not submitted. No partial takeoff was added.",
-          );
-        const globalIndex =
-          batch.indices[item.documentId]?.[item.sourceDetailView - 1];
-        const provenance = `Submitted source: ${item.documentId}, page ${region.page}, detail ${globalIndex}, region ${region.x},${region.y},${region.width},${region.height} PDF points; rotation ${region.rotation ?? 0} degrees; ${region.dpi} DPI.`;
-        const facts = item.sourceFacts ?? [];
-        if (facts.length >= 20 && (item.notes + " " + provenance).length > 2000)
-          throw new Error(
-            "Detail provenance exceeds safe review limits. No partial takeoff was added.",
-          );
-        return {
-          ...item,
-          sourceDetailView: globalIndex,
-          sourceFacts: facts.length < 20 ? [...facts, provenance] : facts,
-          notes:
-            facts.length >= 20 ? item.notes + " " + provenance : item.notes,
-        };
-      });
+      analysisTransport(result).global
+        ? items
+        : items?.map((item) => {
+            if (!item.sourceDetailView) return { ...item };
+            const region = batch.documents.find((d) => d.id === item.documentId)
+              ?.detailRegions?.[item.sourceDetailView - 1];
+            if (!region)
+              throw new Error(
+                "Analysis referenced a detail that was not submitted. No partial takeoff was added.",
+              );
+            const globalIndex =
+              batch.indices[item.documentId]?.[item.sourceDetailView - 1];
+            const provenance = `Submitted source: ${item.documentId}, page ${region.page}, detail ${globalIndex}, region ${region.x},${region.y},${region.width},${region.height} PDF points; rotation ${region.rotation ?? 0} degrees; ${region.dpi} DPI.`;
+            const facts = item.sourceFacts ?? [];
+            if (
+              facts.length >= 20 &&
+              (item.notes + " " + provenance).length > 2000
+            )
+              throw new Error(
+                "Detail provenance exceeds safe review limits. No partial takeoff was added.",
+              );
+            return {
+              ...item,
+              sourceDetailView: globalIndex,
+              sourceFacts: facts.length < 20 ? [...facts, provenance] : facts,
+              notes:
+                facts.length >= 20 ? item.notes + " " + provenance : item.notes,
+            };
+          });
     results.push({
       ...result,
       suggestions: remap(result.suggestions)!,
@@ -139,9 +192,25 @@ export async function analyzeBatches(
     if (key && checkpointScope && !reused) {
       // Complete the checkpoint transaction before moving to the next paid
       // batch; a refresh after this point can reuse the returned result.
-      try { await saveAnalysisCheckpoint(checkpointScope+":"+key, result); } catch { /* quote save still protects final result */ }
+      try {
+        await saveAnalysisCheckpoint(checkpointScope + ":" + key, result);
+      } catch {
+        const confirmed = analysisTransport(result).persistence === "confirmed";
+        const warning = confirmed
+          ? "Browser checkpoint storage failed; completed results were confirmed in server storage and can be recovered free."
+          : "Browser checkpoint storage failed and server persistence was not confirmed. Keep this tab open and save/export the quote.";
+        markAnalysisTransport(result, {
+          ...analysisTransport(result),
+          warning,
+        });
+        if (!confirmed && batches.length > 1)
+          throw new Error(
+            "A completed batch could not be confirmed in server or browser storage. No further paid batches were sent. Keep this tab open and free storage before continuing.",
+          );
+      }
     }
-    observed(batch.documents, reused);
+    if (recovery) observed(batch.documents, reused, analysisTransport(result));
+    else observed(batch.documents, reused);
   }
   signal.throwIfAborted();
   if (results.length === 1) return results[0];

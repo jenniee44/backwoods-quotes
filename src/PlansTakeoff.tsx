@@ -1,3 +1,9 @@
+import { analysisTransport, type AnalysisTransport } from "./analysisTransport";
+import {
+  recoverSavedAnalysis,
+  RecoveryFailure,
+  recoveryHeading,
+} from "./analysisRecovery";
 import { downloadTakeoffAnalysis } from "./takeoffAnalysisExport";
 import { AnalysisFailure } from "../shared/analysisErrors";
 import {
@@ -23,7 +29,10 @@ import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
 import { loadPdfSource } from "./pdfSource";
 import { normalizeRotation } from "../shared/pdf";
-import { restorePdfOrientations, savePdfOrientations } from "./pdfOrientationStorage";
+import {
+  restorePdfOrientations,
+  savePdfOrientations,
+} from "./pdfOrientationStorage";
 import { revealMaterial } from "./materialReviewNavigation";
 import { assertScope } from "./takeoffScope";
 import { consolidateTakeoff } from "./consolidateTakeoff";
@@ -116,7 +125,7 @@ export default function PlansTakeoff({
   quote: Quote;
   locked: boolean;
   onChange: (q: Quote) => void;
-  onPersistAnalysis: (q: Quote) => boolean;
+  onPersistAnalysis: (q: Quote, phase?: "source" | "result") => boolean;
   onError: (s: string) => void;
   onViewEstimate?: () => void;
   simpleMode?: boolean;
@@ -237,12 +246,20 @@ export default function PlansTakeoff({
   // survived. Retain a private warning rather than silently resubmitting it.
   const pendingKey = "backwoods:analysis-pending:" + q.id;
   const [interrupted, setInterrupted] = useState(() => {
-    try { return !!window.localStorage.getItem("backwoods:analysis-pending:" + q.id); }
-    catch { return false; }
+    try {
+      return !!window.localStorage.getItem(
+        "backwoods:analysis-pending:" + q.id,
+      );
+    } catch {
+      return false;
+    }
   });
   useEffect(() => {
-    try { setInterrupted(!!window.localStorage.getItem(pendingKey)); }
-    catch { setInterrupted(false); }
+    try {
+      setInterrupted(!!window.localStorage.getItem(pendingKey));
+    } catch {
+      setInterrupted(false);
+    }
   }, [pendingKey]);
 
   const completedBatches = useRef<{
@@ -263,19 +280,25 @@ export default function PlansTakeoff({
   }, [q.id, q.documents]);
   useEffect(() => {
     try {
-      const restored=restorePdfOrientations(q.id,q.documents);
-      if(Object.keys(restored).length)
-        setOrientations(previous=>({...previous,...restored}));
-    } catch { /* local browser storage is optional */ }
-  },[q.id,q.documents,setOrientations]);
+      const restored = restorePdfOrientations(q.id, q.documents);
+      if (Object.keys(restored).length)
+        setOrientations((previous) => ({ ...previous, ...restored }));
+    } catch {
+      /* local browser storage is optional */
+    }
+  }, [q.id, q.documents, setOrientations]);
   const [readingBudget, setReadingBudget] = useState(8);
   const [preflightBusy, setPreflightBusy] = useState(false);
   const [preflightMessage, setPreflightMessage] = useState("");
-  const [overviewImages, setOverviewImages] = useState<{source:string;label:string;page:number}[]>([]);
+  const [overviewImages, setOverviewImages] = useState<
+    { source: string; label: string; page: number }[]
+  >([]);
   const [preflightImages, setPreflightImages] = useState<
     { source: string; label: string; page: number }[]
   >([]);
-  async function checkAutomaticDrawingDetails(orientationOverride?: PdfOrientations) {
+  async function checkAutomaticDrawingDetails(
+    orientationOverride?: PdfOrientations,
+  ) {
     if (preflightBusy || request.current || locked) return;
     const controller = new AbortController();
     setPreflightBusy(true);
@@ -284,59 +307,85 @@ export default function PlansTakeoff({
     setPreflightMessage("Preparing drawing details locally — no AI request…");
     try {
       const documents = structuredClone(selectedDocuments);
-      const pageTurns = Object.fromEntries(documents.map(d => [
-        d.id, (orientationOverride ?? orientations)[d.id]?.source === d.data
-          ? (orientationOverride ?? orientations)[d.id].pages : {},
-      ]));
+      const pageTurns = Object.fromEntries(
+        documents.map((d) => [
+          d.id,
+          (orientationOverride ?? orientations)[d.id]?.source === d.data
+            ? (orientationOverride ?? orientations)[d.id].pages
+            : {},
+        ]),
+      );
       const result = await supplementWholePdfs(
-        documents, controller.signal, setPreflightMessage, readingBudget, pageTurns,
+        documents,
+        controller.signal,
+        setPreflightMessage,
+        readingBudget,
+        pageTurns,
       );
       // First show a whole-sheet orientation/context view. This preview is
       // local only; the unchanged original PDF already goes to analysis.
-      const overviews: {source:string;label:string;page:number}[]=[];
-      for (const doc of documents.filter(d=>d.type==="application/pdf").slice(0,3)) {
-        const task=await loadPdfSource(doc.data);
+      const overviews: { source: string; label: string; page: number }[] = [];
+      for (const doc of documents
+        .filter((d) => d.type === "application/pdf")
+        .slice(0, 3)) {
+        const task = await loadPdfSource(doc.data);
         try {
-          const pdf=await task.promise;
-          for(let pageNumber=1;pageNumber<=Math.min(pdf.numPages,3);pageNumber++){
-            const page=await pdf.getPage(pageNumber);
-            const rotation=normalizeRotation(page.rotate+(pageTurns[doc.id]?.[pageNumber]??0));
-            const sheet=page.getViewport({scale:1,rotation});
-            const viewport=page.getViewport({
-              scale:Math.min(1.6,1400/Math.max(sheet.width,sheet.height)),
+          const pdf = await task.promise;
+          for (
+            let pageNumber = 1;
+            pageNumber <= Math.min(pdf.numPages, 3);
+            pageNumber++
+          ) {
+            const page = await pdf.getPage(pageNumber);
+            const rotation = normalizeRotation(
+              page.rotate + (pageTurns[doc.id]?.[pageNumber] ?? 0),
+            );
+            const sheet = page.getViewport({ scale: 1, rotation });
+            const viewport = page.getViewport({
+              scale: Math.min(1.6, 1400 / Math.max(sheet.width, sheet.height)),
               rotation,
             });
-            const canvas=document.createElement("canvas");
-            canvas.width=Math.max(1,Math.round(viewport.width));
-            canvas.height=Math.max(1,Math.round(viewport.height));
-            try{
-              const context=canvas.getContext("2d");
-              if(!context)throw new Error("Cannot render whole-sheet overview.");
-              await page.render({canvas,canvasContext:context,viewport}).promise;
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(viewport.width));
+            canvas.height = Math.max(1, Math.round(viewport.height));
+            try {
+              const context = canvas.getContext("2d");
+              if (!context)
+                throw new Error("Cannot render whole-sheet overview.");
+              await page.render({ canvas, canvasContext: context, viewport })
+                .promise;
               overviews.push({
-                source:canvas.toDataURL("image/jpeg",0.82),
-                label:doc.name+" — whole sheet, orientation check (preview only)",
-                page:pageNumber,
+                source: canvas.toDataURL("image/jpeg", 0.82),
+                label:
+                  doc.name + " — whole sheet, orientation check (preview only)",
+                page: pageNumber,
               });
-            }finally{
-              canvas.width=0;canvas.height=0;
+            } finally {
+              canvas.width = 0;
+              canvas.height = 0;
               page.cleanup();
             }
           }
-        }finally{await task.destroy();}
+        } finally {
+          await task.destroy();
+        }
       }
       setOverviewImages(overviews);
-      const images = result.reviewViews.map(v => ({
+      const images = result.reviewViews.map((v) => ({
         source: v.region.data,
         label: v.region.label || "Automatic drawing detail",
         page: v.region.page,
       }));
       setPreflightImages(images);
-      setPreflightMessage(images.length
-        ? `Prepared ${images.length} automatic 250 DPI drawing detail(s), without paid AI. The original plan is included separately in analysis. Review is still needed before ordering materials.`
-        : "No high-resolution drawing details could be prepared automatically. Do not run paid analysis yet; inspect source PDF quality or preparation errors.");
-    } catch(e) {
-      setPreflightMessage("Free drawing preparation failed: " + (e as Error).message);
+      setPreflightMessage(
+        images.length
+          ? `Prepared ${images.length} automatic 250 DPI drawing detail(s), without paid AI. The original plan is included separately in analysis. Review is still needed before ordering materials.`
+          : "No high-resolution drawing details could be prepared automatically. Do not run paid analysis yet; inspect source PDF quality or preparation errors.",
+      );
+    } catch (e) {
+      setPreflightMessage(
+        "Free drawing preparation failed: " + (e as Error).message,
+      );
     } finally {
       setPreflightBusy(false);
     }
@@ -344,33 +393,42 @@ export default function PlansTakeoff({
 
   async function rotateAllDrawingPages(clockwise: 90 | -90) {
     if (preflightBusy || locked) return;
-    const pdfDocs = selectedDocuments.filter(d => d.type === "application/pdf");
+    const pdfDocs = selectedDocuments.filter(
+      (d) => d.type === "application/pdf",
+    );
     if (!pdfDocs.length) return;
     setPreflightBusy(true);
     try {
-      const revised: PdfOrientations = {...orientations};
+      const revised: PdfOrientations = { ...orientations };
       for (const doc of pdfDocs) {
         const task = await loadPdfSource(doc.data);
         try {
           const pdf = await task.promise;
-          const previousPages = orientations[doc.id]?.source === doc.data
-            ? orientations[doc.id].pages : {};
-          const pages = {...previousPages};
+          const previousPages =
+            orientations[doc.id]?.source === doc.data
+              ? orientations[doc.id].pages
+              : {};
+          const pages = { ...previousPages };
           for (let page = 1; page <= pdf.numPages; page++) {
             pages[page] = normalizeRotation((pages[page] ?? 0) + clockwise);
           }
-          revised[doc.id] = {source:doc.data,pages};
+          revised[doc.id] = { source: doc.data, pages };
         } finally {
           await task.destroy();
         }
       }
       setOrientations(revised);
-      try { savePdfOrientations(q.id,q.documents,revised); }
-      catch { /* preview still works in private browsing */ }
+      try {
+        savePdfOrientations(q.id, q.documents, revised);
+      } catch {
+        /* preview still works in private browsing */
+      }
       setPreflightImages([]);
-      setPreflightMessage("Rotation applied. Rebuilding drawing previews locally…");
+      setPreflightMessage(
+        "Rotation applied. Rebuilding drawing previews locally…",
+      );
       await checkAutomaticDrawingDetails(revised);
-    } catch(e) {
+    } catch (e) {
       setPreflightMessage("Rotation failed: " + (e as Error).message);
     } finally {
       setPreflightBusy(false);
@@ -406,19 +464,20 @@ export default function PlansTakeoff({
   );
   async function analyze(recoverOnly = false) {
     if (
-      (validDetails.some(
-        (v) =>
-          v.automatic &&
-          !excludedDocuments.includes(v.documentId) &&
-          !excludedDetails.includes(v.id),
-      ) &&
+      (!recoverOnly &&
+        validDetails.some(
+          (v) =>
+            v.automatic &&
+            !excludedDocuments.includes(v.documentId) &&
+            !excludedDetails.includes(v.id),
+        ) &&
         (!detailsInspected || !allPreviewsReady)) ||
-      emptyDetailPackage ||
+      (!recoverOnly && emptyDetailPackage) ||
       request.current ||
       locked ||
       detailProcessing ||
-      !packageReady ||
-      analysisPackage.error ||
+      (!recoverOnly && !packageReady) ||
+      (!recoverOnly && analysisPackage?.error) ||
       (interrupted && !recoverOnly)
     )
       return;
@@ -427,12 +486,23 @@ export default function PlansTakeoff({
     setAnalysisError("");
     setReviewError("");
     setInputNotes([]);
-    setAnalysisState(recoverOnly ? "Uploading/preparing" : "Uploading/preparing");
+    setAnalysisState(
+      recoverOnly ? "Uploading/preparing" : "Uploading/preparing",
+    );
     let attemptFingerprint = "";
     try {
-      const documents = structuredClone(analysisPackage.documents);
-      assertDetailInclusion(selectedDocuments, documents);
-      analysisBatches(documents);
+      const documents: AnalysisDocument[] = recoverOnly
+        ? selectedDocuments.map(({ id, name, type, data }) => ({
+            id,
+            name,
+            type,
+            data,
+          }))
+        : structuredClone(analysisPackage!.documents);
+      if (!recoverOnly) {
+        assertDetailInclusion(selectedDocuments, documents);
+        analysisBatches(documents);
+      }
       const sourceFingerprint = await documentFingerprint(documents);
       const pageTurns = Object.fromEntries(
         documents.map((d) => [
@@ -454,19 +524,24 @@ export default function PlansTakeoff({
         latest.current.analysisReports?.some(
           (report) => report.fingerprint === fingerprint,
         )
-      )
-        throw new Error(
-          "These plans have already been analyzed. Review the existing proposed items.",
-        );
-      const originalText = await preparePlanAnalysis(
-        documents.map((d) => {
-          const copy = { ...d };
-          delete copy.detailRegions;
-          return copy;
-        }),
-        controller.signal,
-      );
-      const textWithSelectedDetails = originalText.map((d) => ({
+      ) {
+        setAnalysisState("Saved analysis already available");
+        setInputNotes([
+          "These plans already have a saved analysis in this quote. Review the existing proposed items; no AI request was made.",
+        ]);
+        return;
+      }
+      let originalText = recoverOnly
+        ? documents
+        : await preparePlanAnalysis(
+            documents.map((d) => {
+              const copy = { ...d };
+              delete copy.detailRegions;
+              return copy;
+            }),
+            controller.signal,
+          );
+      let textWithSelectedDetails = originalText.map((d) => ({
         ...d,
         ...(documents.find((s) => s.id === d.id)?.detailRegions
           ? {
@@ -475,29 +550,69 @@ export default function PlansTakeoff({
             }
           : {}),
       }));
-      const automatic = originalOnlyConfirmed
-        ? { documents: textWithSelectedDetails, notes: [], reviewViews: [] }
-        : await supplementWholePdfs(
-            textWithSelectedDetails,
+      let recoveredResult:
+        import("../shared/analysis").PlanAnalysisResult | undefined;
+      let recoveryFailure: RecoveryFailure | undefined;
+      if (recoverOnly) {
+        setAnalysisState("Recovering saved analysis");
+        try {
+          recoveredResult = await recoverSavedAnalysis(
+            originalText,
+            q.id,
             controller.signal,
-            (message) => setInputNotes([message]),
-            readingBudget,
-            pageTurns,
           );
+        } catch (e) {
+          if (
+            e instanceof RecoveryFailure &&
+            [
+              "missing",
+              "storage-unavailable",
+              "service-unavailable",
+              "failed",
+              "interrupted",
+            ].includes(e.state)
+          )
+            recoveryFailure = e;
+          else throw e;
+        }
+      }
+      if (recoverOnly && !recoveredResult) {
+        originalText = await preparePlanAnalysis(documents, controller.signal);
+        textWithSelectedDetails = originalText;
+      }
+      const automatic = recoveredResult
+        ? {
+            documents: textWithSelectedDetails,
+            notes: [
+              "Recovered confirmed completed server results. No paid AI request was made.",
+              `Analysis reference: ${analysisTransport(recoveredResult).analysisId ?? "available in server storage"}`,
+            ],
+            reviewViews: [],
+          }
+        : originalOnlyConfirmed
+          ? { documents: textWithSelectedDetails, notes: [], reviewViews: [] }
+          : await supplementWholePdfs(
+              textWithSelectedDetails,
+              controller.signal,
+              (message) => setInputNotes([message]),
+              readingBudget,
+              pageTurns,
+            );
       const prepared = automatic.documents;
       // Prevent another paid request when an image-only PDF has no readable
       // detail images. The unchanged original is still retained in the quote.
-      const unreadableImageOnly = prepared.filter(d =>
-        d.type === "application/pdf" &&
-        d.pdfText?.pages.length &&
-        d.pdfText.pages.every(page => !page.text.trim()) &&
-        !(d.detailRegions?.length)
+      const unreadableImageOnly = prepared.filter(
+        (d) =>
+          d.type === "application/pdf" &&
+          d.pdfText?.pages.length &&
+          d.pdfText.pages.every((page) => !page.text.trim()) &&
+          !d.detailRegions?.length,
       );
-      if (unreadableImageOnly.length) {
+      if (!recoverOnly && unreadableImageOnly.length) {
         throw new Error(
           "No selectable text or detail images are available for: " +
-          unreadableImageOnly.map(d => d.name).join(", ") +
-          ". No AI request was made. Review the PDF detail preparation or add readable detail views before analyzing."
+            unreadableImageOnly.map((d) => d.name).join(", ") +
+            ". No AI request was made. Review the PDF detail preparation or add readable detail views before analyzing.",
         );
       }
       // Explicit selections remain intact. Automatic supplements are temporary and
@@ -547,13 +662,25 @@ export default function PlansTakeoff({
             return notes;
           }),
       ]);
+      if (!recoverOnly && !onPersistAnalysis(latest.current, "source")) {
+        setAnalysisState("Analysis not started — quote not saved");
+        setAnalysisError(
+          "The quote and original drawing could not be saved in this browser. No AI request was made. Free browser storage and save the quote before analyzing.",
+        );
+        return;
+      }
       // The marker is only written just before a potentially paid request.
       // No file bytes, personal details or AI output are stored in it.
       if (!recoverOnly) {
-        try { window.localStorage.setItem(pendingKey, String(Date.now())); }
-        catch { /* private browser storage may be disabled */ }
+        try {
+          window.localStorage.setItem(pendingKey, String(Date.now()));
+        } catch {
+          /* private browser storage may be disabled */
+        }
       }
-      setAnalysisState(recoverOnly ? "Recovering saved analysis" : "Analyzing plans");
+      setAnalysisState(
+        recoverOnly ? "Recovering saved analysis" : "Analyzing plans",
+      );
       if (completedBatches.current?.fingerprint !== fingerprint)
         completedBatches.current = {
           quoteId: q.id,
@@ -568,13 +695,40 @@ export default function PlansTakeoff({
           "Resuming completed batches from this browser session for the exact same submitted sources. Only unfinished batches contact the provider again.",
         ]);
       let submittedDetails = 0;
+      let reusedServerResults = false;
       const submittedImages: SubmittedImage[] = [];
       const hashes = new Map(
         await Promise.all(
           prepared.map(async (d) => [d.id, await sourceHash(d.data)] as const),
         ),
       );
-      const rememberSubmitted = (docs: AnalysisDocument[]) => {
+      const rememberSubmitted = (
+        docs: AnalysisDocument[],
+        _reused?: boolean,
+        storage?: AnalysisTransport,
+      ) => {
+        if (storage)
+          setInputNotes((notes) => [
+            ...notes,
+            ...(storage.analysisId &&
+            !notes.some(
+              (n) => n === `Analysis reference: ${storage.analysisId}`,
+            )
+              ? [`Analysis reference: ${storage.analysisId}`]
+              : []),
+            storage.warning ??
+              (storage.persistence === "confirmed"
+                ? "Completed batch persistence confirmed by server storage."
+                : "Server persistence was not confirmed for this batch. Keep this tab open and save the quote; recovery will not send a paid request."),
+          ]);
+        if (storage?.reused) {
+          reusedServerResults = true;
+          setInputNotes((notes) => [
+            ...notes,
+            "A saved server batch was reused free. Current reading images were not re-analyzed; original evidence references are retained.",
+          ]);
+          return;
+        }
         submittedDetails += analysisPackageSize(docs).detailCount;
         for (const d of docs)
           for (const region of d.detailRegions ?? []) {
@@ -621,28 +775,28 @@ export default function PlansTakeoff({
           `Submitted detail views: ${submittedDetails} of ${analysisPackageSize(prepared).detailCount}. Original files included in every request.`,
         ]);
       };
-      const result = await analyzeBatches(
-        prepared,
-        controller.signal,
-        (docs, signal) => {
-          if (recoverOnly)
-            throw new Error(
-              "Not all completed analysis batches were saved in this browser. " +
-              "No paid AI request was made. An in-flight analysis interrupted by a refresh cannot be recovered from local checkpoints."
-            );
-          return planAnalysisService.analyze(docs, signal);
-        },
-        (number, total) =>
-          setInputNotes((notes) => [
-            ...notes.filter((n) => !n.startsWith("Analyzing batch")),
-            recoverOnly
-              ? `Checking saved batch ${number} of ${total} without paid AI.`
-              : `Analyzing batch ${number} of ${total}. Original PDFs accompany every batch; nothing is added until all succeed.`,
-          ]),
-        batchCache,
-        rememberSubmitted,
-        q.id,
-      );
+      const result =
+        recoveredResult ??
+        (await analyzeBatches(
+          prepared,
+          controller.signal,
+          (docs, signal, analysis) => {
+            if (recoverOnly)
+              throw recoveryFailure ?? new RecoveryFailure("missing");
+            return planAnalysisService.analyze(docs, signal, analysis);
+          },
+          (number, total) =>
+            setInputNotes((notes) => [
+              ...notes.filter((n) => !n.startsWith("Analyzing batch")),
+              recoverOnly
+                ? `Checking saved batch ${number} of ${total} without paid AI.`
+                : `Analyzing batch ${number} of ${total}. Original PDFs accompany every batch; nothing is added until all succeed.`,
+            ]),
+          batchCache,
+          rememberSubmitted,
+          q.id,
+          { quoteId: q.id, fingerprint, recoverOnly },
+        ));
       controller.signal.throwIfAborted();
       if (
         (await documentFingerprint(
@@ -695,24 +849,31 @@ export default function PlansTakeoff({
       const report = next.analysisReports!.at(-1)!;
       report.aiDetails = {
         submittedCount: submittedImages.length,
-        retentionMessage: retained
-          ? "Saved privately on this device. Images are not included in quote exports or customer PDFs."
-          : "Images are available for this session only. Browser image storage is full or unavailable; existing quote data was not replaced. Reopening may not retain these images.",
+        retentionMessage:
+          recoveredResult || (reusedServerResults && !submittedImages.length)
+            ? "Recovered structured results. Submitted images are not stored in server recovery; the original PDF remains attached."
+            : retained
+              ? "Saved privately on this device. Images are not included in quote exports or customer PDFs."
+              : "Images are available for this session only. Browser image storage is full or unavailable; existing quote data was not replaced. Reopening may not retain these images.",
       };
       // A paid analysis must not be reported as saved merely because React
       // updated the editor. Persist the complete takeoff and report synchronously.
       const saved = onPersistAnalysis(next);
       onChange(next);
       if (saved) {
-        try { window.localStorage.removeItem(pendingKey); } catch { /* optional */ }
+        try {
+          window.localStorage.removeItem(pendingKey);
+        } catch {
+          /* optional */
+        }
         setInterrupted(false);
       }
       if (!saved) {
         setAnalysisState("Analysis complete — NOT saved");
         setAnalysisError(
           "Analysis completed, but the quote could not be saved on this device. " +
-          "Keep this tab open. Free browser storage and use Save before closing. " +
-          "Do not pay to analyze the same plans again."
+            "Keep this tab open. Free browser storage and use Save before closing. " +
+            "Do not pay to analyze the same plans again.",
         );
         return;
       }
@@ -735,11 +896,21 @@ export default function PlansTakeoff({
       if (request.current === controller) {
         // A definite server rejection cannot have produced billable results.
         // Timeouts/interruptions remain uncertain and require acknowledgement.
-        if (!controller.signal.aborted &&
-            error instanceof AnalysisFailure &&
-            ["ANALYSIS_IN_PROGRESS", "ANALYSIS_COOLDOWN", "ANALYSIS_DAILY_LIMIT",
-             "ANALYSIS_TRACKING_UNAVAILABLE"].includes(error.code)) {
-          try { window.localStorage.removeItem(pendingKey); } catch { /* optional */ }
+        if (
+          !controller.signal.aborted &&
+          error instanceof AnalysisFailure &&
+          [
+            "ANALYSIS_IN_PROGRESS",
+            "ANALYSIS_COOLDOWN",
+            "ANALYSIS_DAILY_LIMIT",
+            "ANALYSIS_TRACKING_UNAVAILABLE",
+          ].includes(error.code)
+        ) {
+          try {
+            window.localStorage.removeItem(pendingKey);
+          } catch {
+            /* optional */
+          }
           setInterrupted(false);
         }
         const protectedRequest =
@@ -748,11 +919,22 @@ export default function PlansTakeoff({
         setAnalysisState(
           controller.signal.aborted
             ? "Analysis cancelled"
-            : protectedRequest
-              ? error.code === "ANALYSIS_IN_PROGRESS"
-                ? "Analysis already in progress"
-                : "Plans recently analyzed"
-              : "Analysis failed",
+            : error instanceof AnalysisFailure &&
+                [
+                  "ANALYSIS_CLIENT_CONNECTION",
+                  "ANALYSIS_CLIENT_TIMEOUT",
+                ].includes(error.code)
+              ? "Analysis response not received"
+              : error instanceof AnalysisFailure &&
+                  error.code === "ANALYSIS_RESULTS_UNAVAILABLE"
+                ? "Analysis not started — storage unavailable"
+                : error instanceof RecoveryFailure
+                  ? recoveryHeading(error)
+                  : protectedRequest
+                    ? error.code === "ANALYSIS_IN_PROGRESS"
+                      ? "Analysis already in progress"
+                      : "Plans recently analyzed"
+                    : "Analysis failed",
         );
         const message = controller.signal.aborted
           ? "Analysis cancelled. Existing estimates are unchanged."
@@ -955,9 +1137,27 @@ export default function PlansTakeoff({
       {simpleMode && (
         <section className="info" aria-label="Simple plan analysis">
           <h3>Upload your plans and let AI read them</h3>
-          <p>Upload once, then analyze once. Your saved drawings stay attached to the quote. We will show a preliminary budget next; uncertain quantities will be marked as allowances, not confirmed lumber orders.</p>
-          {q.analysisReports?.length ? <p><strong>Saved analysis available.</strong> You can review your preliminary estimate without paying for another analysis.</p> : null}
-          <button className="button secondary" type="button" onClick={() => setShowTechnical((value) => !value)}>{showTechnical ? "Hide technical details" : "Show technical details (optional)"}</button>
+          <p>
+            Upload once, then analyze once. Your saved drawings stay attached to
+            the quote. We will show a preliminary budget next; uncertain
+            quantities will be marked as allowances, not confirmed lumber
+            orders.
+          </p>
+          {q.analysisReports?.length ? (
+            <p>
+              <strong>Saved analysis available.</strong> You can review your
+              preliminary estimate without paying for another analysis.
+            </p>
+          ) : null}
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => setShowTechnical((value) => !value)}
+          >
+            {showTechnical
+              ? "Hide technical details"
+              : "Show technical details (optional)"}
+          </button>
         </section>
       )}
       <section
@@ -997,63 +1197,67 @@ export default function PlansTakeoff({
               >
                 {d.name}
               </button>
-              {!simplified && <label className="check-options">
-                <input
-                  type="checkbox"
-                  disabled={busy || locked}
-                  checked={!excludedDocuments.includes(d.id)}
-                  onChange={(e) => {
-                    setDetailsInspected(false);
-                    setOriginalOnlyConfirmed(false);
-                    setExcludedDocuments(
-                      e.target.checked
-                        ? excludedDocuments.filter((id) => id !== d.id)
-                        : [...excludedDocuments, d.id],
-                    );
-                  }}
-                />
-                Include in analysis
-              </label>}
-              {!simplified && <fieldset disabled={locked || uploading || busy}>
-                <label className="replace-document">
-                  Replace
+              {!simplified && (
+                <label className="check-options">
                   <input
-                    aria-label={`Replace ${d.name}`}
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    type="checkbox"
+                    disabled={busy || locked}
+                    checked={!excludedDocuments.includes(d.id)}
                     onChange={(e) => {
-                      void attach(e.target.files, d.id);
-                      e.target.value = "";
+                      setDetailsInspected(false);
+                      setOriginalOnlyConfirmed(false);
+                      setExcludedDocuments(
+                        e.target.checked
+                          ? excludedDocuments.filter((id) => id !== d.id)
+                          : [...excludedDocuments, d.id],
+                      );
                     }}
                   />
+                  Include in analysis
                 </label>
-                <button
-                  className="icon danger"
-                  aria-label={`Remove document ${d.name}`}
-                  onClick={() => {
-                    onChange({
-                      ...q,
-                      documents: q.documents.filter((x) => x.id !== d.id),
-                      takeoff: q.takeoff.map((t) =>
-                        t.documentId === d.id
-                          ? {
-                              ...t,
-                              status: "Proposed",
-                              confidence: "Unspecified",
-                              reviewAcknowledged: false,
-                              scopeVerified: false,
-                              conflictsVerified: false,
-                              sourceDetailView: null,
-                            }
-                          : t,
-                      ),
-                    });
-                    setSelected(null);
-                  }}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </fieldset>}
+              )}
+              {!simplified && (
+                <fieldset disabled={locked || uploading || busy}>
+                  <label className="replace-document">
+                    Replace
+                    <input
+                      aria-label={`Replace ${d.name}`}
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        void attach(e.target.files, d.id);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <button
+                    className="icon danger"
+                    aria-label={`Remove document ${d.name}`}
+                    onClick={() => {
+                      onChange({
+                        ...q,
+                        documents: q.documents.filter((x) => x.id !== d.id),
+                        takeoff: q.takeoff.map((t) =>
+                          t.documentId === d.id
+                            ? {
+                                ...t,
+                                status: "Proposed",
+                                confidence: "Unspecified",
+                                reviewAcknowledged: false,
+                                scopeVerified: false,
+                                conflictsVerified: false,
+                                sourceDetailView: null,
+                              }
+                            : t,
+                        ),
+                      });
+                      setSelected(null);
+                    }}
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </fieldset>
+              )}
             </div>
           ))}
         </div>
@@ -1132,7 +1336,9 @@ export default function PlansTakeoff({
       </section>
       <div className="info">
         <b>
-          {simplified ? "1 Upload → 2 AI analysis → 3 Review estimate → 4 Customer quote" : "1 Upload → 2 Analyze → 3 Review → 4 Approve → 5 Convert to Estimate"}
+          {simplified
+            ? "1 Upload → 2 AI analysis → 3 Review estimate → 4 Customer quote"
+            : "1 Upload → 2 Analyze → 3 Review → 4 Approve → 5 Convert to Estimate"}
         </b>
         <p>
           AI-assisted takeoff for estimating purposes only. Verify dimensions,
@@ -1162,42 +1368,77 @@ export default function PlansTakeoff({
             cancellation adds no partial takeoff.
           </p>
         )}
-      {q.documents.some(d=>d.type==="application/pdf" && !excludedDocuments.includes(d.id)) && (
+      {q.documents.some(
+        (d) =>
+          d.type === "application/pdf" && !excludedDocuments.includes(d.id),
+      ) && (
         <div className="info">
-          <p><strong>Automatic drawing detail check</strong></p>
-          <p>The app finds occupied drawing areas and prepares close-ups itself. You do not need to zoom or select regions. This check runs locally and does not charge for AI.</p>
-          <button type="button" className="button secondary"
+          <p>
+            <strong>Automatic drawing detail check</strong>
+          </p>
+          <p>
+            The app finds occupied drawing areas and prepares close-ups itself.
+            You do not need to zoom or select regions. This check runs locally
+            and does not charge for AI.
+          </p>
+          <button
+            type="button"
+            className="button secondary"
             disabled={preflightBusy || busy || detailProcessing}
-            onClick={() => void checkAutomaticDrawingDetails()}>
-            {preflightBusy ? "Preparing drawing automatically…" : "Check automatic drawing details — free"}
+            onClick={() => void checkAutomaticDrawingDetails()}
+          >
+            {preflightBusy
+              ? "Preparing drawing automatically…"
+              : "Check automatic drawing details — free"}
           </button>
           <div className="heading-actions">
-            <button type="button" className="button secondary"
+            <button
+              type="button"
+              className="button secondary"
               disabled={preflightBusy || busy}
-              onClick={() => void rotateAllDrawingPages(-90)}>
+              onClick={() => void rotateAllDrawingPages(-90)}
+            >
               Rotate all drawing pages left
             </button>
-            <button type="button" className="button secondary"
+            <button
+              type="button"
+              className="button secondary"
               disabled={preflightBusy || busy}
-              onClick={() => void rotateAllDrawingPages(90)}>
+              onClick={() => void rotateAllDrawingPages(90)}
+            >
               Rotate all drawing pages right
             </button>
           </div>
           <p className="tiny">
-            Only use rotation if the automatic views are sideways or upside down.
-            One rotation updates every PDF page and all future automatic detail preparation.
-            The original PDF stays unchanged. Orientation is not guessed from unreliable OCR.
+            Only use rotation if the automatic views are sideways or upside
+            down. One rotation updates every PDF page and all future automatic
+            detail preparation. The original PDF stays unchanged. Orientation is
+            not guessed from unreliable OCR.
           </p>
           {preflightMessage && <p role="status">{preflightMessage}</p>}
           {overviewImages.length > 0 && (
             <div>
               <strong>Complete drawing — context and orientation</strong>
-              <p className="muted">These whole-sheet previews show the full layout. The smaller 250 DPI images below are for reading details. The original PDF remains unchanged.</p>
-              <div className="grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
-                {overviewImages.map((view,index)=>(
+              <p className="muted">
+                These whole-sheet previews show the full layout. The smaller 250
+                DPI images below are for reading details. The original PDF
+                remains unchanged.
+              </p>
+              <div
+                className="grid"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+                  gap: 12,
+                }}
+              >
+                {overviewImages.map((view, index) => (
                   <div key={index}>
-                    <img src={view.source} alt={view.label}
-                      style={{width:"100%",height:"auto"}} />
+                    <img
+                      src={view.source}
+                      alt={view.label}
+                      style={{ width: "100%", height: "auto" }}
+                    />
                     <small>{view.label}</small>
                   </div>
                 ))}
@@ -1205,12 +1446,24 @@ export default function PlansTakeoff({
             </div>
           )}
           {preflightImages.length > 0 && (
-            <div className="grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
-              {preflightImages.slice(0,6).map((view,index)=>(
+            <div
+              className="grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+                gap: 12,
+              }}
+            >
+              {preflightImages.slice(0, 6).map((view, index) => (
                 <div key={index}>
-                  <img src={view.source} alt={view.label+" on page "+view.page}
-                    style={{width:"100%",height:"auto"}} />
-                  <small>Page {view.page}: {view.label}</small>
+                  <img
+                    src={view.source}
+                    alt={view.label + " on page " + view.page}
+                    style={{ width: "100%", height: "auto" }}
+                  />
+                  <small>
+                    Page {view.page}: {view.label}
+                  </small>
                 </div>
               ))}
             </div>
@@ -1220,14 +1473,25 @@ export default function PlansTakeoff({
       {interrupted && !busy && (
         <div className="margin-warning" role="alert">
           <strong>Previous AI request may have been interrupted.</strong>
-          <p>The app cannot confirm that an unfinished server request completed after a refresh.
-          Completed batches that reached this browser can be reused, but an in-flight result
-          cannot be recovered here. No new paid request will be sent until you acknowledge this warning.</p>
-          <button type="button" className="button secondary"
+          <p>
+            Use the free recovery check first. Completed server batches can be
+            retrieved after a refresh; a request still running will not be sent
+            again by recovery. Missing, interrupted and unavailable-storage
+            results are reported separately. No new paid request will be sent
+            until you explicitly allow it.
+          </p>
+          <button
+            type="button"
+            className="button secondary"
             onClick={() => {
-              try { window.localStorage.removeItem(pendingKey); } catch { /* optional */ }
+              try {
+                window.localStorage.removeItem(pendingKey);
+              } catch {
+                /* optional */
+              }
               setInterrupted(false);
-            }}>
+            }}
+          >
             I understand — allow a new analysis request
           </button>
         </div>
@@ -1255,11 +1519,18 @@ export default function PlansTakeoff({
           }
           onClick={() => void analyze()}
         >
-          {simplified ? (q.analysisReports?.length ? "Analyze again (new AI request)" : "Analyze plans with AI") : "Analyze Plans"}
+          {simplified
+            ? q.analysisReports?.length
+              ? "Analyze again (new AI request)"
+              : "Analyze plans with AI"
+            : "Analyze Plans"}
         </button>
         {!busy && !locked && q.documents.length > 0 && (
-          <button type="button" className="button secondary"
-            onClick={() => void analyze(true)}>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => void analyze(true)}
+          >
             Check for saved AI results — free
           </button>
         )}
@@ -1403,13 +1674,14 @@ export default function PlansTakeoff({
         {uploading ? "Uploading/preparing" : analysisState}
       </p>
       {busy && <progress aria-label="Plan analysis progress" />}
-      {!simplified && inputNotes
-        .filter((n) => n.startsWith("Submitted detail views:"))
-        .map((n) => (
-          <p role="status" key={n}>
-            Last analysis run: {n}
-          </p>
-        ))}
+      {!simplified &&
+        inputNotes
+          .filter((n) => n.startsWith("Submitted detail views:"))
+          .map((n) => (
+            <p role="status" key={n}>
+              Last analysis run: {n}
+            </p>
+          ))}
       {!simplified && !!inputNotes.length && (
         <details className="analysis-report">
           <summary>Analysis source quality</summary>
@@ -1426,571 +1698,610 @@ export default function PlansTakeoff({
         </p>
       )}
       {simplified ? (
-        <section className="panel" ref={summaryRef} aria-label="Next step: estimate">
-          <h3>{q.analysisReports?.length ? "Your plan analysis is saved" : "Your next step"}</h3>
-          <p>{q.analysisReports?.length ? "The AI has captured drawing information. Quantities that cannot be safely measured are still uncertain. Open the simple estimate to generate or review editable cost allowances." : "After analyzing the plans, continue to one editable preliminary estimate."}</p>
-          <button type="button" className="button" onClick={onViewEstimate}>Continue to estimate</button>
-          <p className="tiny">Preliminary budget allowances are not supplier quotes, verified cut lists, structural approval, or confirmed site costs.</p>
+        <section
+          className="panel"
+          ref={summaryRef}
+          aria-label="Next step: estimate"
+        >
+          <h3>
+            {q.analysisReports?.length
+              ? "Your plan analysis is saved"
+              : "Your next step"}
+          </h3>
+          <p>
+            {q.analysisReports?.length
+              ? "The AI has captured drawing information. Quantities that cannot be safely measured are still uncertain. Open the simple estimate to generate or review editable cost allowances."
+              : "After analyzing the plans, continue to one editable preliminary estimate."}
+          </p>
+          <button type="button" className="button" onClick={onViewEstimate}>
+            Continue to estimate
+          </button>
+          <p className="tiny">
+            Preliminary budget allowances are not supplier quotes, verified cut
+            lists, structural approval, or confirmed site costs.
+          </p>
         </section>
       ) : (
-      <>
-      {!!q.analysisReports?.length && (
-        <details className="analysis-export">
-          <summary>Export saved takeoff analysis</summary>
-          <p>
-            Private troubleshooting file with drawing evidence, extracted
-            measurements, calculated proposals and unresolved inputs. No
-            original PDFs, images, customer contact details or prices are
-            included. Evidence can contain private drawing text; keep this file
-            private.
-          </p>
-          <button type="button" onClick={() => downloadTakeoffAnalysis(q)}>
-            Download private analysis JSON
-          </button>
-        </details>
-      )}
-      {(q.analysisReports ?? []).map((report) => (
-        <details key={report.id} className="analysis-report" open>
-          <summary>
-            Plan summary · {new Date(report.createdAt).toLocaleDateString()}
-          </summary>
-          {report.aiDetails && (
-            <details className="submitted-ai-details">
-              <summary>Advanced AI Details · submitted regions</summary>
-              <SubmittedImageGallery
-                quoteId={q.id}
-                reportId={report.id}
-                count={report.aiDetails.submittedCount}
-                message={report.aiDetails.retentionMessage}
-                documents={q.documents}
-                locked={locked || busy}
-                onSupplement={(documentId, region, companions) => {
-                  const original = q.documents.find((d) => d.id === documentId);
-                  if (!original) return;
-                  if (
-                    validDetails.filter((v) => v.documentId !== documentId)
-                      .length +
-                      companions.length +
-                      1 >
-                    maxDetailRegions
-                  ) {
-                    setAnalysisError(
-                      "Remove a prepared detail before adding another (24 total limit).",
-                    );
-                    return;
-                  }
-                  setDetailViews((previous) => [
-                    ...previous.filter((v) => v.documentId !== documentId),
-                    ...companions.map((region) => ({
-                      id: id(),
-                      documentId,
-                      originalData: original.data,
-                      region,
-                      automatic: true,
-                    })),
-                    {
-                      id: id(),
-                      documentId,
-                      originalData: original.data,
-                      region,
-                    },
-                  ]);
-                  setDetailsInspected(false);
-                  setOriginalOnlyConfirmed(false);
-                  setExcludedDocuments((ids) =>
-                    ids.filter((i) => i !== documentId),
-                  );
-                  setInputNotes([
-                    "Corrected view prepared for a future analysis. Review the manual detail and explicitly choose Analyze Plans; prior images and approvals remain unchanged.",
-                  ]);
-                }}
-              />
+        <>
+          {!!q.analysisReports?.length && (
+            <details className="analysis-export">
+              <summary>Export saved takeoff analysis</summary>
+              <p>
+                Private troubleshooting file with drawing evidence, extracted
+                measurements, calculated proposals and unresolved inputs. No
+                original PDFs, images, customer contact details or prices are
+                included. Evidence can contain private drawing text; keep this
+                file private.
+              </p>
+              <button type="button" onClick={() => downloadTakeoffAnalysis(q)}>
+                Download private analysis JSON
+              </button>
             </details>
           )}
-          {report.project && (
-            <>
-              <p>
-                <b>
-                  {report.project.projectType} · {report.project.drawingTitle}
-                </b>
-              </p>
-              <p>{report.project.description}</p>
-              <p className="tiny">
-                Drawing sheets analyzed:{" "}
-                {report.project.drawingNumbers.join(", ") ||
-                  "Sheet labels not readable"}
-              </p>
-              {!!report.sourceDocuments?.length && (
-                <p className="tiny">
-                  Sources:{" "}
-                  {report.sourceDocuments.map((d) => d.name).join(", ")}
-                </p>
+          {(q.analysisReports ?? []).map((report) => (
+            <details key={report.id} className="analysis-report" open>
+              <summary>
+                Plan summary · {new Date(report.createdAt).toLocaleDateString()}
+              </summary>
+              {report.aiDetails && (
+                <details className="submitted-ai-details">
+                  <summary>Advanced AI Details · submitted regions</summary>
+                  <SubmittedImageGallery
+                    quoteId={q.id}
+                    reportId={report.id}
+                    count={report.aiDetails.submittedCount}
+                    message={report.aiDetails.retentionMessage}
+                    documents={q.documents}
+                    locked={locked || busy}
+                    onSupplement={(documentId, region, companions) => {
+                      const original = q.documents.find(
+                        (d) => d.id === documentId,
+                      );
+                      if (!original) return;
+                      if (
+                        validDetails.filter((v) => v.documentId !== documentId)
+                          .length +
+                          companions.length +
+                          1 >
+                        maxDetailRegions
+                      ) {
+                        setAnalysisError(
+                          "Remove a prepared detail before adding another (24 total limit).",
+                        );
+                        return;
+                      }
+                      setDetailViews((previous) => [
+                        ...previous.filter((v) => v.documentId !== documentId),
+                        ...companions.map((region) => ({
+                          id: id(),
+                          documentId,
+                          originalData: original.data,
+                          region,
+                          automatic: true,
+                        })),
+                        {
+                          id: id(),
+                          documentId,
+                          originalData: original.data,
+                          region,
+                        },
+                      ]);
+                      setDetailsInspected(false);
+                      setOriginalOnlyConfirmed(false);
+                      setExcludedDocuments((ids) =>
+                        ids.filter((i) => i !== documentId),
+                      );
+                      setInputNotes([
+                        "Corrected view prepared for a future analysis. Review the manual detail and explicitly choose Analyze Plans; prior images and approvals remain unchanged.",
+                      ]);
+                    }}
+                  />
+                </details>
               )}
-            </>
-          )}
-          {report.summary && (
-            <div className="plan-summary-grid">
-              {(
-                [
-                  ["Major scope detected", report.summary.majorScope],
-                  [
-                    "Key readable specifications",
-                    report.summary.readableSpecifications,
-                  ],
-                  ["Major unknowns", report.summary.majorUnknowns],
-                  ["Site verification", report.summary.siteVerification],
-                ] as const
-              )
-                .filter(([, values]) => values.length)
-                .map(([label, values]) => (
-                  <section key={label}>
-                    <h3>{label}</h3>
-                    <ul>
-                      {values.slice(0, 6).map((text, i) => (
-                        <li key={i}>{text}</li>
-                      ))}
-                    </ul>
-                    {values.length > 6 && (
-                      <details>
-                        <summary>{values.length - 6} more</summary>
+              {report.project && (
+                <>
+                  <p>
+                    <b>
+                      {report.project.projectType} ·{" "}
+                      {report.project.drawingTitle}
+                    </b>
+                  </p>
+                  <p>{report.project.description}</p>
+                  <p className="tiny">
+                    Drawing sheets analyzed:{" "}
+                    {report.project.drawingNumbers.join(", ") ||
+                      "Sheet labels not readable"}
+                  </p>
+                  {!!report.sourceDocuments?.length && (
+                    <p className="tiny">
+                      Sources:{" "}
+                      {report.sourceDocuments.map((d) => d.name).join(", ")}
+                    </p>
+                  )}
+                </>
+              )}
+              {report.summary && (
+                <div className="plan-summary-grid">
+                  {(
+                    [
+                      ["Major scope detected", report.summary.majorScope],
+                      [
+                        "Key readable specifications",
+                        report.summary.readableSpecifications,
+                      ],
+                      ["Major unknowns", report.summary.majorUnknowns],
+                      ["Site verification", report.summary.siteVerification],
+                    ] as const
+                  )
+                    .filter(([, values]) => values.length)
+                    .map(([label, values]) => (
+                      <section key={label}>
+                        <h3>{label}</h3>
                         <ul>
-                          {values.slice(6).map((text, i) => (
+                          {values.slice(0, 6).map((text, i) => (
                             <li key={i}>{text}</li>
                           ))}
                         </ul>
-                      </details>
-                    )}
-                  </section>
-                ))}
-            </div>
-          )}
-          {!!report.duplicatesReduced && (
-            <p className="tiny">
-              {report.duplicatesReduced} overlapping suggestion(s) combined or
-              skipped. Existing reviewed/converted items were preserved.
-            </p>
-          )}
-          {(!!report.summary?.observations.length ||
-            !!report.sourceObservations?.length) && (
-            <details className="source-observations">
-              <summary>Source observations (not estimate lines)</summary>
-              <ul>
-                {report.sourceObservations?.map((observation, i) => (
-                  <li key={`source-${i}`}>
-                    <b>{observation.description}</b>:{" "}
-                    {observation.quantity ?? "Quantity not established"}{" "}
-                    {observation.unit}
-                    {observation.specification && (
-                      <p>{observation.specification}</p>
-                    )}
-                    <p className="tiny">
-                      {observation.classification} · {observation.confidence}{" "}
-                      source confidence ·{" "}
-                      {report.sourceDocuments?.find(
-                        (d) => d.id === observation.documentId,
-                      )?.name ??
-                        q.documents.find((d) => d.id === observation.documentId)
-                          ?.name ??
-                        "Removed source"}
-                      {observation.page ? ` — Page ${observation.page}` : ""}
-                      {observation.sourceDetailView
-                        ? ` · Detail view ${observation.sourceDetailView}`
-                        : ""}
-                      {observation.supportBasis &&
-                      observation.supportBasis !== "Not established"
-                        ? ` · ${observation.supportBasis}`
-                        : ""}
-                    </p>
-                    {!!observation.sourceFacts?.length && (
-                      <p className="tiny">
-                        {observation.sourceFacts.join("; ")}
-                      </p>
-                    )}
-                    {observation.calculationBasis && (
-                      <p className="tiny">{observation.calculationBasis}</p>
-                    )}
-                  </li>
-                ))}
-                {report.summary?.observations.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {!!report.dimensions?.length && (
-            <>
-              <h3>Key dimensions (information only)</h3>
-              {report.dimensions.map((dimension, i) => (
-                <p key={i}>
-                  <b>{dimension.description}</b>:{" "}
-                  {dimension.quantity ?? "Requires contractor input"}{" "}
-                  {dimension.unit} · {dimension.confidence} confidence ·{" "}
-                  {q.documents.find((d) => d.id === dimension.documentId)
-                    ?.name ?? "Removed source"}
-                  {dimension.page ? ` — Page ${dimension.page}` : ""}
-                  <small>{dimension.notes}</small>
-                </p>
-              ))}
-            </>
-          )}
-          {!!report.assumptions.length && (
-            <>
-              <h3>Assumptions</h3>
-              <ul>
-                {report.assumptions.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          {!!report.warnings.length && (
-            <div className="margin-warning">
-              <h3>Plan warnings / estimating notes</h3>
-              <ul>
-                {report.warnings.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </details>
-      ))}
-      <details className="analysis-report">
-        <summary>Advanced Settings</summary>
-        <label>
-          Automatic reading-image budget
-          <select
-            aria-label="Automatic reading-image budget"
-            disabled={busy || locked}
-            value={readingBudget}
-            onChange={(e) => setReadingBudget(Number(e.target.value))}
-          >
-            <option value={4}>4 — quicker / lower image cost</option>
-            <option value={8}>8 — balanced (default)</option>
-            <option value={12}>12 — more detail / higher image cost</option>
-          </select>
-        </label>
-        <p className="tiny">
-          This is a maximum, not a target. Useful regions only; the original PDF
-          is always included. Existing file/image limits may reduce this count.
-          More images may increase API cost and preparation time. Viewing saved
-          images is free of AI requests.
-        </p>
-      </details>
-      <p className="tiny">
-        Analyze Plans automatically prepares reading images (8 by default within
-        the size/cost budget). No separate detail-generation step is required.
-        Optional manual corrections can supplement a future analysis.
-      </p>
-      <details className="advanced-ai-details">
-        <summary>Advanced AI Details</summary>
-        <p className="tiny">
-          Optional troubleshooting and corrections. The original drawing remains
-          your workspace; automatic reading images supplement it, never
-          represent extra physical materials.
-        </p>
-        {current?.type === "application/pdf" && (
-          <details className="optional-detail-tools">
-            <summary>Optional: prepare additional detail views</summary>
-            <AutoDetailSelection
-              source={current}
-              rotations={
-                orientations[current.id]?.source === current.data
-                  ? orientations[current.id].pages
-                  : {}
-              }
-              existing={validDetails
-                .filter((v) => v.documentId === current.id)
-                .map((v) => v.region)}
-              remainingCapacity={maxDetailRegions - validDetails.length}
-              remainingAutomatic={Math.max(
-                0,
-                20 - validDetails.filter((v) => v.automatic).length,
+                        {values.length > 6 && (
+                          <details>
+                            <summary>{values.length - 6} more</summary>
+                            <ul>
+                              {values.slice(6).map((text, i) => (
+                                <li key={i}>{text}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                      </section>
+                    ))}
+                </div>
               )}
-              disabled={locked || busy || uploading || detailProcessing}
-              onBusy={setAutomaticRendering}
-              onAdd={(regions) => {
-                setDetailsInspected(false);
-                setOriginalOnlyConfirmed(false);
-                setExcludedDocuments((ids) =>
-                  ids.filter((id) => id !== current.id),
-                );
-                setDetailViews((previous) => [
-                  ...previous,
-                  ...regions.map((region) => ({
-                    id: id(),
-                    documentId: current.id,
-                    originalData: current.data,
-                    region,
-                    automatic: true,
-                  })),
-                ]);
-              }}
-            />
-          </details>
-        )}
-        {!!validDetails.length && (
-          <div className="pdf-detail-list">
-            <h3>Detail views included in analysis</h3>
-            <p className="tiny">
-              Temporary 250 DPI views rendered directly from the original PDF.
-              Up to 20 automatic / 24 total; each analysis request must fit 8
-              MB. Larger detail packages use bounded batches. Re-add views after
-              leaving this tab. Only views from selected source files are sent.
-            </p>
-            {validDetails.some((v) => v.automatic) && (
-              <label className="check-options">
-                <input
-                  type="checkbox"
-                  disabled={busy || detailProcessing || !allPreviewsReady}
-                  checked={detailsInspected && allPreviewsReady}
-                  onChange={(e) => setDetailsInspected(e.target.checked)}
-                />
-                I inspected all selected automatic detail views and their source
-                regions.
-              </label>
-            )}
-            <div className="detail-gallery-controls">
-              <label className="field">
-                <span>Review drawing details</span>
-                <select
-                  aria-label="Detail review group"
-                  value={
-                    detailGroups.includes(detailGroup) ||
-                    detailGroup === "Needs attention"
-                      ? detailGroup
-                      : "All details"
-                  }
-                  onChange={(e) => setDetailGroup(e.target.value)}
-                >
-                  <option>All details</option>
-                  <option value="Needs attention">
-                    Needs rotation / crop review ({attentionDetails.length})
-                  </option>
-                  {detailGroups.map((group) => (
-                    <option key={group}>{group}</option>
+              {!!report.duplicatesReduced && (
+                <p className="tiny">
+                  {report.duplicatesReduced} overlapping suggestion(s) combined
+                  or skipped. Existing reviewed/converted items were preserved.
+                </p>
+              )}
+              {(!!report.summary?.observations.length ||
+                !!report.sourceObservations?.length) && (
+                <details className="source-observations">
+                  <summary>Source observations (not estimate lines)</summary>
+                  <ul>
+                    {report.sourceObservations?.map((observation, i) => (
+                      <li key={`source-${i}`}>
+                        <b>{observation.description}</b>:{" "}
+                        {observation.quantity ?? "Quantity not established"}{" "}
+                        {observation.unit}
+                        {observation.specification && (
+                          <p>{observation.specification}</p>
+                        )}
+                        <p className="tiny">
+                          {observation.classification} ·{" "}
+                          {observation.confidence} source confidence ·{" "}
+                          {report.sourceDocuments?.find(
+                            (d) => d.id === observation.documentId,
+                          )?.name ??
+                            q.documents.find(
+                              (d) => d.id === observation.documentId,
+                            )?.name ??
+                            "Removed source"}
+                          {observation.page
+                            ? ` — Page ${observation.page}`
+                            : ""}
+                          {observation.sourceDetailView
+                            ? ` · Detail view ${observation.sourceDetailView}`
+                            : ""}
+                          {observation.supportBasis &&
+                          observation.supportBasis !== "Not established"
+                            ? ` · ${observation.supportBasis}`
+                            : ""}
+                        </p>
+                        {!!observation.sourceFacts?.length && (
+                          <p className="tiny">
+                            {observation.sourceFacts.join("; ")}
+                          </p>
+                        )}
+                        {observation.calculationBasis && (
+                          <p className="tiny">{observation.calculationBasis}</p>
+                        )}
+                      </li>
+                    ))}
+                    {report.summary?.observations.map((text, i) => (
+                      <li key={i}>{text}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {!!report.dimensions?.length && (
+                <>
+                  <h3>Key dimensions (information only)</h3>
+                  {report.dimensions.map((dimension, i) => (
+                    <p key={i}>
+                      <b>{dimension.description}</b>:{" "}
+                      {dimension.quantity ?? "Requires contractor input"}{" "}
+                      {dimension.unit} · {dimension.confidence} confidence ·{" "}
+                      {q.documents.find((d) => d.id === dimension.documentId)
+                        ?.name ?? "Removed source"}
+                      {dimension.page ? ` — Page ${dimension.page}` : ""}
+                      <small>{dimension.notes}</small>
+                    </p>
                   ))}
-                </select>
-              </label>
-              <p role="status">
-                {attentionDetails.length} views need rotation or crop attention.
-                Selecting a review group never changes which images are
-                submitted.
-              </p>
-              <span>
-                {validDetails.length} views · choose a group to compare related
-                details. Exclude anything unnecessary.
-              </span>
-            </div>
-            <div className="detail-gallery">
-              {validDetails.map((view) => (
-                <div
-                  className="detail-review-item"
-                  hidden={
-                    detailGroup === "Needs attention"
-                      ? !(
-                          view.region.orientationUncertain ||
-                          view.region.cropNeedsReview
-                        )
-                      : detailGroups.includes(detailGroup) &&
-                        detailGroup !==
-                          (view.region.reviewGroup || "Manual details")
+                </>
+              )}
+              {!!report.assumptions.length && (
+                <>
+                  <h3>Assumptions</h3>
+                  <ul>
+                    {report.assumptions.map((text, i) => (
+                      <li key={i}>{text}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {!!report.warnings.length && (
+                <div className="margin-warning">
+                  <h3>Plan warnings / estimating notes</h3>
+                  <ul>
+                    {report.warnings.map((text, i) => (
+                      <li key={i}>{text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </details>
+          ))}
+          <details className="analysis-report">
+            <summary>Advanced Settings</summary>
+            <label>
+              Automatic reading-image budget
+              <select
+                aria-label="Automatic reading-image budget"
+                disabled={busy || locked}
+                value={readingBudget}
+                onChange={(e) => setReadingBudget(Number(e.target.value))}
+              >
+                <option value={4}>4 — quicker / lower image cost</option>
+                <option value={8}>8 — balanced (default)</option>
+                <option value={12}>12 — more detail / higher image cost</option>
+              </select>
+            </label>
+            <p className="tiny">
+              This is a maximum, not a target. Useful regions only; the original
+              PDF is always included. Existing file/image limits may reduce this
+              count. More images may increase API cost and preparation time.
+              Viewing saved images is free of AI requests.
+            </p>
+          </details>
+          <p className="tiny">
+            Analyze Plans automatically prepares reading images (8 by default
+            within the size/cost budget). No separate detail-generation step is
+            required. Optional manual corrections can supplement a future
+            analysis.
+          </p>
+          <details className="advanced-ai-details">
+            <summary>Advanced AI Details</summary>
+            <p className="tiny">
+              Optional troubleshooting and corrections. The original drawing
+              remains your workspace; automatic reading images supplement it,
+              never represent extra physical materials.
+            </p>
+            {current?.type === "application/pdf" && (
+              <details className="optional-detail-tools">
+                <summary>Optional: prepare additional detail views</summary>
+                <AutoDetailSelection
+                  source={current}
+                  rotations={
+                    orientations[current.id]?.source === current.data
+                      ? orientations[current.id].pages
+                      : {}
                   }
-                  key={view.id}
-                >
+                  existing={validDetails
+                    .filter((v) => v.documentId === current.id)
+                    .map((v) => v.region)}
+                  remainingCapacity={maxDetailRegions - validDetails.length}
+                  remainingAutomatic={Math.max(
+                    0,
+                    20 - validDetails.filter((v) => v.automatic).length,
+                  )}
+                  disabled={locked || busy || uploading || detailProcessing}
+                  onBusy={setAutomaticRendering}
+                  onAdd={(regions) => {
+                    setDetailsInspected(false);
+                    setOriginalOnlyConfirmed(false);
+                    setExcludedDocuments((ids) =>
+                      ids.filter((id) => id !== current.id),
+                    );
+                    setDetailViews((previous) => [
+                      ...previous,
+                      ...regions.map((region) => ({
+                        id: id(),
+                        documentId: current.id,
+                        originalData: current.data,
+                        region,
+                        automatic: true,
+                      })),
+                    ]);
+                  }}
+                />
+              </details>
+            )}
+            {!!validDetails.length && (
+              <div className="pdf-detail-list">
+                <h3>Detail views included in analysis</h3>
+                <p className="tiny">
+                  Temporary 250 DPI views rendered directly from the original
+                  PDF. Up to 20 automatic / 24 total; each analysis request must
+                  fit 8 MB. Larger detail packages use bounded batches. Re-add
+                  views after leaving this tab. Only views from selected source
+                  files are sent.
+                </p>
+                {validDetails.some((v) => v.automatic) && (
                   <label className="check-options">
                     <input
                       type="checkbox"
-                      aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
-                      checked={
-                        !excludedDetails.includes(view.id) &&
-                        !excludedDocuments.includes(view.documentId)
-                      }
-                      disabled={locked || busy || detailProcessing}
-                      onChange={(e) => {
-                        setDetailsInspected(false);
-                        setOriginalOnlyConfirmed(false);
-                        setExcludedDetails((ids) =>
-                          e.target.checked
-                            ? ids.filter((id) => id !== view.id)
-                            : [...ids, view.id],
-                        );
-                        if (e.target.checked)
-                          setExcludedDocuments((ids) =>
-                            ids.filter((id) => id !== view.documentId),
-                          );
-                      }}
+                      disabled={busy || detailProcessing || !allPreviewsReady}
+                      checked={detailsInspected && allPreviewsReady}
+                      onChange={(e) => setDetailsInspected(e.target.checked)}
                     />
-                    Include this detail in analysis
+                    I inspected all selected automatic detail views and their
+                    source regions.
                   </label>
-                  <DetailViewEditor
-                    source={q.documents.find((d) => d.id === view.documentId)!}
-                    region={view.region}
-                    disabled={locked || busy || detailProcessing}
-                    onBusy={setDetailRendering}
-                    onPreviewReady={(ready) =>
-                      setPreviewReady((previous) => {
-                        if (ready && previous[view.id] === view.region.data)
-                          return previous;
-                        const next = { ...previous };
-                        if (ready) next[view.id] = view.region.data;
-                        else delete next[view.id];
-                        return next;
-                      })
-                    }
-                    onChange={(region) => {
-                      setDetailsInspected(false);
-                      setDetailViews((previous) =>
-                        previous.map((v) =>
-                          v.id === view.id ? { ...v, region } : v,
-                        ),
-                      );
-                    }}
-                  />
+                )}
+                <div className="detail-gallery-controls">
+                  <label className="field">
+                    <span>Review drawing details</span>
+                    <select
+                      aria-label="Detail review group"
+                      value={
+                        detailGroups.includes(detailGroup) ||
+                        detailGroup === "Needs attention"
+                          ? detailGroup
+                          : "All details"
+                      }
+                      onChange={(e) => setDetailGroup(e.target.value)}
+                    >
+                      <option>All details</option>
+                      <option value="Needs attention">
+                        Needs rotation / crop review ({attentionDetails.length})
+                      </option>
+                      {detailGroups.map((group) => (
+                        <option key={group}>{group}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p role="status">
+                    {attentionDetails.length} views need rotation or crop
+                    attention. Selecting a review group never changes which
+                    images are submitted.
+                  </p>
                   <span>
-                    {q.documents.find((d) => d.id === view.documentId)?.name} ·
-                    Page {view.region.page} · {view.region.pixelWidth} ×{" "}
-                    {view.region.pixelHeight} px · 250 DPI ·{" "}
-                    {view.region.rotation ?? 0}°
+                    {validDetails.length} views · choose a group to compare
+                    related details. Exclude anything unnecessary.
                   </span>
+                </div>
+                <div className="detail-gallery">
+                  {validDetails.map((view) => (
+                    <div
+                      className="detail-review-item"
+                      hidden={
+                        detailGroup === "Needs attention"
+                          ? !(
+                              view.region.orientationUncertain ||
+                              view.region.cropNeedsReview
+                            )
+                          : detailGroups.includes(detailGroup) &&
+                            detailGroup !==
+                              (view.region.reviewGroup || "Manual details")
+                      }
+                      key={view.id}
+                    >
+                      <label className="check-options">
+                        <input
+                          type="checkbox"
+                          aria-label={`Include detail ${view.region.label || view.region.page} in analysis`}
+                          checked={
+                            !excludedDetails.includes(view.id) &&
+                            !excludedDocuments.includes(view.documentId)
+                          }
+                          disabled={locked || busy || detailProcessing}
+                          onChange={(e) => {
+                            setDetailsInspected(false);
+                            setOriginalOnlyConfirmed(false);
+                            setExcludedDetails((ids) =>
+                              e.target.checked
+                                ? ids.filter((id) => id !== view.id)
+                                : [...ids, view.id],
+                            );
+                            if (e.target.checked)
+                              setExcludedDocuments((ids) =>
+                                ids.filter((id) => id !== view.documentId),
+                              );
+                          }}
+                        />
+                        Include this detail in analysis
+                      </label>
+                      <DetailViewEditor
+                        source={q.documents.find(
+                          (d) => d.id === view.documentId,
+                        )!}
+                        region={view.region}
+                        disabled={locked || busy || detailProcessing}
+                        onBusy={setDetailRendering}
+                        onPreviewReady={(ready) =>
+                          setPreviewReady((previous) => {
+                            if (ready && previous[view.id] === view.region.data)
+                              return previous;
+                            const next = { ...previous };
+                            if (ready) next[view.id] = view.region.data;
+                            else delete next[view.id];
+                            return next;
+                          })
+                        }
+                        onChange={(region) => {
+                          setDetailsInspected(false);
+                          setDetailViews((previous) =>
+                            previous.map((v) =>
+                              v.id === view.id ? { ...v, region } : v,
+                            ),
+                          );
+                        }}
+                      />
+                      <span>
+                        {
+                          q.documents.find((d) => d.id === view.documentId)
+                            ?.name
+                        }{" "}
+                        · Page {view.region.page} · {view.region.pixelWidth} ×{" "}
+                        {view.region.pixelHeight} px · 250 DPI ·{" "}
+                        {view.region.rotation ?? 0}°
+                      </span>
+                      <button
+                        className="icon danger"
+                        disabled={locked || busy}
+                        aria-label={`Remove detail view ${view.region.page}`}
+                        onClick={() =>
+                          setDetailViews(
+                            detailViews.filter((v) => v.id !== view.id),
+                          )
+                        }
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </details>
+          <p className="tiny">
+            PDF analysis sends the unchanged original file plus its selectable
+            text when available. The preview canvas is never an analysis source.
+            Add detail views for fine notes on large sheets; no OCR guesses are
+            used.
+          </p>
+          <h3 className="subheading">Estimate candidates / Takeoff items</h3>
+          {reviewError && (
+            <p className="error" role="alert">
+              {reviewError}
+            </p>
+          )}
+          <div ref={summaryRef}>
+            <MaterialsSummary
+              key={q.id + ":" + (q.analysisReports?.at(-1)?.id ?? "initial")}
+              quote={q}
+              locked={locked || busy}
+              onChange={onChange}
+              onError={setReviewError}
+              onAdvanced={openMaterialDetails}
+            />
+          </div>
+          <details className="advanced-review" open={advancedReview}>
+            <summary
+              onClick={(e) => {
+                e.preventDefault();
+                setAdvancedReview((v) => !v);
+              }}
+            >
+              Advanced Review
+            </summary>
+            <p className="muted">
+              Changing a measurement resets it to Proposed. Replacing or
+              removing a source document also requires re-review. Existing
+              converted estimate lines are preserved and must be checked
+              separately.
+            </p>
+            <details className="takeoff-list-tools">
+              <summary>Advanced list tools</summary>
+              {!!q.takeoff.some((t) => t.origin === "ai") && (
+                <div className="heading-actions">
                   <button
-                    className="icon danger"
-                    disabled={locked || busy}
-                    aria-label={`Remove detail view ${view.region.page}`}
-                    onClick={() =>
-                      setDetailViews(
-                        detailViews.filter((v) => v.id !== view.id),
+                    className="button secondary"
+                    disabled={locked || !selectedItems.length}
+                    onClick={() => bulkApprove()}
+                  >
+                    Approve selected reviewed items
+                  </button>
+                  <button
+                    className="button secondary"
+                    disabled={
+                      locked ||
+                      !q.takeoff.some(
+                        (t) =>
+                          t.origin === "ai" &&
+                          t.status === "Reviewed" &&
+                          t.reviewAcknowledged &&
+                          !t.convertedLineId,
                       )
                     }
+                    onClick={() => bulkApprove(true)}
                   >
-                    <Trash2 size={17} />
+                    Approve all reviewed items
                   </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </details>
-      <p className="tiny">
-        PDF analysis sends the unchanged original file plus its selectable text
-        when available. The preview canvas is never an analysis source. Add
-        detail views for fine notes on large sheets; no OCR guesses are used.
-      </p>
-      <h3 className="subheading">Estimate candidates / Takeoff items</h3>
-      {reviewError && (
-        <p className="error" role="alert">
-          {reviewError}
-        </p>
-      )}
-      <div ref={summaryRef}>
-        <MaterialsSummary
-          key={q.id + ":" + (q.analysisReports?.at(-1)?.id ?? "initial")}
-          quote={q}
-          locked={locked || busy}
-          onChange={onChange}
-          onError={setReviewError}
-          onAdvanced={openMaterialDetails}
-        />
-      </div>
-      <details className="advanced-review" open={advancedReview}>
-        <summary
-          onClick={(e) => {
-            e.preventDefault();
-            setAdvancedReview((v) => !v);
-          }}
-        >
-          Advanced Review
-        </summary>
-        <p className="muted">
-          Changing a measurement resets it to Proposed. Replacing or removing a
-          source document also requires re-review. Existing converted estimate
-          lines are preserved and must be checked separately.
-        </p>
-        <details className="takeoff-list-tools">
-          <summary>Advanced list tools</summary>
-          {!!q.takeoff.some((t) => t.origin === "ai") && (
-            <div className="heading-actions">
+              )}
               <button
                 className="button secondary"
-                disabled={locked || !selectedItems.length}
-                onClick={() => bulkApprove()}
-              >
-                Approve selected reviewed items
-              </button>
-              <button
-                className="button secondary"
-                disabled={
-                  locked ||
-                  !q.takeoff.some(
-                    (t) =>
-                      t.origin === "ai" &&
-                      t.status === "Reviewed" &&
-                      t.reviewAcknowledged &&
-                      !t.convertedLineId,
-                  )
+                disabled={locked || busy || !q.takeoff.length}
+                onClick={() =>
+                  window.confirm(
+                    "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
+                  ) &&
+                  onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
                 }
-                onClick={() => bulkApprove(true)}
               >
-                Approve all reviewed items
+                Consolidate exact unreviewed duplicates
               </button>
-            </div>
-          )}
-          <button
-            className="button secondary"
-            disabled={locked || busy || !q.takeoff.length}
-            onClick={() =>
-              window.confirm(
-                "Consolidate exact unreviewed duplicates? Quantities will not be added; distinct specifications, assemblies and sources remain separate.",
-              ) && onChange({ ...q, takeoff: consolidateTakeoff(q.takeoff) })
-            }
-          >
-            Consolidate exact unreviewed duplicates
-          </button>
-        </details>
-        <TakeoffTable
-          reviewTarget={reviewTarget}
-          onBackToSummary={backToSummary}
-          onReviewMaterial={openMaterialDetails}
-          quote={q}
-          locked={locked || busy}
-          onChange={onChange}
-          patch={patch}
-          updateItem={updateItem}
-          onError={setReviewError}
-          selected={selectedItems}
-          setSelected={setSelectedItems}
-        />
-        <button
-          className="button secondary"
-          disabled={locked}
-          onClick={() =>
-            onChange({
-              ...q,
-              takeoff: [
-                ...q.takeoff,
-                {
-                  id: id(),
-                  description: "",
-                  quantity: null,
-                  unit: "each",
-                  documentId: "",
-                  page: null,
-                  notes: "",
-                  status: "Proposed",
-                  confidence: "Unspecified",
-                },
-              ],
-            })
-          }
-        >
-          <Plus size={17} />
-          Add takeoff item
-        </button>
-      </details>
-      </>
+            </details>
+            <TakeoffTable
+              reviewTarget={reviewTarget}
+              onBackToSummary={backToSummary}
+              onReviewMaterial={openMaterialDetails}
+              quote={q}
+              locked={locked || busy}
+              onChange={onChange}
+              patch={patch}
+              updateItem={updateItem}
+              onError={setReviewError}
+              selected={selectedItems}
+              setSelected={setSelectedItems}
+            />
+            <button
+              className="button secondary"
+              disabled={locked}
+              onClick={() =>
+                onChange({
+                  ...q,
+                  takeoff: [
+                    ...q.takeoff,
+                    {
+                      id: id(),
+                      description: "",
+                      quantity: null,
+                      unit: "each",
+                      documentId: "",
+                      page: null,
+                      notes: "",
+                      status: "Proposed",
+                      confidence: "Unspecified",
+                    },
+                  ],
+                })
+              }
+            >
+              <Plus size={17} />
+              Add takeoff item
+            </button>
+          </details>
+        </>
       )}
       {simpleMode && showTechnical && (
-        <button className="button secondary" type="button" onClick={() => setShowTechnical(false)}>Return to simple steps</button>
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => setShowTechnical(false)}
+        >
+          Return to simple steps
+        </button>
       )}
     </DrawingLocationContext.Provider>
   );
