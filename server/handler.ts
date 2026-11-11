@@ -133,6 +133,7 @@ export async function handleAnalysis(
   if (!recoveryOnly && !env.OPENAI_API_KEY && !provider) return json({error:"Plan analysis is not configured."},503);
   let lease: AnalysisLease | undefined;
   let tracking = false;
+  let resultKey = "";
   try {
     {
       const hash = async (text: string) =>
@@ -159,6 +160,7 @@ export async function handleAnalysis(
           .join("|"),
       );
       const key = `request:${userHash}:${fingerprint}`;
+      resultKey = key;
       if (recoveryOnly) {
         if (!env.ANALYSIS_RESULTS) return json({ error: "Saved analysis storage is not configured." }, 503);
         const saved = await env.ANALYSIS_RESULTS.get(key);
@@ -195,7 +197,7 @@ export async function handleAnalysis(
       throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
     }
     if (env.ANALYSIS_RESULTS) {
-      await env.ANALYSIS_RESULTS.put(key, JSON.stringify(validated), { expirationTtl: 86400 });
+      await env.ANALYSIS_RESULTS.put(resultKey, JSON.stringify(validated), { expirationTtl: 86400 });
     }
     if (lease) {
       tracking = true;
