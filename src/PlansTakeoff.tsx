@@ -232,6 +232,18 @@ export default function PlansTakeoff({
   latest.current = q;
   const request = useRef<AbortController | null>(null);
   const [analysisState, setAnalysisState] = useState("Ready to analyze");
+  // A browser reload cannot guarantee that an in-flight server request
+  // survived. Retain a private warning rather than silently resubmitting it.
+  const pendingKey = "backwoods:analysis-pending:" + q.id;
+  const [interrupted, setInterrupted] = useState(() => {
+    try { return !!window.localStorage.getItem("backwoods:analysis-pending:" + q.id); }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { setInterrupted(!!window.localStorage.getItem(pendingKey)); }
+    catch { setInterrupted(false); }
+  }, [pendingKey]);
+
   const completedBatches = useRef<{
     quoteId: string;
     fingerprint: string;
@@ -395,7 +407,8 @@ export default function PlansTakeoff({
       locked ||
       detailProcessing ||
       !packageReady ||
-      analysisPackage.error
+      analysisPackage.error ||
+      interrupted
     )
       return;
     const controller = new AbortController();
@@ -523,6 +536,10 @@ export default function PlansTakeoff({
             return notes;
           }),
       ]);
+      // The marker is only written just before a potentially paid request.
+      // No file bytes, personal details or AI output are stored in it.
+      try { window.localStorage.setItem(pendingKey, String(Date.now())); }
+      catch { /* private browser storage may be disabled */ }
       setAnalysisState("Analyzing plans");
       if (completedBatches.current?.fingerprint !== fingerprint)
         completedBatches.current = {
@@ -663,6 +680,10 @@ export default function PlansTakeoff({
       // updated the editor. Persist the complete takeoff and report synchronously.
       const saved = onPersistAnalysis(next);
       onChange(next);
+      if (saved) {
+        try { window.localStorage.removeItem(pendingKey); } catch { /* optional */ }
+        setInterrupted(false);
+      }
       if (!saved) {
         setAnalysisState("Analysis complete — NOT saved");
         setAnalysisError(
@@ -689,6 +710,15 @@ export default function PlansTakeoff({
       );
     } catch (error) {
       if (request.current === controller) {
+        // A definite server rejection cannot have produced billable results.
+        // Timeouts/interruptions remain uncertain and require acknowledgement.
+        if (!controller.signal.aborted &&
+            error instanceof AnalysisFailure &&
+            ["ANALYSIS_IN_PROGRESS", "ANALYSIS_COOLDOWN", "ANALYSIS_DAILY_LIMIT",
+             "ANALYSIS_TRACKING_UNAVAILABLE"].includes(error.code)) {
+          try { window.localStorage.removeItem(pendingKey); } catch { /* optional */ }
+          setInterrupted(false);
+        }
         const protectedRequest =
           error instanceof AnalysisFailure &&
           ["ANALYSIS_IN_PROGRESS", "ANALYSIS_COOLDOWN"].includes(error.code);
@@ -1164,6 +1194,21 @@ export default function PlansTakeoff({
           )}
         </div>
       )}
+      {interrupted && !busy && (
+        <div className="margin-warning" role="alert">
+          <strong>Previous AI request may have been interrupted.</strong>
+          <p>The app cannot confirm that an unfinished server request completed after a refresh.
+          Completed batches that reached this browser can be reused, but an in-flight result
+          cannot be recovered here. No new paid request will be sent until you acknowledge this warning.</p>
+          <button type="button" className="button secondary"
+            onClick={() => {
+              try { window.localStorage.removeItem(pendingKey); } catch { /* optional */ }
+              setInterrupted(false);
+            }}>
+            I understand — allow a new analysis request
+          </button>
+        </div>
+      )}
       <div className="heading-actions">
         <button
           className="button"
@@ -1181,6 +1226,7 @@ export default function PlansTakeoff({
             detailProcessing ||
             uploading ||
             !packageReady ||
+            interrupted ||
             !!analysisPackage?.error ||
             !q.documents.some((d) => !excludedDocuments.includes(d.id))
           }
