@@ -9,7 +9,7 @@ import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
 import { buildMaterialEvidence } from "./materialEvidenceSummary";
-import { scanAttachedPdfText } from "./localPdfMaterialScan";
+import { scanAttachedPdfTextWithReport } from "./localPdfMaterialScan";
 import { cowanTrial, cowanBeamLinearFeet, isCowanOriginalPlanTrial, cowanTrialPileLine, hasCowanTrialPiles, applyCowanTrialPiles } from "./cowanTrial";
 import { cowanLayout, cowanQuantityScenario } from "./cowanQuantityScenario";
 import {
@@ -185,6 +185,7 @@ export default function App() {
     [quoteDefaults, setQuoteDefaults] = useState(store.quoteDefaults);
   const [advancedEditor, setAdvancedEditor] = useState(false);
   const [scanningPdf, setScanningPdf] = useState(false);
+  const [pdfScanFeedback, setPdfScanFeedback] = useState("");
   const [company, setCompany] = useState(store.company ?? companyDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
@@ -1073,15 +1074,19 @@ export default function App() {
                               onClick={async () => {
                                 setScanningPdf(true);
                                 try {
-                                  const next = await scanAttachedPdfText(current);
+                                  const report = await scanAttachedPdfTextWithReport(current);
+                                  const next = report.quote;
+                                  const diagnostics = `${report.pdfCount} PDF(s), ${report.pagesRead} page(s) checked, ${report.pagesWithText} with selectable text, ${report.matchesAdded} new material label(s).`;
+                                  setPdfScanFeedback(diagnostics);
                                   if (next === current) {
-                                    setNotice("No new selectable material labels found. Existing observations were kept.");
+                                    setNotice("PDF scan completed. " + diagnostics + " No new observations added.");
                                   } else {
                                     patch({takeoff: next.takeoff});
-                                    setNotice("Material labels recovered from the PDF as proposed items. Review scope and quantities before estimating.");
+                                    setNotice("PDF scan completed. " + diagnostics + " Review all proposed items before estimating.");
                                   }
                                   setError("");
                                 } catch (e) {
+                                  setPdfScanFeedback("PDF scan failed: " + (e as Error).message);
                                   setError("Local PDF scan failed: " + (e as Error).message);
                                 } finally {
                                   setScanningPdf(false);
@@ -1090,6 +1095,11 @@ export default function App() {
                             >
                               {scanningPdf ? "Reading PDF on this device…" : "Scan attached PDF for material labels — no AI charge"}
                             </button>
+                          )}
+                          {pdfScanFeedback && (
+                            <p className="margin-warning" role="status">
+                              Last scan: {pdfScanFeedback}
+                            </p>
                           )}
                           <p className="muted">
                             Reads only selectable text from the attached PDF on this device.
