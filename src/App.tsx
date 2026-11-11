@@ -10,6 +10,7 @@ import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
 import { buildMaterialEvidence } from "./materialEvidenceSummary";
 import { scanAttachedPdfTextWithReport } from "./localPdfMaterialScan";
+import { scanPdfImagesForMaterials } from "./pdfVisualMaterialScan";
 import { cowanTrial, cowanBeamLinearFeet, isCowanOriginalPlanTrial, cowanTrialPileLine, hasCowanTrialPiles, applyCowanTrialPiles } from "./cowanTrial";
 import { cowanLayout, cowanQuantityScenario } from "./cowanQuantityScenario";
 import {
@@ -186,6 +187,8 @@ export default function App() {
   const [advancedEditor, setAdvancedEditor] = useState(false);
   const [scanningPdf, setScanningPdf] = useState(false);
   const [pdfScanFeedback, setPdfScanFeedback] = useState("");
+  const [visualScanBusy, setVisualScanBusy] = useState(false);
+  const [visualScanFeedback, setVisualScanFeedback] = useState("");
   const [company, setCompany] = useState(store.company ?? companyDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
@@ -1095,6 +1098,38 @@ export default function App() {
                             >
                               {scanningPdf ? "Reading PDF on this device…" : "Scan attached PDF for material labels — no AI charge"}
                             </button>
+                          )}
+                          {!locked && current.documents.some(d => d.type === "application/pdf") && (
+                            <>
+                              <button
+                                type="button"
+                                className="button"
+                                disabled={visualScanBusy || scanningPdf}
+                                onClick={async () => {
+                                  if (!confirm("Experimental image-based PDF reading downloads the Tesseract OCR engine and English language data from external CDN servers. It reads the drawing image in this browser without using paid AI, but results may be incomplete or wrong. Continue?")) return;
+                                  setVisualScanBusy(true);
+                                  setVisualScanFeedback("Preparing image scan…");
+                                  try {
+                                    const result = await scanPdfImagesForMaterials(current, setVisualScanFeedback);
+                                    if (result.quote !== current) patch({takeoff: result.quote.takeoff});
+                                    setVisualScanFeedback(`Image scan finished: ${result.pagesRead} page(s), ${result.pagesWithRecognizedText} with recognized words, ${result.matchesAdded} new material label(s). Nothing added to quote prices.`);
+                                    setError("");
+                                  } catch (e) {
+                                    setVisualScanFeedback("Image scan failed: " + (e as Error).message);
+                                  } finally {
+                                    setVisualScanBusy(false);
+                                  }
+                                }}
+                              >
+                                {visualScanBusy ? "Reading drawing images…" : "Read material labels from drawing image (experimental, no AI charge)"}
+                              </button>
+                              <p className="muted">
+                                Image OCR downloads its engine from third-party servers and processes
+                                this PDF locally in your browser. This is text recognition, not an
+                                engineered material takeoff. Review all labels, locations and scope.
+                              </p>
+                              {visualScanFeedback && <p className="margin-warning" role="status">{visualScanFeedback}</p>}
+                            </>
                           )}
                           {pdfScanFeedback && (
                             <p className="margin-warning" role="status">
