@@ -42,6 +42,7 @@ export type PdfVisualScanReport = {
   pagesWithRecognizedText: number;
   recognizedCharacters: number;
   matchesAdded: number;
+  recognizedTextPreview: string;
 };
 
 /**
@@ -138,5 +139,6 @@ export async function scanPdfImagesForMaterials(
     pagesWithRecognizedText: new Set(sources.filter(s => !!s.text.trim()).map(s=>s.documentId+":"+s.page)).size,
     recognizedCharacters,
     matchesAdded: next.takeoff.length - q.takeoff.length,
+    recognizedTextPreview: sources.map(s=>s.text.trim()).filter(Boolean).sort((a,b)=>b.length-a.length)[0]?.slice(0,400) || "",
   };
 }
