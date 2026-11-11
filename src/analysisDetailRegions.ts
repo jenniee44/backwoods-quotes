@@ -154,17 +154,22 @@ function rasterContextRegions(
       h = (c.height / survey.height) * height;
     if (area < 0.02 || area > 0.4 || density > 0.12 || Math.min(w, h) < 240)
       return [];
-    const pad = 8;
-    const x = Math.max(0, (c.x / survey.width) * width - pad),
-      y = Math.max(0, (c.y / survey.height) * height - pad);
+    // Give the model substantial surrounding plan context, not a crop tight
+    // to just one connected run. Keep the window within 250-DPI limits.
+    const contextWidth = Math.min(width, Math.max(w + 16, 690));
+    const contextHeight = Math.min(height, Math.max(h + 16, 530));
+    const centerX = ((c.x + c.width / 2) / survey.width) * width;
+    const centerY = ((c.y + c.height / 2) / survey.height) * height;
+    const x = Math.max(0, Math.min(width - contextWidth, centerX - contextWidth / 2));
+    const y = Math.max(0, Math.min(height - contextHeight, centerY - contextHeight / 2));
     const region = {
       page,
       x,
       y,
-      width: Math.min(width - x, w + pad * 2),
-      height: Math.min(height - y, h + pad * 2),
+      width: contextWidth,
+      height: contextHeight,
       label: "Connected drawing context — trace whole linework",
-      score: 6 + area * 20,
+      score: 36 + area * 20,
     };
     try {
       detailRenderSize(region.width, region.height);
