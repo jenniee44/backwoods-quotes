@@ -21,6 +21,8 @@ import TakeoffTable from "./TakeoffTable";
 import MaterialsSummary from "./MaterialsSummary";
 import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
+import { loadPdfSource } from "./pdfSource";
+import { normalizeRotation } from "../shared/pdf";
 import { revealMaterial } from "./materialReviewNavigation";
 import { assertScope } from "./takeoffScope";
 import { consolidateTakeoff } from "./consolidateTakeoff";
@@ -252,7 +254,7 @@ export default function PlansTakeoff({
   const [preflightImages, setPreflightImages] = useState<
     { source: string; label: string; page: number }[]
   >([]);
-  async function checkAutomaticDrawingDetails() {
+  async function checkAutomaticDrawingDetails(orientationOverride?: PdfOrientations) {
     if (preflightBusy || request.current || locked) return;
     const controller = new AbortController();
     setPreflightBusy(true);
@@ -261,8 +263,8 @@ export default function PlansTakeoff({
     try {
       const documents = structuredClone(selectedDocuments);
       const pageTurns = Object.fromEntries(documents.map(d => [
-        d.id, orientations[d.id]?.source === d.data
-          ? orientations[d.id].pages : {},
+        d.id, (orientationOverride ?? orientations)[d.id]?.source === d.data
+          ? (orientationOverride ?? orientations)[d.id].pages : {},
       ]));
       const result = await supplementWholePdfs(
         documents, controller.signal, setPreflightMessage, readingBudget, pageTurns,
@@ -283,6 +285,37 @@ export default function PlansTakeoff({
     }
   }
 
+  async function rotateAllDrawingPages(clockwise: 90 | -90) {
+    if (preflightBusy || locked) return;
+    const pdfDocs = selectedDocuments.filter(d => d.type === "application/pdf");
+    if (!pdfDocs.length) return;
+    setPreflightBusy(true);
+    try {
+      const revised: PdfOrientations = {...orientations};
+      for (const doc of pdfDocs) {
+        const task = await loadPdfSource(doc.data);
+        try {
+          const pdf = await task.promise;
+          const previousPages = orientations[doc.id]?.source === doc.data
+            ? orientations[doc.id].pages : {};
+          const pages = {...previousPages};
+          for (let page = 1; page <= pdf.numPages; page++) {
+            pages[page] = normalizeRotation((pages[page] ?? 0) + clockwise);
+          }
+          revised[doc.id] = {source:doc.data,pages};
+        } finally {
+          await task.destroy();
+        }
+      }
+      setOrientations(revised);
+      setPreflightImages([]);
+      setPreflightMessage("Orientation applied to all drawing pages. Click the free detail check to rebuild the close-ups. No AI request was made.");
+    } catch(e) {
+      setPreflightMessage("Rotation failed: " + (e as Error).message);
+    } finally {
+      setPreflightBusy(false);
+    }
+  }
   const [analysisError, setAnalysisError] = useState("");
   const lastFailure = useRef<{ fingerprint: string; message: string } | null>(
     null,
@@ -1047,6 +1080,23 @@ export default function PlansTakeoff({
             onClick={checkAutomaticDrawingDetails}>
             {preflightBusy ? "Preparing drawing automatically…" : "Check automatic drawing details — free"}
           </button>
+          <div className="heading-actions">
+            <button type="button" className="button secondary"
+              disabled={preflightBusy || busy}
+              onClick={() => void rotateAllDrawingPages(-90)}>
+              Rotate all drawing pages left
+            </button>
+            <button type="button" className="button secondary"
+              disabled={preflightBusy || busy}
+              onClick={() => void rotateAllDrawingPages(90)}>
+              Rotate all drawing pages right
+            </button>
+          </div>
+          <p className="tiny">
+            Only use rotation if the automatic views are sideways or upside down.
+            One rotation updates every PDF page and all future automatic detail preparation.
+            The original PDF stays unchanged. Orientation is not guessed from unreliable OCR.
+          </p>
           {preflightMessage && <p role="status">{preflightMessage}</p>}
           {preflightImages.length > 0 && (
             <div className="grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
