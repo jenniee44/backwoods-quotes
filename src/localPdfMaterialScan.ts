@@ -15,6 +15,17 @@ const rules: Rule[] = [
   { category: "Stairs / stringers", description: "Stair specification (geometry missing)", regex: /\b(?:ALL\s+STAIRS|STAIR\s+STRINGER|STAIR\s+TREADS?)\b/i },
 ];
 
+// OCR often separates construction callouts and replaces × with X, spaces or punctuation.
+// Only use a material-specific word alongside a size/specification, never a
+// bare number or generic word like "beam" as a purchasing fact.
+export function normalizedMaterialLabelText(text: string): string {
+  return text.toUpperCase()
+    .replace(/[×*]/g, "X")
+    .replace(/(\d)\s*[X]\s*(\d)/g, "$1X$2")
+    .replace(/[_|:;,]+/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+
 export function proposePdfTextMaterials(
   q: Quote, sources: {documentId: string; name: string; page: number; text: string}[]
 ): Quote {
@@ -22,7 +33,7 @@ export function proposePdfTextMaterials(
     .map(i => [i.documentId, i.page, i.category].join("|")));
   const proposed: TakeoffItem[] = [];
   for (const source of sources) {
-    const normalized = source.text.replace(/\s+/g, " ").trim();
+    const normalized = normalizedMaterialLabelText(source.text);
     for (const rule of rules) {
       const match = normalized.match(rule.regex);
       if (!match) continue;
