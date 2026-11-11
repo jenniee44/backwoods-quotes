@@ -103,6 +103,7 @@ export default function PlansTakeoff({
   quote: q,
   locked,
   onChange,
+  onPersistAnalysis,
   onError,
   onViewEstimate,
   simpleMode = false,
@@ -112,6 +113,7 @@ export default function PlansTakeoff({
   quote: Quote;
   locked: boolean;
   onChange: (q: Quote) => void;
+  onPersistAnalysis: (q: Quote) => boolean;
   onError: (s: string) => void;
   onViewEstimate?: () => void;
   simpleMode?: boolean;
@@ -535,7 +537,19 @@ export default function PlansTakeoff({
           ? "Saved privately on this device. Images are not included in quote exports or customer PDFs."
           : "Images are available for this session only. Browser image storage is full or unavailable; existing quote data was not replaced. Reopening may not retain these images.",
       };
+      // A paid analysis must not be reported as saved merely because React
+      // updated the editor. Persist the complete takeoff and report synchronously.
+      const saved = onPersistAnalysis(next);
       onChange(next);
+      if (!saved) {
+        setAnalysisState("Analysis complete — NOT saved");
+        setAnalysisError(
+          "Analysis completed, but the quote could not be saved on this device. " +
+          "Keep this tab open. Free browser storage and use Save before closing. " +
+          "Do not pay to analyze the same plans again."
+        );
+        return;
+      }
       lastFailure.current = null;
       completedBatches.current = null;
       setAdvancedReview(false);
