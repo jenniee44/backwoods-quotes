@@ -159,9 +159,21 @@ export async function handleAnalysis(
           .join("|"),
       );
       const key = `request:${userHash}:${fingerprint}`;
+      if (recoveryOnly) {
+        if (!env.ANALYSIS_RESULTS) return json({ error: "Saved analysis storage is not configured." }, 503);
+        const saved = await env.ANALYSIS_RESULTS.get(key);
+        if (!saved) return json({ error: "No completed saved analysis was found. No paid AI request was made." }, 404);
+        try {
+          const parsed = JSON.parse(saved);
+          return json(validateAnalysis(parsed, documents.map((d) => d.id), documents));
+        } catch {
+          return json({ error: "Saved analysis could not be validated. No paid AI request was made." }, 422);
+        }
+      }
+      if (!env.ANALYSIS_LIMITS) return json({ error: "Analysis rate-limit storage is not configured." }, 503);
       tracking = true;
       const day = `daily:${userHash}:${new Date().toISOString().slice(0, 10)}`;
-      lease = await reserveAnalysis(env.ANALYSIS_LIMITS!, key, day);
+      lease = await reserveAnalysis(env.ANALYSIS_LIMITS, key, day);
       tracking = false;
     }
     const result = await abortableAnalysis(
@@ -181,6 +193,9 @@ export async function handleAnalysis(
       );
     } catch {
       throw new AnalysisFailure("ANALYSIS_INVALID_OUTPUT");
+    }
+    if (env.ANALYSIS_RESULTS) {
+      await env.ANALYSIS_RESULTS.put(key, JSON.stringify(validated), { expirationTtl: 86400 });
     }
     if (lease) {
       tracking = true;
