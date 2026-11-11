@@ -161,7 +161,7 @@ export async function handleAnalysis(
       const key = `request:${userHash}:${fingerprint}`;
       tracking = true;
       const day = `daily:${userHash}:${new Date().toISOString().slice(0, 10)}`;
-      lease = await reserveAnalysis(env.ANALYSIS_LIMITS, key, day);
+      lease = await reserveAnalysis(env.ANALYSIS_LIMITS!, key, day);
       tracking = false;
     }
     const result = await abortableAnalysis(
