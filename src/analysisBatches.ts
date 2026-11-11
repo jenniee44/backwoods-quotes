@@ -11,6 +11,7 @@ import {
   maxAnalysisBytes,
 } from "../shared/analysisPackage";
 import { maxDetailRegions } from "../shared/pdf";
+import { readAnalysisCheckpoint, saveAnalysisCheckpoint } from "./analysisCheckpoints";
 export type AnalysisBatch = {
   documents: AnalysisDocument[];
   indices: Record<string, number[]>;
@@ -88,9 +89,16 @@ export async function analyzeBatches(
           .join("")
       : "";
     signal.throwIfAborted();
-    const reused = !!completed?.has(key);
-    const result =
-      completed?.get(key) ?? (await analyze(batch.documents, signal));
+    // Recover only complete, already-returned responses. No new provider
+    // request is made when the exact submitted batch is available locally.
+    let checkpoint: PlanAnalysisResult | null = null;
+    if (key && !completed?.has(key)) {
+      try { checkpoint = await readAnalysisCheckpoint(key); } catch { /* storage optional */ }
+    }
+    signal.throwIfAborted();
+    const reused = !!completed?.has(key) || !!checkpoint;
+    const result = completed?.get(key) ?? checkpoint ??
+      (await analyze(batch.documents, signal));
     signal.throwIfAborted();
     const remap = (items: AnalysisSuggestion[] | undefined) =>
       items?.map((item) => {
@@ -127,6 +135,11 @@ export async function analyzeBatches(
     // Never cache partial responses, approvals or quote edits, and never persist to storage.
     if (completed && !completed.has(key) && completed.size < 24)
       completed.set(key, result);
+    if (key && !reused) {
+      // Complete the checkpoint transaction before moving to the next paid
+      // batch; a refresh after this point can reuse the returned result.
+      try { await saveAnalysisCheckpoint(key, result); } catch { /* quote save still protects final result */ }
+    }
     observed(batch.documents, reused);
   }
   signal.throwIfAborted();
