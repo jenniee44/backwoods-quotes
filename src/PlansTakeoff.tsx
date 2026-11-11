@@ -14,7 +14,8 @@ import {
 } from "./analysisImageArchive";
 import type { PreparedDetail } from "./detailReadability";
 import { assertDetailInclusion } from "./detailPackage";
-import { analysisBatches, analyzeBatches } from "./analysisBatches";\nimport { recoverSavedPlanAnalysis } from "./planAnalysis";
+import { analysisBatches, analyzeBatches } from "./analysisBatches";
+import { recoverSavedPlanAnalysis } from "./planAnalysis";
 import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
