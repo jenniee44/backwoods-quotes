@@ -96,7 +96,7 @@ export async function handleAnalysis(
       (e as Error).message === "CONFIG_AUTH" ? 503 : 401,
     );
   }
-  if (!env.OPENAI_API_KEY && !provider && !request.url.includes("recoveryOnly"))
+  if (!env.OPENAI_API_KEY && !provider && request.method !== "POST")
     return json(
       {
         error:
@@ -104,7 +104,7 @@ export async function handleAnalysis(
       },
       503,
     );
-  if (!local && !env.ANALYSIS_LIMITS)
+  if (!local && !env.ANALYSIS_LIMITS && !env.ANALYSIS_RESULTS)
     return json(
       {
         error:
