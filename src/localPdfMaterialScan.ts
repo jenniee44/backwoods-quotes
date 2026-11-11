@@ -18,7 +18,7 @@ const rules: Rule[] = [
 export function proposePdfTextMaterials(
   q: Quote, sources: {documentId: string; name: string; page: number; text: string}[]
 ): Quote {
-  const existing = new Set(q.takeoff.filter(i => i.origin === "local-pdf-text" as never)
+  const existing = new Set(q.takeoff.filter(i => i.analysisSourceKey?.startsWith("local-pdf-text:"))
     .map(i => [i.documentId, i.page, i.category].join("|")));
   const proposed: TakeoffItem[] = [];
   for (const source of sources) {
@@ -50,7 +50,7 @@ export function proposePdfTextMaterials(
         purchaseVerified: false,
         conflictsVerified: false,
         included: false,
-        origin: "local-pdf-text" as never,
+        analysisSourceKey: "local-pdf-text:" + key,
       });
     }
   }
