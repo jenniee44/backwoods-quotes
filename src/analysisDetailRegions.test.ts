@@ -232,3 +232,23 @@ it("ranks interior linework ahead of dense sheet-edge title blocks", () => {
   expect(edge).toBeDefined();
   expect(center!.score).toBeGreaterThan(edge!.score);
 });
+
+it("includes surrounding structural context rather than tightly clipping a raster-only diagram", () => {
+  const raster={width:240,height:160,ink:new Uint8Array(240*160)};
+  // A continuous outline standing in for a framing diagram on a large sheet.
+  for(let x=85;x<=135;x++) {
+    raster.ink[55*240+x]=1;
+    raster.ink[95*240+x]=1;
+  }
+  for(let y=55;y<=95;y++) {
+    raster.ink[y*240+85]=1;
+    raster.ink[y*240+135]=1;
+  }
+  const regions=analysisPageRegions(1,2400,1600,[],raster);
+  const context=regions.find(r=>r.label.startsWith("Connected drawing context"));
+  expect(context).toBeDefined();
+  expect(context!.width).toBeGreaterThanOrEqual(690);
+  expect(context!.height).toBeGreaterThanOrEqual(530);
+  expect(()=>detailRenderSize(context!.width,context!.height)).not.toThrow();
+  expect(selectAnalysisRegions(regions,8)).toContainEqual(context);
+});
