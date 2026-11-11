@@ -9,6 +9,7 @@ import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
 import { buildMaterialEvidence } from "./materialEvidenceSummary";
+import { scanAttachedPdfText } from "./localPdfMaterialScan";
 import { cowanTrial, cowanBeamLinearFeet, isCowanOriginalPlanTrial, cowanTrialPileLine, hasCowanTrialPiles, applyCowanTrialPiles } from "./cowanTrial";
 import { cowanLayout, cowanQuantityScenario } from "./cowanQuantityScenario";
 import {
@@ -183,6 +184,7 @@ export default function App() {
     [reviewing, setReviewing] = useState(false),
     [quoteDefaults, setQuoteDefaults] = useState(store.quoteDefaults);
   const [advancedEditor, setAdvancedEditor] = useState(false);
+  const [scanningPdf, setScanningPdf] = useState(false);
   const [company, setCompany] = useState(store.company ?? companyDefaults);
   const [settings, setSettings] = useState(store.settings),
     [actual, setActual] = useState<Actual>({
@@ -1062,6 +1064,37 @@ export default function App() {
                             Read-only summary of material observations already saved with this quote.
                             No new AI request and no change to prices. Quantities listed here may
                             describe spans, supports or suggestions rather than purchasing units.
+                          </p>
+                          {!locked && current.documents.some(d => d.type === "application/pdf") && (
+                            <button
+                              type="button"
+                              className="button"
+                              disabled={scanningPdf}
+                              onClick={async () => {
+                                setScanningPdf(true);
+                                try {
+                                  const next = await scanAttachedPdfText(current);
+                                  if (next === current) {
+                                    setNotice("No new selectable material labels found. Existing observations were kept.");
+                                  } else {
+                                    patch({takeoff: next.takeoff});
+                                    setNotice("Material labels recovered from the PDF as proposed items. Review scope and quantities before estimating.");
+                                  }
+                                  setError("");
+                                } catch (e) {
+                                  setError("Local PDF scan failed: " + (e as Error).message);
+                                } finally {
+                                  setScanningPdf(false);
+                                }
+                              }}
+                            >
+                              {scanningPdf ? "Reading PDF on this device…" : "Scan attached PDF for material labels — no AI charge"}
+                            </button>
+                          )}
+                          <p className="muted">
+                            Reads only selectable text from the attached PDF on this device.
+                            It cannot identify materials in scanned images, determine counts,
+                            measure lumber, or approve construction scope.
                           </p>
                           {buildMaterialEvidence(current).length === 0 ? (
                             <p className="margin-warning">
