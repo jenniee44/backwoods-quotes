@@ -1339,6 +1339,13 @@ export default function App() {
                           );
                           setNotice("");
                         }}
+                        onPersistAnalysis={(q) => {
+                          const saved = saveQuote(q, false, true);
+                          if (saved) {
+                            setNotice("AI analysis and material observations saved on this device.");
+                          }
+                          return saved;
+                        }}
                         onError={setError}
                       />
                     )}
