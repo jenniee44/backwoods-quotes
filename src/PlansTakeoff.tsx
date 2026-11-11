@@ -251,6 +251,7 @@ export default function PlansTakeoff({
   const [readingBudget, setReadingBudget] = useState(8);
   const [preflightBusy, setPreflightBusy] = useState(false);
   const [preflightMessage, setPreflightMessage] = useState("");
+  const [overviewImages, setOverviewImages] = useState<{source:string;label:string;page:number}[]>([]);
   const [preflightImages, setPreflightImages] = useState<
     { source: string; label: string; page: number }[]
   >([]);
@@ -259,6 +260,7 @@ export default function PlansTakeoff({
     const controller = new AbortController();
     setPreflightBusy(true);
     setPreflightImages([]);
+    setOverviewImages([]);
     setPreflightMessage("Preparing drawing details locally — no AI request…");
     try {
       const documents = structuredClone(selectedDocuments);
@@ -269,6 +271,41 @@ export default function PlansTakeoff({
       const result = await supplementWholePdfs(
         documents, controller.signal, setPreflightMessage, readingBudget, pageTurns,
       );
+      // First show a whole-sheet orientation/context view. This preview is
+      // local only; the unchanged original PDF already goes to analysis.
+      const overviews: {source:string;label:string;page:number}[]=[];
+      for (const doc of documents.filter(d=>d.type==="application/pdf").slice(0,3)) {
+        const task=await loadPdfSource(doc.data);
+        try {
+          const pdf=await task.promise;
+          for(let pageNumber=1;pageNumber<=Math.min(pdf.numPages,3);pageNumber++){
+            const page=await pdf.getPage(pageNumber);
+            const rotation=normalizeRotation(page.rotate+(pageTurns[doc.id]?.[pageNumber]??0));
+            const sheet=page.getViewport({scale:1,rotation});
+            const viewport=page.getViewport({
+              scale:Math.min(1.6,1400/Math.max(sheet.width,sheet.height)),
+              rotation,
+            });
+            const canvas=document.createElement("canvas");
+            canvas.width=Math.max(1,Math.round(viewport.width));
+            canvas.height=Math.max(1,Math.round(viewport.height));
+            try{
+              const context=canvas.getContext("2d");
+              if(!context)throw new Error("Cannot render whole-sheet overview.");
+              await page.render({canvas,canvasContext:context,viewport}).promise;
+              overviews.push({
+                source:canvas.toDataURL("image/jpeg",0.82),
+                label:doc.name+" — whole sheet, orientation check (preview only)",
+                page:pageNumber,
+              });
+            }finally{
+              canvas.width=0;canvas.height=0;
+              page.cleanup();
+            }
+          }
+        }finally{await task.destroy();}
+      }
+      setOverviewImages(overviews);
       const images = result.reviewViews.map(v => ({
         source: v.region.data,
         label: v.region.label || "Automatic drawing detail",
@@ -1099,6 +1136,21 @@ export default function PlansTakeoff({
             The original PDF stays unchanged. Orientation is not guessed from unreliable OCR.
           </p>
           {preflightMessage && <p role="status">{preflightMessage}</p>}
+          {overviewImages.length > 0 && (
+            <div>
+              <strong>Complete drawing — context and orientation</strong>
+              <p className="muted">These whole-sheet previews show the full layout. The smaller 250 DPI images below are for reading details. The original PDF remains unchanged.</p>
+              <div className="grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+                {overviewImages.map((view,index)=>(
+                  <div key={index}>
+                    <img src={view.source} alt={view.label}
+                      style={{width:"100%",height:"auto"}} />
+                    <small>{view.label}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {preflightImages.length > 0 && (
             <div className="grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
               {preflightImages.slice(0,6).map((view,index)=>(
