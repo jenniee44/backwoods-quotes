@@ -309,7 +309,8 @@ export default function PlansTakeoff({
       }
       setOrientations(revised);
       setPreflightImages([]);
-      setPreflightMessage("Orientation applied to all drawing pages. Click the free detail check to rebuild the close-ups. No AI request was made.");
+      setPreflightMessage("Rotation applied. Rebuilding drawing previews locally…");
+      await checkAutomaticDrawingDetails(revised);
     } catch(e) {
       setPreflightMessage("Rotation failed: " + (e as Error).message);
     } finally {
