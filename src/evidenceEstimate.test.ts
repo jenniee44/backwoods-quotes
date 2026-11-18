@@ -11,6 +11,14 @@ describe("evidence-based estimate", () => {
       labourCost: 350, customerSubtotal: 1382.5, readyForQuote: true,
     });
   });
+  it("crew size changes duration but not total labour hours or cost", () => {
+    const solo = calculateEvidenceEstimate(input);
+    const pair = calculateEvidenceEstimate({ ...input, crewSize: 2 });
+    expect(solo.estimatedWorkDays).toBe(1.25);
+    expect(pair.estimatedWorkDays).toBe(0.63);
+    expect(pair.labourHours).toBe(solo.labourHours);
+    expect(pair.labourCost).toBe(solo.labourCost);
+  });
   it("does not manufacture missing quantities", () => {
     const result = calculateEvidenceEstimate({ ...input, quantity: null });
     expect(result.purchaseQuantity).toBeNull();
