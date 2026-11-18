@@ -32,6 +32,9 @@ export function draftEstimateFromTakeoff(
     labourSellRatePerHour: settings.labourSellRatePerHour ?? quote.pricing.labourRate ?? null,
     materialMarkupPercent: settings.materialMarkupPercent ?? quote.pricing.materialMarkup,
     wastePercent: settings.wastePercent ?? quote.takeoffPreferences?.waste ?? null,
+    crewSize: quote.estimateCrew?.size ?? 1,
+    workHoursPerDay: quote.estimateCrew?.hoursPerDay ?? 8,
+    crewEfficiencyPercent: quote.estimateCrew?.efficiencyPercent ?? 100,
   };
   const result = calculateEvidenceEstimate(input);
   if (!takeoffReady) {
