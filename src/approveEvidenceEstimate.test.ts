@@ -25,6 +25,12 @@ describe("reviewed estimate conversion safety", () => {
     expect(() => approveEvidenceEstimate(quote({ status: "Sent" }), input))
       .toThrow("editable draft");
   });
+  it("does not modify a source quote when approval fails", () => {
+    const q = quote({ takeoff: [{ id: "deck-1", description: "Deck joists", quantity: 10, unit: "each", status: "Proposed" }] as Quote["takeoff"] });
+    expect(() => approveEvidenceEstimate(q, { ...input, crewSize: 2 })).toThrow();
+    expect(q.estimateCrew).toBeUndefined();
+    expect(q.lines).toHaveLength(0);
+  });
   it("prevents duplicate conversions", () => {
     const q = quote({ takeoff: [{ id: "deck-1", convertedLineId: "already" }] as Quote["takeoff"] });
     expect(() => approveEvidenceEstimate(q, input)).toThrow("already been converted");
