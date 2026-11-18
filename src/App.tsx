@@ -1863,6 +1863,55 @@ export default function App() {
                     >
                       Export data backup
                     </button>
+                    <label className="button secondary" style={{ display: "inline-block", marginLeft: 8 }}>
+                      Import backup (add missing projects)
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        style={{ display: "none" }}
+                        disabled={!!initial.error}
+                        onChange={async (event) => {
+                          const input = event.currentTarget;
+                          const file = input.files?.[0];
+                          if (!file) return;
+                          try {
+                            if (file.size > 40 * 1024 * 1024) throw new Error("Backup is larger than 40 MB. Contact support before importing.");
+                            const parsed: unknown = JSON.parse(await file.text());
+                            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Not a Backwoods backup.");
+                            const data = parsed as Record<string, unknown>;
+                            if (data.version !== 2 || !Array.isArray(data.quotes) || (data.jobs !== undefined && !Array.isArray(data.jobs))) throw new Error("Unsupported backup format. Expected a Backwoods Quotes V2 backup.");
+                            const incomingQuotes = data.quotes as unknown[];
+                            const incomingJobs = (data.jobs ?? []) as unknown[];
+                            const valid = (item: unknown): item is Quote => !!item && typeof item === "object" && !Array.isArray(item) && typeof (item as Quote).id === "string" && !!(item as Quote).id && typeof (item as Quote).name === "string" && Array.isArray((item as Quote).lines) && Array.isArray((item as Quote).documents ?? []);
+                            if (![...incomingQuotes, ...incomingJobs].every(valid)) throw new Error("Backup contains invalid project records.");
+                            const existingIds = new Set([...store.quotes, ...(store.jobs ?? [])].map(q => q.id));
+                            const incomingIds = new Set<string>();
+                            for (const q of [...incomingQuotes, ...incomingJobs] as Quote[]) {
+                              if (incomingIds.has(q.id)) throw new Error("Backup contains duplicate project IDs.");
+                              incomingIds.add(q.id);
+                            }
+                            const additions = (incomingQuotes as Quote[]).filter(q => !existingIds.has(q.id));
+                            const jobAdditions = (incomingJobs as Quote[]).filter(q => !existingIds.has(q.id));
+                            if (!additions.length && !jobAdditions.length) {
+                              setNotice("All backup projects already exist here. No changes made.");
+                              return;
+                            }
+                            const names = [...additions, ...jobAdditions].map(q => q.name).slice(0, 5).join(", ");
+                            if (!window.confirm(`Import ${additions.length} quote(s) and ${jobAdditions.length} job(s)? Existing projects and pricing settings will not be changed. New projects include: ${names}`)) return;
+                            const next: Store = {
+                              ...store,
+                              quotes: [...store.quotes, ...additions],
+                              jobs: [...(store.jobs ?? []), ...jobAdditions],
+                            };
+                            if (saveStore(next)) setNotice(`Imported ${additions.length} quote(s) and ${jobAdditions.length} job(s). Check attached drawings and saved analysis before estimating.`);
+                          } catch (e) {
+                            setError(`Backup import failed: ${(e as Error).message}`);
+                          } finally {
+                            input.value = "";
+                          }
+                        }}
+                      />
+                    </label>
                     <p className="muted">
                       Includes private estimates and attached files. Keep this
                       backup securely. V1 records are automatically backed up in
