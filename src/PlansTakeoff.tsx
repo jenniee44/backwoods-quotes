@@ -24,6 +24,7 @@ import { analysisBatches, analyzeBatches } from "./analysisBatches";
 import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
+import { EvidenceEstimateReview } from "./EvidenceEstimateReview";
 import MaterialsSummary from "./MaterialsSummary";
 import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
@@ -131,6 +132,7 @@ export default function PlansTakeoff({
   simpleMode?: boolean;
 }) {
   const [showTechnical, setShowTechnical] = useState(false);
+  const [estimateReviewId, setEstimateReviewId] = useState("");
   const simplified = simpleMode && !showTechnical;
   const [excludedDocuments, setExcludedDocuments] = useState<string[]>([]);
   // Temporary full-resolution detail views. Bound to exact source bytes; not saved in
@@ -2265,6 +2267,41 @@ export default function PlansTakeoff({
               selected={selectedItems}
               setSelected={setSelectedItems}
             />
+            {q.takeoff.length > 0 && (
+              <details>
+                <summary>Experimental quantity, labour and cost review (not saved)</summary>
+                <p>
+                  This calculator previews one drawing item at a time. Edits are
+                  temporary and do not change your quote. Unverified takeoffs
+                  remain blocked; supplier prices and production rates must be entered.
+                </p>
+                <label>
+                  Drawing item
+                  <select
+                    value={estimateReviewId || q.takeoff[0].id}
+                    onChange={(e) => setEstimateReviewId(e.target.value)}
+                  >
+                    {q.takeoff.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.description || "Unnamed item"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {(() => {
+                  const item = q.takeoff.find(
+                    (candidate) => candidate.id === estimateReviewId,
+                  ) ?? q.takeoff[0];
+                  return (
+                    <EvidenceEstimateReview
+                      key={item.id}
+                      quote={q}
+                      item={item}
+                    />
+                  );
+                })()}
+              </details>
+            )}
             <button
               className="button secondary"
               disabled={locked}
