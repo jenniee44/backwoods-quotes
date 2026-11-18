@@ -37,10 +37,10 @@ export function calculateEvidenceEstimate(input: EstimateInput): EstimateResult 
   if (input.source === "assumption") reviewReasons.push("Quantity is an assumption");
   if (input.source === "drawing" && !input.evidence?.trim())
     reviewReasons.push("Drawing reference missing");
-  if (!valid(input.materialUnitCost)) reviewReasons.push("Material unit price missing");
-  if (!valid(input.labourHoursPerUnit)) reviewReasons.push("Labour production rate missing");
-  if (!valid(input.labourCostPerHour)) reviewReasons.push("Internal labour rate missing");
-  if (!valid(input.labourSellRatePerHour)) reviewReasons.push("Customer labour rate missing");
+  if (!valid(input.materialUnitCost) || input.materialUnitCost === 0) reviewReasons.push("Material unit price missing or zero; confirm pricing");
+  if (!valid(input.labourHoursPerUnit) || input.labourHoursPerUnit === 0) reviewReasons.push("Labour production rate missing or zero; confirm hours");
+  if (!valid(input.labourCostPerHour) || input.labourCostPerHour === 0) reviewReasons.push("Internal labour rate missing or zero");
+  if (!valid(input.labourSellRatePerHour) || input.labourSellRatePerHour === 0) reviewReasons.push("Customer labour rate missing or zero");
   if (!valid(input.wastePercent) || input.wastePercent! > 100)
     reviewReasons.push("Waste percentage missing or invalid");
   if (!valid(input.materialMarkupPercent) || input.materialMarkupPercent! > 1000)
