@@ -7,7 +7,6 @@ type NumericField = "quantity" | "materialUnitCost" | "labourHoursPerUnit" |
   "labourCostPerHour" | "labourSellRatePerHour" | "materialMarkupPercent" | "wastePercent" |
   "crewSize" | "workHoursPerDay" | "crewEfficiencyPercent";
 const fields: { key: NumericField; label: string }[] = [
-  { key: "quantity", label: "Required quantity" },
   { key: "wastePercent", label: "Waste (%)" },
   { key: "materialUnitCost", label: "Material unit cost ($)" },
   { key: "labourHoursPerUnit", label: "Labour hours per unit" },
@@ -37,6 +36,7 @@ export function EvidenceEstimateReview({ quote, item, onApprove }: {
       <h3>Review drawing quantities and pricing</h3>
       <p>Draft only. Nothing is added to a customer quote until approved.</p>
       <p><strong>{input.description}</strong> — {input.evidence || "No drawing reference"}</p>
+      <p>Drawing quantity: <strong>{fmt(input.quantity)} {input.unit}</strong>. Change this in the drawing takeoff review before approving.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
         {fields.map(({ key, label }) => (
           <label key={key}>{label}
