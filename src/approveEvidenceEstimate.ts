@@ -54,11 +54,16 @@ export function approveEvidenceEstimate(quote: Quote, input: EstimateInput): Quo
     category: "Miscellaneous",
     scopeGroup: item.scopeGroup || "",
     // Do not assign takeoffId to labour: the material line owns conversion identity.
-    materialNotes: `Labour estimate: ${input.labourHoursPerUnit} hours per ${input.unit} × ${input.quantity} ${input.unit}. Review site conditions.`,
+    materialNotes: `Labour estimate: ${input.labourHoursPerUnit} hours per ${input.unit} × ${input.quantity} ${input.unit}. Crew: ${input.crewSize ?? 1} person(s), ${input.workHoursPerDay ?? 8} hours/day, ${input.crewEfficiencyPercent ?? 100}% efficiency. Review site conditions.`,
   };
   return {
     ...quote,
     lines: [...quote.lines, material, labour],
+    estimateCrew: {
+      size: input.crewSize ?? 1,
+      hoursPerDay: input.workHoursPerDay ?? 8,
+      efficiencyPercent: input.crewEfficiencyPercent ?? 100,
+    },
     takeoff: quote.takeoff.map(t => t.id === item.id
       ? { ...t, convertedLineId: material.id }
       : t),
