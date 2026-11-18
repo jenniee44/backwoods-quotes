@@ -25,6 +25,7 @@ import AutoDetailSelection from "./AutoDetailSelection";
 import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
 import { EvidenceEstimateReview } from "./EvidenceEstimateReview";
+import { approveEvidenceEstimate } from "./approveEvidenceEstimate";
 import MaterialsSummary from "./MaterialsSummary";
 import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
@@ -2269,11 +2270,11 @@ export default function PlansTakeoff({
             />
             {q.takeoff.length > 0 && (
               <details>
-                <summary>Experimental quantity, labour and cost review (not saved)</summary>
+                <summary>Experimental quantity, labour and cost review</summary>
                 <p>
-                  This calculator previews one drawing item at a time. Edits are
-                  temporary and do not change your quote. Unverified takeoffs
-                  remain blocked; supplier prices and production rates must be entered.
+                  This calculator reviews one drawing item at a time. Editing fields is
+                  temporary until you approve. Approval adds separate material and
+                  labour lines to the draft quote. Unverified takeoffs remain blocked.
                 </p>
                 <label>
                   Drawing item
@@ -2297,6 +2298,14 @@ export default function PlansTakeoff({
                       key={item.id}
                       quote={q}
                       item={item}
+                      onApprove={locked || busy ? undefined : (input) => {
+                        try {
+                          onChange(approveEvidenceEstimate(q, input));
+                          setReviewError("");
+                        } catch (error) {
+                          setReviewError(error instanceof Error ? error.message : "Could not approve estimate.");
+                        }
+                      }}
                     />
                   );
                 })()}
