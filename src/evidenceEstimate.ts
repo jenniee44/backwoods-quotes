@@ -17,12 +17,16 @@ export interface EstimateInput {
   labourSellRatePerHour?: number | null;
   materialMarkupPercent?: number;
   wastePercent?: number;
+  crewSize?: number;
+  workHoursPerDay?: number;
+  crewEfficiencyPercent?: number;
 }
 export interface EstimateResult {
   id: string;
   purchaseQuantity: number | null;
   materialCost: number | null;
   labourHours: number | null;
+  estimatedWorkDays: number | null;
   labourCost: number | null;
   customerSubtotal: number | null;
   reviewReasons: string[];
@@ -51,12 +55,27 @@ export function calculateEvidenceEstimate(input: EstimateInput): EstimateResult 
     ? money(purchaseQuantity * input.materialUnitCost) : null;
   const labourHours = valid(input.quantity) && valid(input.labourHoursPerUnit)
     ? input.quantity * input.labourHoursPerUnit : null;
+  const crewSize = input.crewSize ?? 1;
+  const workHoursPerDay = input.workHoursPerDay ?? 8;
+  const crewEfficiencyPercent = input.crewEfficiencyPercent ?? 100;
+  if (!Number.isInteger(crewSize) || crewSize < 1 || crewSize > 100)
+    reviewReasons.push("Crew size must be a whole number between 1 and 100");
+  if (!Number.isFinite(workHoursPerDay) || workHoursPerDay <= 0 || workHoursPerDay > 24)
+    reviewReasons.push("Working hours per day must be between 0 and 24");
+  if (!Number.isFinite(crewEfficiencyPercent) || crewEfficiencyPercent <= 0 || crewEfficiencyPercent > 100)
+    reviewReasons.push("Crew efficiency must be greater than 0 and no more than 100%");
+  const estimatedWorkDays = labourHours !== null &&
+    Number.isInteger(crewSize) && crewSize >= 1 && crewSize <= 100 &&
+    workHoursPerDay > 0 && workHoursPerDay <= 24 &&
+    crewEfficiencyPercent > 0 && crewEfficiencyPercent <= 100
+    ? Math.round((labourHours / (crewSize * workHoursPerDay * crewEfficiencyPercent / 100)) * 100) / 100
+    : null;
   const labourCost = labourHours !== null && valid(input.labourCostPerHour)
     ? money(labourHours * input.labourCostPerHour) : null;
   const customerSubtotal = materialCost !== null && labourHours !== null &&
     valid(input.materialMarkupPercent) && valid(input.labourSellRatePerHour)
     ? money(materialCost * (1 + input.materialMarkupPercent / 100) +
         labourHours * input.labourSellRatePerHour) : null;
-  return { id: input.id, purchaseQuantity, materialCost, labourHours, labourCost,
+  return { id: input.id, purchaseQuantity, materialCost, labourHours, estimatedWorkDays, labourCost,
     customerSubtotal, reviewReasons, readyForQuote: reviewReasons.length === 0 };
 }
