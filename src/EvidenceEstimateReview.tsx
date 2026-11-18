@@ -4,7 +4,8 @@ import { draftEstimateFromTakeoff } from "./takeoffEstimateAdapter";
 import { calculateEvidenceEstimate, type EstimateInput } from "./evidenceEstimate";
 
 type NumericField = "quantity" | "materialUnitCost" | "labourHoursPerUnit" |
-  "labourCostPerHour" | "labourSellRatePerHour" | "materialMarkupPercent" | "wastePercent";
+  "labourCostPerHour" | "labourSellRatePerHour" | "materialMarkupPercent" | "wastePercent" |
+  "crewSize" | "workHoursPerDay" | "crewEfficiencyPercent";
 const fields: { key: NumericField; label: string }[] = [
   { key: "quantity", label: "Required quantity" },
   { key: "wastePercent", label: "Waste (%)" },
@@ -13,6 +14,9 @@ const fields: { key: NumericField; label: string }[] = [
   { key: "labourCostPerHour", label: "Internal labour cost per hour ($)" },
   { key: "labourSellRatePerHour", label: "Customer labour rate per hour ($)" },
   { key: "materialMarkupPercent", label: "Material markup (%)" },
+  { key: "crewSize", label: "Crew size (people)" },
+  { key: "workHoursPerDay", label: "Working hours per day" },
+  { key: "crewEfficiencyPercent", label: "Crew efficiency (%)" },
 ];
 const fmt = (n: number | null) => n === null ? "Needs review" : n.toLocaleString("en-CA", { maximumFractionDigits: 2 });
 export function EvidenceEstimateReview({ quote, item, onApprove }: {
@@ -48,6 +52,7 @@ export function EvidenceEstimateReview({ quote, item, onApprove }: {
       <p>Purchase quantity: {fmt(result.purchaseQuantity)} {input.unit}</p>
       <p>Material cost: ${fmt(result.materialCost)}</p>
       <p>Labour hours: {fmt(result.labourHours)}</p>
+      <p>Estimated working days: {fmt(result.estimatedWorkDays)} (schedule estimate, not a promise)</p>
       <p>Internal labour cost: ${fmt(result.labourCost)}</p>
       <p>Estimated customer subtotal (before overhead, contingency and HST): ${fmt(result.customerSubtotal)}</p>
       {reasons.length > 0 && <div role="status"><strong>Review required</strong><ul>
