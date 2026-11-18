@@ -17,7 +17,7 @@ export function draftEstimateFromTakeoff(
   const evidence = [
     item.sourceDocumentName || quote.documents.find(d => d.id === item.documentId)?.name,
     item.page == null ? "" : `page ${item.page}`,
-    ...(item.sourceFacts ?? []),
+    item.notes,
   ].filter(Boolean).join(" · ");
   const input: EstimateInput = {
     id: item.id,
