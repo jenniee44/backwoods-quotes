@@ -31,7 +31,7 @@ export function draftEstimateFromTakeoff(
     labourCostPerHour: settings.labourCostPerHour ?? quote.pricing.internalLabourCost ?? null,
     labourSellRatePerHour: settings.labourSellRatePerHour ?? quote.pricing.labourRate ?? null,
     materialMarkupPercent: settings.materialMarkupPercent ?? quote.pricing.materialMarkup,
-    wastePercent: settings.wastePercent ?? quote.takeoffPreferences?.waste ?? null,
+    wastePercent: settings.wastePercent ?? quote.takeoffPreferences?.waste ?? undefined,
     crewSize: quote.estimateCrew?.size ?? 1,
     workHoursPerDay: quote.estimateCrew?.hoursPerDay ?? 8,
     crewEfficiencyPercent: quote.estimateCrew?.efficiencyPercent ?? 100,
