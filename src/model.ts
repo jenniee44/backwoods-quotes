@@ -158,6 +158,7 @@ export type Quote = {
   takeoff: TakeoffItem[];
   takeoffProjectScope?: "deck-replacement";
   takeoffPreferences?: { availableStock: number[]; waste: number | null };
+  estimateCrew?: { size: number; hoursPerDay: number; efficiencyPercent: number };
   analysisReports?: {
     dimensionDecisions?: import("../shared/drawingDimensions").DimensionDecision[];
     beamSupportRecoveryVersion?: 1;
