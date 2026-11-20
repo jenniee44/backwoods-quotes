@@ -33,7 +33,6 @@ import {
 } from "lucide-react";
 import {
   deleteQuote,
-  persistQuoteDeletion,
   quoteNumberHighWater,
   calculate,
   companyDefaults,
@@ -174,7 +173,7 @@ export default function App() {
   const [store, setStore] = useState<Store>(initial.store),
     [error, setError] = useState(initial.error),
     [notice, setNotice] = useState(""),
-    [saveState, setSaveState] = useState("Saved");
+    [saveState, setSaveState] = useState("Loading…");
   const [role, setRole] = useState<Role>("Admin/Owner"),
     [page, setPage] = useState("Overview"),
     [filter, setFilter] = useState("All"),
@@ -214,18 +213,14 @@ export default function App() {
           // Once migrated, IndexedDB is authoritative. The untouched legacy
           // localStorage snapshot may be older; do not mistake it for a conflict.
           // Preserve legacy-only projects as additions, never overwrite IDs.
-          const durableIds = new Set(saved.quotes.map(q => q.id));
-          const merged: Store = {
-            ...saved,
-            quotes: [...saved.quotes, ...initial.store.quotes.filter(q => !durableIds.has(q.id))],
-            jobs: [...(saved.jobs ?? []), ...(initial.store.jobs ?? []).filter(q => !(saved.jobs ?? []).some(x => x.id === q.id))],
-          };
-          await writeDurableStore(merged);
+          // Existing durable data is authoritative. Re-merging localStorage
+          // would resurrect quotes intentionally deleted after migration.
+          const merged: Store = saved;
           if (!cancelled) setStore(merged);
         } else if (!initial.error) {
           await writeDurableStore(initial.store);
         }
-        if (!cancelled) setDurableReady(true);
+        if (!cancelled) { setDurableReady(true); setSaveState("Saved"); }
       } catch (e) {
         if (!cancelled) setDurableError(`Durable storage unavailable: ${(e as Error).message}. No existing quotes were changed.`);
       }
@@ -379,7 +374,7 @@ export default function App() {
     setMobileMenu(false);
     setError(initial.error);
   }
-  function removeQuote() {
+  async function removeQuote() {
     if (!editing || !store.quotes.some((q) => q.id === editing.id)) return;
     if (initial.error) {
       setError("Saved data needs recovery before deletion.");
@@ -394,7 +389,7 @@ export default function App() {
       return;
     try {
       const next = deleteQuote(storeRef.current, target.id);
-      persistQuoteDeletion(next, target.id);
+      if (!(await saveStore(next))) return;
       void removeQuoteImages(target.id).then((ok) => {
         if (!ok)
           setNotice(
