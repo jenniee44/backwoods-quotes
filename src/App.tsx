@@ -376,8 +376,8 @@ export default function App() {
   }
   async function removeQuote() {
     if (!editing || !store.quotes.some((q) => q.id === editing.id)) return;
-    if (initial.error) {
-      setError("Saved data needs recovery before deletion.");
+    if (initial.error || !durableReady || durableError) {
+      setError("Durable storage must be ready before deletion.");
       return;
     }
     const target = store.quotes.find((q) => q.id === editing.id)!;
@@ -396,7 +396,6 @@ export default function App() {
             "Quote deleted; private analysis-image cleanup could not be verified because browser storage is unavailable. Retry when storage access is restored or clear this site’s browser data.",
           );
       });
-      setStore(next);
       setEditing(null);
       setPreview(null);
       setReviewing(false);
@@ -1587,7 +1586,7 @@ export default function App() {
                                   className="icon danger"
                                   aria-label={`Remove actual ${a.description}`}
                                   onClick={() =>
-                                    saveQuote({
+                                    void saveQuote({
                                       ...current,
                                       job: {
                                         ...current.job!,
@@ -1619,7 +1618,7 @@ export default function App() {
                                   "Complete this job? Confirm all actual costs have been recorded.",
                                 )
                               )
-                                saveQuote({ ...current, status: "Completed" });
+                                void saveQuote({ ...current, status: "Completed" });
                             }}
                           >
                             <Check size={17} /> Mark job completed
@@ -2211,7 +2210,7 @@ export default function App() {
           onMode={async (mode) => {
             const q = { ...preview, mode };
             if (preview.status === "Draft") {
-              if (saveQuote(q)) setPreview(q);
+              if (await saveQuote(q)) setPreview(q);
             } else setPreview(q);
           }}
         />
