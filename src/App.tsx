@@ -214,6 +214,7 @@ export default function App() {
           // Once migrated, IndexedDB is authoritative. The untouched legacy
           // localStorage snapshot may be older; do not mistake it for a conflict.
           // Preserve legacy-only projects as additions, never overwrite IDs.
+          const durableIds = new Set(saved.quotes.map(q => q.id));
           const merged: Store = {
             ...saved,
             quotes: [...saved.quotes, ...initial.store.quotes.filter(q => !durableIds.has(q.id))],
