@@ -199,6 +199,26 @@ export default function App() {
       quantity: 1,
       cost: 0,
     });
+  function exportUnsavedQuote() {
+    if (!editing) return;
+    // Emergency export is intentionally independent of localStorage: a full
+    // storage quota must never prevent the user from recovering editor changes.
+    const payload = {
+      format: "backwoods-unsaved-quote-recovery",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      quote: editing,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `backwoods-unsaved-quote-${editing.number || "draft"}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function saveStore(next: Store): boolean {
     next = { ...next, lastQuoteNumber: quoteNumberHighWater(next) };
     if (initial.error) {
@@ -602,8 +622,22 @@ export default function App() {
                       className={`save-indicator ${saveState === "Save failed" ? "failed" : ""}`}
                       role="status"
                     >
-                      {saveState} · stored on this device
+                      {saveState === "Saved"
+                        ? "Saved on this device"
+                        : saveState === "Save failed"
+                          ? "NOT SAVED — export recovery copy below"
+                          : saveState}
                     </div>
+                    {saveState === "Save failed" && (
+                      <div className="alert" role="alert">
+                        This quote has not been saved. Download an emergency
+                        recovery copy before closing this tab. The download
+                        includes the current quote, attachments and analysis.
+                        <button className="button secondary" type="button" onClick={exportUnsavedQuote}>
+                          Download unsaved quote recovery
+                        </button>
+                      </div>
+                    )}
                     {retainedJob && (
                       <p className="tiny">
                         The source quote was deleted. This separate job retains
