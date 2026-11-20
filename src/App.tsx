@@ -211,16 +211,9 @@ export default function App() {
         if (cancelled) return;
         if (saved) {
           // Never silently replace a newer legacy quote with an older snapshot.
-          const legacyIds = new Set(initial.store.quotes.map(q => q.id));
-          const durableIds = new Set(saved.quotes.map(q => q.id));
-          const conflict = initial.store.quotes.some(q => {
-            const other = saved.quotes.find(x => x.id === q.id);
-            return other && JSON.stringify(other) !== JSON.stringify(q);
-          });
-          if (conflict && legacyIds.size > 0) {
-            setDurableError("Existing browser quotes differ from the durable database. Export a backup before resolving; nothing was overwritten.");
-            return;
-          }
+          // Once migrated, IndexedDB is authoritative. The untouched legacy
+          // localStorage snapshot may be older; do not mistake it for a conflict.
+          // Preserve legacy-only projects as additions, never overwrite IDs.
           const merged: Store = {
             ...saved,
             quotes: [...saved.quotes, ...initial.store.quotes.filter(q => !durableIds.has(q.id))],
