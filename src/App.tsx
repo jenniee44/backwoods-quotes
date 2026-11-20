@@ -1,4 +1,5 @@
 import { removeQuoteImages } from "./analysisImageArchive";
+import { readDurableStore, writeDurableStore } from "./durableStore";
 import { useState, useEffect, useRef } from "react";
 import CustomerScopeEditor from "./CustomerScopeEditor";
 import CustomerQuote from "./CustomerQuote";
@@ -199,6 +200,44 @@ export default function App() {
       quantity: 1,
       cost: 0,
     });
+  const [durableReady, setDurableReady] = useState(false);
+  const [durableError, setDurableError] = useState("");
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = await readDurableStore();
+        if (cancelled) return;
+        if (saved) {
+          // Never silently replace a newer legacy quote with an older snapshot.
+          const legacyIds = new Set(initial.store.quotes.map(q => q.id));
+          const durableIds = new Set(saved.quotes.map(q => q.id));
+          const conflict = initial.store.quotes.some(q => {
+            const other = saved.quotes.find(x => x.id === q.id);
+            return other && JSON.stringify(other) !== JSON.stringify(q);
+          });
+          if (conflict && legacyIds.size > 0) {
+            setDurableError("Existing browser quotes differ from the durable database. Export a backup before resolving; nothing was overwritten.");
+            return;
+          }
+          const merged: Store = {
+            ...saved,
+            quotes: [...saved.quotes, ...initial.store.quotes.filter(q => !durableIds.has(q.id))],
+            jobs: [...(saved.jobs ?? []), ...(initial.store.jobs ?? []).filter(q => !(saved.jobs ?? []).some(x => x.id === q.id))],
+          };
+          await writeDurableStore(merged);
+          if (!cancelled) setStore(merged);
+        } else if (!initial.error) {
+          await writeDurableStore(initial.store);
+        }
+        if (!cancelled) setDurableReady(true);
+      } catch (e) {
+        if (!cancelled) setDurableError(`Durable storage unavailable: ${(e as Error).message}. No existing quotes were changed.`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   function exportUnsavedQuote() {
     if (!editing) return;
     // Emergency export is intentionally independent of localStorage: a full
@@ -219,25 +258,26 @@ export default function App() {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function saveStore(next: Store): boolean {
+  async function saveStore(next: Store): Promise<boolean> {
     next = { ...next, lastQuoteNumber: quoteNumberHighWater(next) };
-    if (initial.error) {
-      setError("Saved data needs recovery before changes can be stored.");
+    if (initial.error || !durableReady || durableError) {
+      setError(durableError || "Durable storage is not ready. No changes were saved.");
       return false;
     }
     try {
-      persist(next);
+      // Serialize writes so autosaves cannot finish out of order.
+      const write = saveQueue.current.catch(() => {}).then(() => writeDurableStore(next));
+      saveQueue.current = write;
+      await write;
       setStore(next);
       setError("");
       return true;
-    } catch {
-      setError(
-        "Could not save. Browser storage may be full or unavailable. Reduce photo sizes or free browser storage, then try again.",
-      );
+    } catch (e) {
+      setError(`Save failed in durable storage: ${(e as Error).message}. Download a recovery copy before leaving.`);
       return false;
     }
   }
-  function saveQuote(q: Quote, close = false, silent = false) {
+  async function saveQuote(q: Quote, close = false, silent = false): Promise<boolean> {
     setSaveState("Saving…");
     const problem = validate(q);
     if (problem) {
@@ -285,7 +325,7 @@ export default function App() {
     }
     const exists = !!stored;
     if (
-      saveStore({
+      await saveStore({
         ...store,
         ...(storedJob
           ? { jobs: store.jobs!.map((x) => (x.id === q.id ? q : x)) }
@@ -322,7 +362,7 @@ export default function App() {
     )
       return;
     setSaveState("Saving…");
-    const timer = setTimeout(() => saveQuote(editing, false, true), 600);
+    const timer = setTimeout(() => { void saveQuote(editing, false, true); }, 600);
     return () => clearTimeout(timer);
   }, [editing, initial.error]);
   function navigate(p: string, f = "All") {
@@ -488,7 +528,7 @@ export default function App() {
         actuals: [...current.job.actuals, { ...actual, id: id() }],
       },
     };
-    if (saveQuote(q))
+    if (await saveQuote(q))
       setActual({
         id: id(),
         description: "",
@@ -586,6 +626,8 @@ export default function App() {
             <span className="top-tag">ESTIMATING WORKSPACE</span>
           </header>
           <main>
+            {!durableReady && !durableError && <div className="notice">Loading durable quote storage…</div>}
+            {durableError && <div className="alert" role="alert">{durableError}</div>}
             {error && (
               <div className="alert" role="alert">
                 {error}
@@ -661,7 +703,7 @@ export default function App() {
                     </button>
                     <button
                       className="button"
-                      onClick={() => saveQuote(current)}
+                      onClick={() => { void saveQuote(current); } }
                     >
                       <Check size={17} />{" "}
                       {retainedJob ? "Save job" : "Save quote"}
@@ -1937,7 +1979,7 @@ export default function App() {
                               quotes: [...store.quotes, ...additions],
                               jobs: [...(store.jobs ?? []), ...jobAdditions],
                             };
-                            if (saveStore(next)) setNotice(`Imported ${additions.length} quote(s) and ${jobAdditions.length} job(s). Check attached drawings and saved analysis before estimating.`);
+                            if (await saveStore(next)) setNotice(`Imported ${additions.length} quote(s) and ${jobAdditions.length} job(s). Check attached drawings and saved analysis before estimating.`);
                           } catch (e) {
                             setError(`Backup import failed: ${(e as Error).message}`);
                           } finally {
@@ -2158,7 +2200,7 @@ export default function App() {
         <QuoteReview
           quote={current}
           onClose={() => setReviewing(false)}
-          onSend={() => {
+          onSend={async () => {
             if (
               confirm("Mark this quote Sent and lock the estimate?") &&
               saveQuote(markSent(current))
@@ -2171,13 +2213,13 @@ export default function App() {
         <CustomerQuote
           quote={preview}
           onClose={() => setPreview(null)}
-          onDetails={(details) => {
+          onDetails={async (details) => {
             const q = { ...preview, details };
             if (preview.status === "Draft") {
               if (saveQuote(q)) setPreview(q);
             } else setPreview(q);
           }}
-          onMode={(mode) => {
+          onMode={async (mode) => {
             const q = { ...preview, mode };
             if (preview.status === "Draft") {
               if (saveQuote(q)) setPreview(q);
