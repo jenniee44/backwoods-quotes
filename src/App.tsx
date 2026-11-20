@@ -510,7 +510,7 @@ export default function App() {
       setError((e as Error).message);
     }
   }
-  function addActual() {
+  async function addActual() {
     if (!current?.job) return;
     if (
       !actual.description.trim() ||
@@ -695,8 +695,8 @@ export default function App() {
                   <div className="heading-actions">
                     <button
                       className="button secondary"
-                      onClick={() => {
-                        if (saveQuote(current)) setPreview(current);
+                      onClick={async () => {
+                        if (await saveQuote(current)) setPreview(current);
                       }}
                     >
                       <Printer size={17} /> Customer quote
@@ -1415,8 +1415,8 @@ export default function App() {
                           );
                           setNotice("");
                         }}
-                        onPersistAnalysis={(q, phase) => {
-                          const saved = saveQuote(q, false, true);
+                        onPersistAnalysis={async (q, phase) => {
+                          const saved = await saveQuote(q, false, true);
                           if (saved) {
                             setNotice(phase === "source" ? "Quote and original drawing saved before analysis. AI results are not yet complete." : "AI analysis and material observations saved on this device.");
                           }
@@ -1794,9 +1794,9 @@ export default function App() {
                       {current.status === "Accepted" && !current.job && (
                         <button
                           className="button"
-                          onClick={() => {
+                          onClick={async () => {
                             const q = convert(current);
-                            if (saveQuote(q)) setTab("Job actuals");
+                            if (await saveQuote(q)) setTab("Job actuals");
                           }}
                         >
                           Convert to job <ArrowUpRight size={17} />
@@ -1882,7 +1882,7 @@ export default function App() {
                   />
                   <button
                     className="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (
                         Object.values(settings).some(
                           (n) => !Number.isFinite(n) || n < 0,
@@ -1908,7 +1908,7 @@ export default function App() {
                         return;
                       }
                       if (
-                        saveStore({
+                        await saveStore({
                           ...store,
                           settings,
                           quoteDefaults,
@@ -2216,7 +2216,7 @@ export default function App() {
           onDetails={async (details) => {
             const q = { ...preview, details };
             if (preview.status === "Draft") {
-              if (saveQuote(q)) setPreview(q);
+              if (await saveQuote(q)) setPreview(q);
             } else setPreview(q);
           }}
           onMode={async (mode) => {
