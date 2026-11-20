@@ -2191,7 +2191,7 @@ export default function App() {
           onSend={async () => {
             if (
               confirm("Mark this quote Sent and lock the estimate?") &&
-              saveQuote(markSent(current))
+              (await saveQuote(markSent(current)))
             )
               setReviewing(false);
           }}
