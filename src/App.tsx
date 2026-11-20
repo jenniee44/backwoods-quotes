@@ -216,7 +216,7 @@ export default function App() {
           // Existing durable data is authoritative. Re-merging localStorage
           // would resurrect quotes intentionally deleted after migration.
           const merged: Store = saved;
-          if (!cancelled) setStore(merged);
+          if (!cancelled) { storeRef.current = merged; setStore(merged); }
         } else if (!initial.error) {
           await writeDurableStore(initial.store);
         }
@@ -258,6 +258,7 @@ export default function App() {
       const write = saveQueue.current.catch(() => {}).then(() => writeDurableStore(next));
       saveQueue.current = write;
       await write;
+      storeRef.current = next;
       setStore(next);
       setError("");
       return true;
@@ -274,8 +275,9 @@ export default function App() {
       setSaveState("Save failed");
       return false;
     }
-    const storedJob = store.jobs?.find((x) => x.id === q.id);
-    const stored = store.quotes.find((x) => x.id === q.id) ?? storedJob;
+    const base = storeRef.current;
+    const storedJob = base.jobs?.find((x) => x.id === q.id);
+    const stored = base.quotes.find((x) => x.id === q.id) ?? storedJob;
     if (
       stored &&
       stored.status !== "Draft" &&
@@ -315,15 +317,15 @@ export default function App() {
     const exists = !!stored;
     if (
       await saveStore({
-        ...store,
+        ...base,
         ...(storedJob
-          ? { jobs: store.jobs!.map((x) => (x.id === q.id ? q : x)) }
+          ? { jobs: base.jobs!.map((x) => (x.id === q.id ? q : x)) }
           : {}),
         quotes: storedJob
-          ? store.quotes
+          ? base.quotes
           : exists
-            ? store.quotes.map((x) => (x.id === q.id ? q : x))
-            : [q, ...store.quotes],
+            ? base.quotes.map((x) => (x.id === q.id ? q : x))
+            : [q, ...base.quotes],
       })
     ) {
       setSaveState("Saved");
