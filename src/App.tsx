@@ -1943,7 +1943,7 @@ export default function App() {
                       Export data backup
                     </button>
                     <label className="button secondary" style={{ display: "inline-block", marginLeft: 8 }}>
-                      Import backup (add missing projects)
+                      Import backup or recovery (preserve existing projects)
                       <input
                         type="file"
                         accept=".json,application/json"
@@ -1958,11 +1958,18 @@ export default function App() {
                             const parsed: unknown = JSON.parse(await file.text());
                             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Not a Backwoods backup.");
                             const data = parsed as Record<string, unknown>;
-                            if (data.version !== 2 || !Array.isArray(data.quotes) || (data.jobs !== undefined && !Array.isArray(data.jobs))) throw new Error("Unsupported backup format. Expected a Backwoods Quotes V2 backup.");
-                            const incomingQuotes = data.quotes as unknown[];
-                            const incomingJobs = (data.jobs ?? []) as unknown[];
-                            const valid = (item: unknown): item is Quote => !!item && typeof item === "object" && !Array.isArray(item) && typeof (item as Quote).id === "string" && !!(item as Quote).id && typeof (item as Quote).name === "string" && Array.isArray((item as Quote).lines) && Array.isArray((item as Quote).documents ?? []);
-                            if (![...incomingQuotes, ...incomingJobs].every(valid)) throw new Error("Backup contains invalid project records.");
+                            const recovery = data.format === "backwoods-unsaved-quote-recovery" && data.version === 1;
+                            const restored = migrate(recovery ? { ...store, quotes: [data.quote], jobs: [] } : data);
+                            const incomingQuotes = restored.quotes;
+                            const incomingJobs = restored.jobs ?? [];
+                            if (recovery && [...store.quotes, ...(store.jobs ?? [])].some(q => q.id === incomingQuotes[0].id)) {
+                              const original = incomingQuotes[0];
+                              if (original.status !== "Draft" || original.job) throw new Error("Historical recovery requires manual review.");
+                              if (!window.confirm("This quote already exists. Restore the unsaved version as a separate draft, keeping the existing quote unchanged?")) return;
+                              const copy = duplicate(original, [...store.quotes, ...(store.jobs ?? [])], quoteNumberHighWater(store));
+                              if (await saveStore({...store, quotes: [copy, ...store.quotes]})) setNotice("Recovered draft as a separate quote. Existing quote preserved.");
+                              return;
+                            }
                             const existingIds = new Set([...store.quotes, ...(store.jobs ?? [])].map(q => q.id));
                             const incomingIds = new Set<string>();
                             for (const q of [...incomingQuotes, ...incomingJobs] as Quote[]) {
