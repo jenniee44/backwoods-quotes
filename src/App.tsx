@@ -1967,7 +1967,10 @@ export default function App() {
                               // Full restoration is deliberately non-destructive: refuse to replace any different existing project.
                               const incoming = new Map([...restored.quotes, ...(restored.jobs ?? [])].map(q => [q.id, q]));
                               const conflicts = [...base.quotes, ...(base.jobs ?? [])].filter(q => JSON.stringify(incoming.get(q.id)) !== JSON.stringify(q));
-                              if (conflicts.length) throw new Error("Full restoration would replace or remove existing projects. Use add-missing-projects mode instead.");
+                              if (conflicts.length) {
+                                // Preserve every existing record, including sample projects; never identify disposable data by name.
+                                throw new Error("Full restoration would replace or remove existing projects. Cancel full restoration and use add-missing-projects mode. No records changed.");
+                              }
                               if (!window.confirm("Restore backup pricing and settings? Export your current workspace first if you need to retain its settings.")) return;
                               if (await saveStore(restored, base)) {
                                 setCompany(restored.company ?? companyDefaults);
