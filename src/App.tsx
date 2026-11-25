@@ -49,6 +49,7 @@ import {
   id,
   jobTotals,
   load,
+  migrate,
   money,
   newQuote,
   persist,
@@ -201,6 +202,7 @@ export default function App() {
     });
   const [durableReady, setDurableReady] = useState(false);
   const [durableError, setDurableError] = useState("");
+  const [startupError, setStartupError] = useState(initial.error);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     let cancelled = false;
@@ -215,10 +217,19 @@ export default function App() {
           // Preserve legacy-only projects as additions, never overwrite IDs.
           // Existing durable data is authoritative. Re-merging localStorage
           // would resurrect quotes intentionally deleted after migration.
-          const merged: Store = saved;
-          if (!cancelled) { storeRef.current = merged; setStore(merged); }
+          const merged: Store = migrate(saved);
+          // Keep the exact durable snapshot as the compare-and-swap baseline.
+          if (JSON.stringify(merged) !== JSON.stringify(saved)) await writeDurableStore(merged, saved);
+          if (!cancelled) {
+            storeRef.current = merged; setStore(merged);
+            setCompany(merged.company ?? companyDefaults);
+            setSettings(merged.settings); setQuoteDefaults(merged.quoteDefaults);
+            setStartupError(""); setError("");
+          }
         } else if (!initial.error) {
-          await writeDurableStore(initial.store);
+          await writeDurableStore(initial.store, null);
+        } else {
+          throw new Error(initial.error);
         }
         if (!cancelled) { setDurableReady(true); setSaveState("Saved"); }
       } catch (e) {
@@ -247,15 +258,15 @@ export default function App() {
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  async function saveStore(next: Store): Promise<boolean> {
+  async function saveStore(next: Store, expected: Store = store): Promise<boolean> {
     next = { ...next, lastQuoteNumber: quoteNumberHighWater(next) };
-    if (initial.error || !durableReady || durableError) {
+    if (startupError || !durableReady || durableError) {
       setError(durableError || "Durable storage is not ready. No changes were saved.");
       return false;
     }
     try {
       // Serialize writes so autosaves cannot finish out of order.
-      const write = saveQueue.current.catch(() => {}).then(() => writeDurableStore(next));
+      const write = saveQueue.current.catch(() => {}).then(() => writeDurableStore(next, expected));
       saveQueue.current = write;
       await write;
       storeRef.current = next;
@@ -326,7 +337,7 @@ export default function App() {
           : exists
             ? base.quotes.map((x) => (x.id === q.id ? q : x))
             : [q, ...base.quotes],
-      })
+      }, base)
     ) {
       setSaveState("Saved");
       if (!silent) setNotice("Saved on this device");
@@ -343,7 +354,7 @@ export default function App() {
   useEffect(() => {
     if (
       !editing ||
-      initial.error ||
+      startupError ||
       JSON.stringify(editing) ===
         JSON.stringify(
           [...storeRef.current.quotes, ...(storeRef.current.jobs ?? [])].find(
@@ -355,7 +366,7 @@ export default function App() {
     setSaveState("Saving…");
     const timer = setTimeout(() => { void saveQuote(editing, false, true); }, 600);
     return () => clearTimeout(timer);
-  }, [editing, initial.error]);
+  }, [editing, startupError]);
   function navigate(p: string, f = "All") {
     if (
       editing &&
@@ -374,11 +385,11 @@ export default function App() {
     setPage(p);
     setFilter(f);
     setMobileMenu(false);
-    setError(initial.error);
+    setError(startupError);
   }
   async function removeQuote() {
     if (!editing || !store.quotes.some((q) => q.id === editing.id)) return;
-    if (initial.error || !durableReady || durableError) {
+    if (startupError || !durableReady || durableError) {
       setError("Durable storage must be ready before deletion.");
       return;
     }
@@ -390,8 +401,9 @@ export default function App() {
     )
       return;
     try {
-      const next = deleteQuote(storeRef.current, target.id);
-      if (!(await saveStore(next))) return;
+      const base = storeRef.current;
+      const next = deleteQuote(base, target.id);
+      if (!(await saveStore(next, base))) return;
       void removeQuoteImages(target.id).then((ok) => {
         if (!ok)
           setNotice(
@@ -432,7 +444,7 @@ export default function App() {
     setTab("Customer & job");
     setSelectedTemplate("");
     setNotice("");
-    setError(initial.error);
+    setError(startupError);
   }
   const active = store.quotes.filter(
     (q) => q.status === "Draft" || q.status === "Sent",
@@ -533,6 +545,7 @@ export default function App() {
     { name: "Jobs", icon: BriefcaseBusiness },
     { name: "Settings", icon: Settings },
   ];
+  if (!durableReady) return <main className="panel" role="status">{durableError || "Loading saved Backwoods projects…"}</main>;
   return (
     <>
       <div className={`shell ${preview ? "printing" : ""}`}>
@@ -1912,7 +1925,7 @@ export default function App() {
                   </button>
                   <div className="data-tools">
                     <button
-                      disabled={!!initial.error}
+                      disabled={!!startupError}
                       className="button secondary"
                       onClick={() => {
                         const blob = new Blob(
@@ -1935,7 +1948,7 @@ export default function App() {
                         type="file"
                         accept=".json,application/json"
                         style={{ display: "none" }}
-                        disabled={!!initial.error}
+                        disabled={!!startupError}
                         onChange={async (event) => {
                           const input = event.currentTarget;
                           const file = input.files?.[0];
