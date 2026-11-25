@@ -1505,14 +1505,14 @@ export default function App() {
                                   note="Before HST"
                                 />
                                 <Stat
-                                  label="Expected profit"
+                                  label="Estimated gross contribution"
                                   value={money(j.profit)}
                                   note={`${j.margin.toFixed(1)}% expected margin`}
                                 />
                                 <Stat
-                                  label="Actual profit"
+                                  label={current.status === "Completed" ? "Recorded gross contribution" : "Quote less recorded costs"}
                                   value={money(j.actualProfit)}
-                                  note={`${j.actualMargin.toFixed(1)}% actual margin`}
+                                  note={current.status === "Completed" ? `${j.actualMargin.toFixed(1)}% of quoted revenue; excludes unrecorded costs` : "Interim balance only — not final profit"}
                                 />
                               </>
                             );
