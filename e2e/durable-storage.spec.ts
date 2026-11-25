@@ -67,3 +67,30 @@ test("legacy migration preserves attachments and settings across reload", async 
   }, expected.id);
   expect(actual).toEqual({ data: expected.data, count: expected.count, rate: 97 });
 });
+
+test("workspace recovery restores settings without removing projects", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const backup = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    const store = await readDurableStore();
+    return { ...store, settings: { ...store.settings, labourRate: 123 } };
+  });
+  page.on("dialog", dialog => dialog.accept());
+  await page.locator('input[type="file"][accept=".json,application/json"]').setInputFiles({
+    name: "synthetic-backup.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(backup))
+  });
+  await expect(page.getByText("Backup workspace restored.", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Customer labour rate ($/hour)", { exact: true })).toHaveValue("123");
+  const actual = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return await readDurableStore();
+  });
+  expect(actual.quotes).toEqual(backup.quotes);
+  expect(actual.settings.labourRate).toBe(123);
+});
