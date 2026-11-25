@@ -6,6 +6,7 @@ import CustomerQuote from "./CustomerQuote";
 import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
 import QuoteDetailsEditor from "./QuoteDetailsEditor";
+import { recoverDrawingEvidence } from "./recoverDrawingEvidence";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
@@ -1405,6 +1406,24 @@ export default function App() {
                       </>
                     )}
                     {tab === "Plans & Takeoff" && (
+                      <>
+                      {!locked && current.status === "Draft" && !current.job && (
+                        <button type="button" className="button" onClick={async () => {
+                          try {
+                            let next = current;
+                            for (const source of storeRef.current.quotes) {
+                              if (source.id !== current.id) next = recoverDrawingEvidence(next, source);
+                            }
+                            const count = next.takeoff.length - current.takeoff.length;
+                            if (!count) { setNotice("No new matching drawing observations found."); return; }
+                            if (!window.confirm("Recover " + count + " matching drawing observations for fresh review? Existing prices will not change.")) return;
+                            if (await saveQuote(next, false, true)) {
+                              setEditing(previous => previous?.id === next.id ? next : previous);
+                              setNotice("Recovered " + count + " drawing observations. Review quantities before pricing.");
+                            }
+                          } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+                        }}>Recover matching drawing observations</button>
+                      )}
                       <PlansTakeoff
                         orientations={pdfOrientations}
                         setOrientations={setPdfOrientations}
@@ -1427,6 +1446,7 @@ export default function App() {
                         }}
                         onError={setError}
                       />
+                      </>
                     )}
                     {tab === "Pricing" && (
                       <>
