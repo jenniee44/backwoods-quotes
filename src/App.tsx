@@ -1960,6 +1960,23 @@ export default function App() {
                             const data = parsed as Record<string, unknown>;
                             const recovery = data.format === "backwoods-unsaved-quote-recovery" && data.version === 1;
                             const restored = migrate(recovery ? { ...store, quotes: [data.quote], jobs: [] } : data);
+                            if (!recovery && window.confirm("Restore the entire backup workspace, including pricing and settings? Cancel to use the existing add-missing-projects mode.")) {
+                              const ids = [...restored.quotes, ...(restored.jobs ?? [])].map(q => q.id);
+                              if (new Set(ids).size !== ids.length) throw new Error("Backup contains duplicate project IDs.");
+                              const base = storeRef.current;
+                              // Full restoration is deliberately non-destructive: refuse to replace any different existing project.
+                              const incoming = new Map([...restored.quotes, ...(restored.jobs ?? [])].map(q => [q.id, q]));
+                              const conflicts = [...base.quotes, ...(base.jobs ?? [])].filter(q => JSON.stringify(incoming.get(q.id)) !== JSON.stringify(q));
+                              if (conflicts.length) throw new Error("Full restoration would replace or remove existing projects. Use add-missing-projects mode instead.");
+                              if (!window.confirm("Restore backup pricing and settings? Export your current workspace first if you need to retain its settings.")) return;
+                              if (await saveStore(restored, base)) {
+                                setCompany(restored.company ?? companyDefaults);
+                                setSettings(restored.settings);
+                                setQuoteDefaults(restored.quoteDefaults);
+                                setNotice("Backup workspace restored.");
+                              }
+                              return;
+                            }
                             const incomingQuotes = restored.quotes;
                             const incomingJobs = restored.jobs ?? [];
                             if (recovery && [...store.quotes, ...(store.jobs ?? [])].some(q => q.id === incomingQuotes[0].id)) {
