@@ -33,12 +33,25 @@ export async function readDurableStore(): Promise<Store | null> {
   }
 }
 
-export async function writeDurableStore(store: Store): Promise<void> {
+export async function writeDurableStore(store: Store, expected?: Store | null): Promise<void> {
   const db = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(OBJECT_STORE, "readwrite");
-      tx.objectStore(OBJECT_STORE).put(store, KEY);
+      const records = tx.objectStore(OBJECT_STORE);
+      if (expected === undefined) {
+        records.put(store, KEY);
+      } else {
+        const read = records.get(KEY);
+        read.onsuccess = () => {
+          if (JSON.stringify(read.result ?? null) !== JSON.stringify(expected)) {
+            reject(new Error("Saved data changed in another operation or tab. Export unsaved work and reload before retrying."));
+            tx.abort();
+            return;
+          }
+          records.put(store, KEY);
+        };
+      }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("Could not save quotes"));
       tx.onabort = () => reject(tx.error ?? new Error("Quote save was aborted"));
