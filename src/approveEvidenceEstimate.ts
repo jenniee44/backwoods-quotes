@@ -22,18 +22,19 @@ export function approveEvidenceEstimate(quote: Quote, input: EstimateInput): Quo
   if (!result.readyForQuote || result.labourHours === null ||
       result.materialCost === null || result.customerSubtotal === null)
     throw new Error("Complete all prices, production rates and evidence before approving.");
-  if (input.quantity === null || input.materialUnitCost == null ||
-      input.labourCostPerHour == null || input.labourSellRatePerHour == null ||
-      input.materialMarkupPercent == null || input.wastePercent == null)
-    throw new Error("Required estimate inputs are missing.");
+  const type = input.workType ?? "supply-install";
+  const hasMaterial = type !== "labour-only";
+  const hasLabour = type === "supply-install" || type === "labour-only";
+  if (input.quantity === null || input.unit !== item.unit)
+    throw new Error("Required estimate quantity or unit is invalid.");
   const material = {
-    ...newLine("Materials", quote.pricing),
+    ...newLine(type === "subcontract" ? "Other Costs" : "Materials", quote.pricing),
     description: item.description,
     quantity: input.quantity,
     unit: input.unit,
-    cost: input.materialUnitCost,
-    waste: input.wastePercent,
-    markup: input.materialMarkupPercent,
+    cost: input.materialUnitCost ?? 0,
+    waste: type === "subcontract" ? 0 : input.wastePercent ?? 0,
+    markup: input.materialMarkupPercent ?? 0,
     inheritMarkup: false,
     inheritCost: false,
     category: item.category || "Miscellaneous",
@@ -44,11 +45,11 @@ export function approveEvidenceEstimate(quote: Quote, input: EstimateInput): Quo
   };
   const labour = {
     ...newLine("Labour", quote.pricing),
-    description: `Install: ${item.description}`,
+    description: type === "labour-only" ? item.description : `Install: ${item.description}`,
     quantity: result.labourHours,
     unit: "hours",
-    cost: input.labourCostPerHour,
-    rate: input.labourSellRatePerHour,
+    cost: input.labourCostPerHour ?? 0,
+    rate: input.labourSellRatePerHour ?? 0,
     inheritCost: false,
     inheritRate: false,
     category: "Miscellaneous",
@@ -58,14 +59,14 @@ export function approveEvidenceEstimate(quote: Quote, input: EstimateInput): Quo
   };
   return {
     ...quote,
-    lines: [...quote.lines, material, labour],
+    lines: [...quote.lines, ...(hasMaterial ? [material] : []), ...(hasLabour ? [{ ...labour, ...(!hasMaterial ? { takeoffId: item.id } : {}) }] : [])],
     estimateCrew: {
       size: input.crewSize ?? 1,
       hoursPerDay: input.workHoursPerDay ?? 8,
       efficiencyPercent: input.crewEfficiencyPercent ?? 100,
     },
     takeoff: quote.takeoff.map(t => t.id === item.id
-      ? { ...t, convertedLineId: material.id }
+      ? { ...t, convertedLineId: hasMaterial ? material.id : labour.id }
       : t),
   };
 }
