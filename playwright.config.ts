@@ -4,7 +4,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:5173",
     launchOptions: {
-      executablePath: "/usr/bin/chromium",
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
       args: ["--no-sandbox"],
     },
     viewport: { width: 390, height: 844 },
