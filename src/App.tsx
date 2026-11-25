@@ -1986,7 +1986,9 @@ export default function App() {
                               const original = incomingQuotes[0];
                               if (original.status !== "Draft" || original.job) throw new Error("Historical recovery requires manual review.");
                               if (!window.confirm("This quote already exists. Restore the unsaved version as a separate draft, keeping the existing quote unchanged?")) return;
-                              const copy = duplicate(original, [...store.quotes, ...(store.jobs ?? [])], quoteNumberHighWater(store));
+                              const identity = newQuote(original.pricing, [...store.quotes, ...(store.jobs ?? [])], original.details, original.company, quoteNumberHighWater(store));
+                              // Preserve the complete internal evidence graph, including document and line references.
+                              const copy: Quote = { ...structuredClone(original), id: identity.id, number: identity.number, name: original.name + " (recovered draft)", status: "Draft", snapshot: undefined, sentAt: undefined, job: undefined };
                               if (await saveStore({...store, quotes: [copy, ...store.quotes]})) setNotice("Recovered draft as a separate quote. Existing quote preserved.");
                               return;
                             }
