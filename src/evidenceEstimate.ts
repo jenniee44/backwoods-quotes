@@ -6,6 +6,7 @@
 export type EvidenceStatus = "drawing" | "contractor" | "assumption";
 export interface EstimateInput {
   id: string;
+  workType?: "supply-install" | "material-only" | "labour-only" | "subcontract";
   description: string;
   quantity: number | null;
   unit: string;
@@ -37,14 +38,19 @@ const valid = (n: number | null | undefined): n is number =>
 const money = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export function calculateEvidenceEstimate(input: EstimateInput): EstimateResult {
   const reviewReasons: string[] = [];
+  const type = input.workType ?? "supply-install";
+  const material = type !== "labour-only";
+  const labour = type === "supply-install" || type === "labour-only";
+  // Subcontract pricing uses the quoted unit cost and markup, without material waste.
+  input = { ...input, ...(!material ? { materialUnitCost: 0, wastePercent: 0, materialMarkupPercent: 0 } : {}), ...(type === "subcontract" ? { wastePercent: 0 } : {}), ...(!labour ? { labourHoursPerUnit: 0, labourCostPerHour: 0, labourSellRatePerHour: 0, crewSize: 1, workHoursPerDay: 8, crewEfficiencyPercent: 100 } : {}) };
   if (!valid(input.quantity)) reviewReasons.push("Quantity missing or invalid");
   if (input.source === "assumption") reviewReasons.push("Quantity is an assumption");
   if (input.source === "drawing" && !input.evidence?.trim())
     reviewReasons.push("Drawing reference missing");
-  if (!valid(input.materialUnitCost) || input.materialUnitCost === 0) reviewReasons.push("Material unit price missing or zero; confirm pricing");
-  if (!valid(input.labourHoursPerUnit) || input.labourHoursPerUnit === 0) reviewReasons.push("Labour production rate missing or zero; confirm hours");
-  if (!valid(input.labourCostPerHour) || input.labourCostPerHour === 0) reviewReasons.push("Internal labour rate missing or zero");
-  if (!valid(input.labourSellRatePerHour) || input.labourSellRatePerHour === 0) reviewReasons.push("Customer labour rate missing or zero");
+  if (material && (!valid(input.materialUnitCost) || input.materialUnitCost === 0)) reviewReasons.push("Material unit price missing or zero; confirm pricing");
+  if (labour && (!valid(input.labourHoursPerUnit) || input.labourHoursPerUnit === 0)) reviewReasons.push("Labour production rate missing or zero; confirm hours");
+  if (labour && (!valid(input.labourCostPerHour) || input.labourCostPerHour === 0)) reviewReasons.push("Internal labour rate missing or zero");
+  if (labour && (!valid(input.labourSellRatePerHour) || input.labourSellRatePerHour === 0)) reviewReasons.push("Customer labour rate missing or zero");
   if (!valid(input.wastePercent) || input.wastePercent! > 100)
     reviewReasons.push("Waste percentage missing or invalid");
   if (!valid(input.materialMarkupPercent) || input.materialMarkupPercent! > 1000)
