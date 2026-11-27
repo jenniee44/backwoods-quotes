@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 const beam: TakeoffItem = {
@@ -38,19 +39,17 @@ for (const width of [1366, 390])
       page: n,
     }));
     const manual = structuredClone(q.lines);
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
+    await page.goto("/");
     for (let reopen = 0; reopen < 2; reopen++) {
       await page.reload();
       await page
         .getByRole("button", { name: /Synthetic saved beam repair/ })
         .click();
-      await page
-        .getByRole("button", { name: "Plans & Takeoff", exact: true })
-        .click();
+      await selectEditorTab(page, "Plans & Takeoff");
       await expect(page.locator(".material-category-row")).toHaveCount(1);
       await page
         .getByLabel("Edit assemblies: beam-1", { exact: true })
@@ -88,19 +87,20 @@ for (const width of [1366, 390])
       ).toBe(true);
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff.filter(
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff.filter(
                 (t: TakeoffItem) => t.status === "Rejected",
-              ).length,
-            storageKey,
-          ),
+              ).length;
+    }),
         )
         .toBe(3);
-      const saved = await page.evaluate(
-        (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-        storageKey,
-      );
+      const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0];
+    });
       expect(saved.takeoff).toHaveLength(4);
       expect(saved.lines).toEqual(manual);
       expect(saved.takeoff[0].calculation.inputs.runs).toBe(3);
@@ -124,18 +124,15 @@ test("manual run entry populates never-entered plies in a previously blank saved
       calculation: { kind: "beam-runs", inputs: {}, verified: false },
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic blank beam calculator/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page
     .getByLabel("Edit assemblies: beam-1", { exact: true })
     .getByRole("button", { name: "Review details" })

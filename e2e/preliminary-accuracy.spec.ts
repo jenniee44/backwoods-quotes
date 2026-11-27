@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -101,18 +102,15 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
     },
   ];
   const originalLines = q.lines;
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ s, key }) => localStorage.setItem(key, JSON.stringify(s)),
     { s, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic repeated elevations/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   const region = page.getByRole("region", { name: "Materials Summary" });
   await region
     .getByRole("button", { name: /Preliminary Shopping List/ })
@@ -153,10 +151,11 @@ test("repeated framing and hardware consolidate; notes/existing work stay out of
     page.locator("#takeoff-beam .takeoff-advanced"),
   ).not.toHaveAttribute("open");
   await page.waitForTimeout(1500);
-  const stored = await page.evaluate(
-    (key) => JSON.parse(localStorage.getItem(key)!),
-    storageKey,
-  );
+  const stored = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore());
+    });
   expect(
     stored.quotes.find((v: { id: string }) => v.id === q.id).lines,
   ).toEqual(originalLines);

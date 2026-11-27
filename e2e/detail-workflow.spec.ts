@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -7,9 +8,7 @@ async function attach(
 ) {
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   const pdf = Buffer.from(constructionPdf(options));
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic-workflow.pdf",
@@ -355,9 +354,7 @@ test("slow orientation preparation never reports ready or allows ignored zoom co
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   expect(
     intercepted,
     "The orientation delay must intercept Vite URLs including cache-busting query strings",

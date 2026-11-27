@@ -1,6 +1,9 @@
 import UnitInput from "./UnitInput";
 import { Plus, Trash2 } from "lucide-react";
 import NumberInput from "./NumberInput";
+import { CrewEstimateEditor } from "./EstimatingRateEditors";
+import { changeEstimateLineUnit, copyCataloguePrice, matchingMaterialUnit, upsertCrewEquipment } from "./estimatingRates";
+import type { MaterialCatalogueEntry } from "./estimatingRates";
 import {
   categories,
   newLine,
@@ -29,12 +32,14 @@ export default function LineEditor({
   quote: q,
   kind,
   locked,
+  materialCatalogue = [],
   onChange,
   onGroup,
 }: {
   quote: Quote;
   kind: Kind;
   locked: boolean;
+  materialCatalogue?: MaterialCatalogueEntry[];
   onChange: (lines: Line[]) => void;
   onGroup: (group: string) => void;
 }) {
@@ -63,6 +68,7 @@ export default function LineEditor({
         .filter((l) => l.kind === kind)
         .map((stored) => {
           const l = effectiveLine(stored, q.pricing);
+          const matchingPrices = materialCatalogue.filter(entry => matchingMaterialUnit(l, entry));
           const allowance =
             kind === "Other Costs" &&
             l.unit === "allowance" &&
@@ -145,6 +151,40 @@ export default function LineEditor({
                   </select>
                 </F>
               )}
+              {!locked && matchingPrices.length > 0 && (
+                <F label="Copy saved material price">
+                  <select value="" onChange={event => {
+                    const entry = matchingPrices.find(price => price.id === event.target.value);
+                    if (entry) patch(copyCataloguePrice(l, entry));
+                  }}>
+                    <option value="">Choose a catalogue entry</option>
+                    {matchingPrices.map(entry => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name} · {money(entry.unitCost)} / {entry.unit}
+                        {entry.stockLengthFt ? " · " + entry.stockLengthFt + " ft stock" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </F>
+              )}
+              {kind === "Materials" && l.catalogueStockLengthFt !== undefined && (
+                <small>Catalogue stock length {l.catalogueStockLengthFt} ft</small>
+              )}
+              {!locked && kind === "Labour" && (
+                <CrewEstimateEditor
+                  onApply={(quantity, cost) => patch({ ...l, quantity, cost, inheritCost: false })}
+                  equipmentExists={q.lines.some(line => line.equipmentForLabourId === l.id)}
+                  onAddEquipment={(hours, cost) => onChange(upsertCrewEquipment(q.lines, {
+                    ...newLine("Other Costs", q.pricing),
+                    description: l.description.trim() ? l.description + " equipment" : "Task equipment",
+                    scopeGroup: l.scopeGroup,
+                    unit: "hours",
+                    category: "Equipment Rental",
+                    quantity: hours,
+                    cost,
+                  }, l.id))}
+                />
+              )}
               <div className="fields compact">
                 {!allowance && (
                   <F
@@ -166,7 +206,7 @@ export default function LineEditor({
                   <F label="Unit">
                     <UnitInput
                       value={l.unit}
-                      onChange={(unit) => patch({ ...l, unit })}
+                      onChange={(unit) => patch(changeEstimateLineUnit(l, unit))}
                     />
                   </F>
                 )}

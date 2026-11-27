@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -21,18 +22,15 @@ for (const [width, count] of [
     q.takeoff = [];
     q.documents = [];
     const manual = structuredClone(q.lines);
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
-    await page.reload();
+    await page.goto("/");
     await page
       .getByRole("button", { name: /Synthetic parallel beam review/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     const beams = syntheticDeckBeams();
     const extra = structuredClone(beams[0]);
     extra.start.y = 0.85;
@@ -126,9 +124,7 @@ for (const [width, count] of [
         await page
           .getByRole("button", { name: /Synthetic parallel beam review/ })
           .click();
-        await page
-          .getByRole("button", { name: "Plans & Takeoff", exact: true })
-          .click();
+        await selectEditorTab(page, "Plans & Takeoff");
       }
       await page
         .getByRole("button", { name: /Preliminary Shopping List/ })
@@ -205,19 +201,20 @@ for (const [width, count] of [
 
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff.filter(
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff.filter(
                 (t: TakeoffItem) => t.status === "Proposed",
-              ).length,
-            storageKey,
-          ),
+              ).length;
+    }),
         )
         .toBe(1);
-      const saved = await page.evaluate(
-        (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-        storageKey,
-      );
+      const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0];
+    });
       expect(saved.lines).toEqual(manual);
       expect(saved.documents[0].pdfText).toBeUndefined();
       expect(saved.documents[0].data.split(",")[1]).toBe(

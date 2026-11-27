@@ -38,8 +38,25 @@ export function EvidenceEstimateReview({ quote, item, onApprove }: {
       <p><strong>{input.description}</strong> — {input.evidence || "No drawing reference"}</p>
       <p>Drawing quantity: <strong>{fmt(input.quantity)} {input.unit}</strong>. Change this in the drawing takeoff review before approving.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
-        {fields.map(({ key, label }) => (
-          <label key={key}>{label}
+        <label>Work type
+          <select value={input.workType ?? "supply-install"} onChange={e => {
+            setChanges(prev => ({ ...prev, workType: e.target.value as EstimateInput["workType"] }));
+            setConfirmed(false);
+          }}>
+            <option value="supply-install">Supply and install</option>
+            <option value="material-only">Material only</option>
+            <option value="labour-only">Labour only</option>
+            <option value="subcontract">Subcontracted work</option>
+          </select>
+        </label>
+        {fields.filter(({key}) => {
+          const type = input.workType ?? "supply-install";
+          const materialField = ["wastePercent", "materialUnitCost", "materialMarkupPercent"].includes(key);
+          if (type === "labour-only") return !materialField;
+          if (type === "material-only" || type === "subcontract") return materialField && !(type === "subcontract" && key === "wastePercent");
+          return true;
+        }).map(({ key, label }) => (
+          <label key={key}>{input.workType === "subcontract" && key === "materialUnitCost" ? "Subcontractor unit cost ($)" : input.workType === "subcontract" && key === "materialMarkupPercent" ? "Subcontractor markup (%)" : label}
             <input type="number" min="0" step="any" value={input[key] ?? ""}
               onChange={e => {
                 const value = e.target.value === "" ? null : Number(e.target.value);

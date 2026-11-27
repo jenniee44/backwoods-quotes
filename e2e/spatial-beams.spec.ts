@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { expect, test } from "@playwright/test";
 import { analysisFixture } from "../shared/analysis.fixture";
 import {
@@ -130,9 +131,7 @@ for (const width of [1366, 390])
     await page.getByRole("button", { name: "Create New Quote" }).click();
     await page.getByLabel("Customer name *").fill("Synthetic regression only");
     await page.getByLabel("Job name *").fill("Synthetic S1.0 spatial beams");
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
       name: "synthetic-spatial-deck.pdf",
       mimeType: "application/pdf",
@@ -193,22 +192,26 @@ for (const width of [1366, 390])
     // Storage remains Proposed; no automatic lines or private spatial metadata enter customer output.
     await expect
       .poll(() =>
-        page.evaluate((key) => {
-          const s = JSON.parse(localStorage.getItem(key)!);
+        page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      const s = (await readDurableStore());
           return s.quotes.find(
             (q: { name: string }) => q.name === "Synthetic S1.0 spatial beams",
           )?.takeoff[0]?.status;
-        }, storageKey),
+        }),
       )
       .toBe("Proposed");
     await expect
       .poll(() =>
-        page.evaluate((key) => {
-          const s = JSON.parse(localStorage.getItem(key)!);
+        page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      const s = (await readDurableStore());
           return s.quotes.find(
             (q: { name: string }) => q.name === "Synthetic S1.0 spatial beams",
           )?.lines.length;
-        }, storageKey),
+        }),
       )
       .toBe(0);
   });

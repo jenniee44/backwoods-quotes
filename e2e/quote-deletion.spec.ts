@@ -7,8 +7,12 @@ import { analysisFixture } from "../shared/analysis.fixture";
 import { constructionPdf } from "./fixtures/constructionPdf";
 async function setup(page: Page, store: Store) {
   await page.goto("/");
+  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
   await page.evaluate(
-    ({ store, key, backup }) => {
+    async ({ store, key, backup }) => {
+      const path = "/src/durableStore.ts";
+      const { writeDurableStore } = await import(path);
+      await writeDurableStore(store);
       localStorage.setItem(key, JSON.stringify(store));
       localStorage.setItem(
         backup,
@@ -30,10 +34,11 @@ async function openDelete(page: Page, name: string) {
   ).toBeVisible();
 }
 async function stored(page: Page): Promise<Store> {
-  return page.evaluate(
-    (key) => JSON.parse(localStorage.getItem(key)!),
-    storageKey,
-  );
+  return page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return readDurableStore();
+  });
 }
 test("mobile cancellation preserves bytes; confirmed deletion cleans plans/takeoff and keeps numbering across reload and duplication", async ({
   page,
@@ -68,7 +73,7 @@ test("mobile cancellation preserves bytes; confirmed deletion cleans plans/takeo
     expect(dialog.message()).toContain("BW-1040");
     expect(dialog.message()).toContain(enriched.name);
     expect(dialog.message()).toContain(enriched.customer.name);
-    expect(dialog.message()).toContain("cannot be undone");
+    expect(dialog.message()).toContain("exported backups may still contain it");
     await dialog.dismiss();
   });
   await page.getByRole("button", { name: "Delete quote", exact: true }).click();
@@ -82,7 +87,7 @@ test("mobile cancellation preserves bytes; confirmed deletion cleans plans/takeo
     page.getByRole("heading", { name: "Your quotes", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Quote BW-1040 deleted permanently.", { exact: true }),
+    page.getByText("Quote BW-1040 removed from the active workspace.", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: new RegExp(enriched.name) }),
@@ -92,9 +97,8 @@ test("mobile cancellation preserves bytes; confirmed deletion cleans plans/takeo
   expect(after.settings).toEqual(store.settings);
   expect(after.quoteDefaults).toEqual(store.quoteDefaults);
   expect(after.lastQuoteNumber).toBe(1040);
-  const allStorage = await page.evaluate(() =>
-    JSON.stringify({ ...localStorage }),
-  );
+  expect(await page.evaluate(() => ({ ...localStorage }))).toEqual(before);
+  const activeStorage = JSON.stringify(after);
   for (const privateData of [
     "DELETE_PRIVATE_PLAN",
     "PRIVATE_FINGERPRINT",
@@ -102,7 +106,7 @@ test("mobile cancellation preserves bytes; confirmed deletion cleans plans/takeo
     "PRIVATE_PLAN_TEXT_ONLY",
     target.documents[0].data,
   ])
-    expect(allStorage).not.toContain(privateData);
+    expect(activeStorage).not.toContain(privateData);
   await page.waitForTimeout(800); // Pending autosave must not resurrect the quote.
   expect((await stored(page)).quotes).toEqual(after.quotes);
   await page.reload();
@@ -207,20 +211,20 @@ test("storage failure leaves the quote and editor intact and does not show delet
   await openDelete(page, store.quotes[0].name);
   const before = await page.evaluate(() => ({ ...localStorage }));
   await page.evaluate(() => {
-    Storage.prototype.setItem = () => {
+    IDBFactory.prototype.open = () => {
       throw new DOMException("Unavailable", "QuotaExceededError");
     };
   });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete quote", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
-    "Could not delete the quote",
+    "Save failed in durable storage",
   );
   await expect(
     page.getByRole("heading", { name: store.quotes[0].name, exact: true }),
   ).toBeVisible();
   expect(await page.evaluate(() => ({ ...localStorage }))).toEqual(before);
-  await expect(page.getByText(/deleted permanently/)).toHaveCount(0);
+  await expect(page.getByText(/removed from the active workspace/)).toHaveCount(0);
 });
 
 for (const viewport of [
@@ -264,7 +268,7 @@ for (const viewport of [
         expect(dialog.message()).toContain("BW-1013");
         expect(dialog.message()).toContain(target.name);
         expect(dialog.message()).toContain(target.customer.name);
-        expect(dialog.message()).toContain("cannot be undone");
+        expect(dialog.message()).toContain("exported backups may still contain it");
         await dialog.dismiss();
       });
       await button.click();

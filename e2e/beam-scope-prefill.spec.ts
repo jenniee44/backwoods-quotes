@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 import {
@@ -35,19 +36,17 @@ for (const width of [1366, 390])
     };
     q.takeoff = [t];
     const manual = structuredClone(q.lines);
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
+    await page.goto("/");
     for (let reopening = 0; reopening < 2; reopening++) {
       await page.reload();
       await page
         .getByRole("button", { name: /Synthetic scope-prefill regression/ })
         .click();
-      await page
-        .getByRole("button", { name: "Plans & Takeoff", exact: true })
-        .click();
+      await selectEditorTab(page, "Plans & Takeoff");
       await page.locator(".advanced-review > summary").click();
       const material = page.locator("#takeoff-scope-prefill");
       await material.locator(".takeoff-evidence > summary").click();
@@ -94,12 +93,12 @@ for (const width of [1366, 390])
       await confirm.check();
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff[0]
-                .scopeVerified,
-            storageKey,
-          ),
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff[0]
+                .scopeVerified;
+    }),
         )
         .toBe(true);
       if (!reopening) {
@@ -113,19 +112,20 @@ for (const width of [1366, 390])
           .blur();
         await expect
           .poll(() =>
-            page.evaluate(
-              (key) =>
-                JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff[0]
-                  .calculation.inputs.plies2,
-              storageKey,
-            ),
+            page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff[0]
+                  .calculation.inputs.plies2;
+    }),
           )
           .toBeNull();
       }
-      const saved = await page.evaluate(
-        (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-        storageKey,
-      );
+      const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0];
+    });
       expect(saved.lines).toEqual(manual);
       expect(saved.takeoff[0].status).toBe("Proposed");
       expect(saved.takeoff[0].calculation.verified).toBe(false);

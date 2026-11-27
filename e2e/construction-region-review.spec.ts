@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -57,9 +58,7 @@ for (const width of [1366, 390])
       .getByLabel("Customer name *")
       .fill("Synthetic region regression");
     await page.getByLabel("Job name *").fill("Synthetic title-heavy plan");
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     const original = Buffer.from(drawing(), "ascii");
     await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
       name: "synthetic-framing.pdf",

@@ -1,10 +1,13 @@
 import { removeQuoteImages } from "./analysisImageArchive";
+import { hydrateDurableStore, writeDurableStore } from "./durableStore";
 import { useState, useEffect, useRef } from "react";
 import CustomerScopeEditor from "./CustomerScopeEditor";
 import CustomerQuote from "./CustomerQuote";
 import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
+import { MaterialCatalogueEditor } from "./EstimatingRateEditors";
 import QuoteDetailsEditor from "./QuoteDetailsEditor";
+import { recoverDrawingEvidence } from "./recoverDrawingEvidence";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
@@ -32,7 +35,6 @@ import {
 } from "lucide-react";
 import {
   deleteQuote,
-  persistQuoteDeletion,
   quoteNumberHighWater,
   calculate,
   companyDefaults,
@@ -49,6 +51,7 @@ import {
   id,
   jobTotals,
   load,
+  migrate,
   money,
   newQuote,
   persist,
@@ -173,7 +176,7 @@ export default function App() {
   const [store, setStore] = useState<Store>(initial.store),
     [error, setError] = useState(initial.error),
     [notice, setNotice] = useState(""),
-    [saveState, setSaveState] = useState("Saved");
+    [saveState, setSaveState] = useState("Loading…");
   const [role, setRole] = useState<Role>("Admin/Owner"),
     [page, setPage] = useState("Overview"),
     [filter, setFilter] = useState("All"),
@@ -199,25 +202,75 @@ export default function App() {
       quantity: 1,
       cost: 0,
     });
-  function saveStore(next: Store): boolean {
+  const [durableReady, setDurableReady] = useState(false);
+  const [durableError, setDurableError] = useState("");
+  const [startupError, setStartupError] = useState(initial.error);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const hydrated = await hydrateDurableStore(() => {
+          if (initial.error) throw new Error(initial.error);
+          return initial.store;
+        });
+        if (cancelled) return;
+        storeRef.current = hydrated;
+        setStore(hydrated);
+        setCompany(hydrated.company ?? companyDefaults);
+        setSettings(hydrated.settings);
+        setQuoteDefaults(hydrated.quoteDefaults);
+        setStartupError("");
+        setError("");
+        setDurableReady(true);
+        setSaveState("Saved");
+      } catch (e) {
+        if (!cancelled) setDurableError(`Durable storage unavailable: ${(e as Error).message}. No existing quotes were changed.`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  function exportUnsavedQuote() {
+    if (!editing) return;
+    // Emergency export is intentionally independent of localStorage: a full
+    // storage quota must never prevent the user from recovering editor changes.
+    const payload = {
+      format: "backwoods-unsaved-quote-recovery",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      quote: editing,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `backwoods-unsaved-quote-${editing.number || "draft"}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function saveStore(next: Store, expected: Store = store): Promise<boolean> {
     next = { ...next, lastQuoteNumber: quoteNumberHighWater(next) };
-    if (initial.error) {
-      setError("Saved data needs recovery before changes can be stored.");
+    if (startupError || !durableReady || durableError) {
+      setError(durableError || "Durable storage is not ready. No changes were saved.");
       return false;
     }
     try {
-      persist(next);
+      // Serialize writes so autosaves cannot finish out of order.
+      const write = saveQueue.current.catch(() => {}).then(() => writeDurableStore(next, expected));
+      saveQueue.current = write;
+      await write;
+      storeRef.current = next;
       setStore(next);
       setError("");
       return true;
-    } catch {
-      setError(
-        "Could not save. Browser storage may be full or unavailable. Reduce photo sizes or free browser storage, then try again.",
-      );
+    } catch (e) {
+      setError(`Save failed in durable storage: ${(e as Error).message}. Download a recovery copy before leaving.`);
       return false;
     }
   }
-  function saveQuote(q: Quote, close = false, silent = false) {
+  async function saveQuote(q: Quote, close = false, silent = false): Promise<boolean> {
     setSaveState("Saving…");
     const problem = validate(q);
     if (problem) {
@@ -225,8 +278,9 @@ export default function App() {
       setSaveState("Save failed");
       return false;
     }
-    const storedJob = store.jobs?.find((x) => x.id === q.id);
-    const stored = store.quotes.find((x) => x.id === q.id) ?? storedJob;
+    const base = storeRef.current;
+    const storedJob = base.jobs?.find((x) => x.id === q.id);
+    const stored = base.quotes.find((x) => x.id === q.id) ?? storedJob;
     if (
       stored &&
       stored.status !== "Draft" &&
@@ -265,17 +319,17 @@ export default function App() {
     }
     const exists = !!stored;
     if (
-      saveStore({
-        ...store,
+      await saveStore({
+        ...base,
         ...(storedJob
-          ? { jobs: store.jobs!.map((x) => (x.id === q.id ? q : x)) }
+          ? { jobs: base.jobs!.map((x) => (x.id === q.id ? q : x)) }
           : {}),
         quotes: storedJob
-          ? store.quotes
+          ? base.quotes
           : exists
-            ? store.quotes.map((x) => (x.id === q.id ? q : x))
-            : [q, ...store.quotes],
-      })
+            ? base.quotes.map((x) => (x.id === q.id ? q : x))
+            : [q, ...base.quotes],
+      }, base)
     ) {
       setSaveState("Saved");
       if (!silent) setNotice("Saved on this device");
@@ -292,7 +346,7 @@ export default function App() {
   useEffect(() => {
     if (
       !editing ||
-      initial.error ||
+      startupError ||
       JSON.stringify(editing) ===
         JSON.stringify(
           [...storeRef.current.quotes, ...(storeRef.current.jobs ?? [])].find(
@@ -302,9 +356,9 @@ export default function App() {
     )
       return;
     setSaveState("Saving…");
-    const timer = setTimeout(() => saveQuote(editing, false, true), 600);
+    const timer = setTimeout(() => { void saveQuote(editing, false, true); }, 600);
     return () => clearTimeout(timer);
-  }, [editing, initial.error]);
+  }, [editing, startupError]);
   function navigate(p: string, f = "All") {
     if (
       editing &&
@@ -323,31 +377,31 @@ export default function App() {
     setPage(p);
     setFilter(f);
     setMobileMenu(false);
-    setError(initial.error);
+    setError(startupError);
   }
-  function removeQuote() {
+  async function removeQuote() {
     if (!editing || !store.quotes.some((q) => q.id === editing.id)) return;
-    if (initial.error) {
-      setError("Saved data needs recovery before deletion.");
+    if (startupError || !durableReady || durableError) {
+      setError("Durable storage must be ready before deletion.");
       return;
     }
     const target = store.quotes.find((q) => q.id === editing.id)!;
     if (
       !confirm(
-        `Permanently delete quote ${target.number} — ${target.customer.name || "Customer not added"} / ${target.name || "Untitled project"}?\n\nThis deletes the quote, attachments and plan/takeoff analysis from this device. Deletion cannot be undone.${target.job ? "\n\nThe existing job, original estimate and actual costs will be preserved separately." : ""}`,
+        `Delete quote ${target.number} — ${target.customer.name || "Customer not added"} / ${target.name || "Untitled project"}?\n\nThis removes the quote from the active workspace. Retained migration copies and exported backups may still contain it.${target.job ? "\n\nThe existing job, original estimate and actual costs will be preserved separately." : ""}`,
       )
     )
       return;
     try {
-      const next = deleteQuote(storeRef.current, target.id);
-      persistQuoteDeletion(next, target.id);
+      const base = storeRef.current;
+      const next = deleteQuote(base, target.id);
+      if (!(await saveStore(next, base))) return;
       void removeQuoteImages(target.id).then((ok) => {
         if (!ok)
           setNotice(
-            "Quote deleted; private analysis-image cleanup could not be verified because browser storage is unavailable. Retry when storage access is restored or clear this site’s browser data.",
+            "Quote removed from the active workspace. Browser storage did not confirm analysis-image cleanup.",
           );
       });
-      setStore(next);
       setEditing(null);
       setPreview(null);
       setReviewing(false);
@@ -361,7 +415,7 @@ export default function App() {
       setSearch("");
       setError("");
       setNotice(
-        `Quote ${target.number} deleted permanently.${target.job ? " Its job was preserved in Jobs." : ""}`,
+        `Quote ${target.number} removed from the active workspace.${target.job ? " Its job was preserved in Jobs." : ""}`,
       );
     } catch {
       setError(
@@ -382,7 +436,7 @@ export default function App() {
     setTab("Customer & job");
     setSelectedTemplate("");
     setNotice("");
-    setError(initial.error);
+    setError(startupError);
   }
   const active = store.quotes.filter(
     (q) => q.status === "Draft" || q.status === "Sent",
@@ -450,7 +504,7 @@ export default function App() {
       setError((e as Error).message);
     }
   }
-  function addActual() {
+  async function addActual() {
     if (!current?.job) return;
     if (
       !actual.description.trim() ||
@@ -468,7 +522,7 @@ export default function App() {
         actuals: [...current.job.actuals, { ...actual, id: id() }],
       },
     };
-    if (saveQuote(q))
+    if (await saveQuote(q))
       setActual({
         id: id(),
         description: "",
@@ -483,6 +537,7 @@ export default function App() {
     { name: "Jobs", icon: BriefcaseBusiness },
     { name: "Settings", icon: Settings },
   ];
+  if (!durableReady) return <main className="panel" role="status">{durableError || "Loading saved Backwoods projects…"}</main>;
   return (
     <>
       <div className={`shell ${preview ? "printing" : ""}`}>
@@ -566,6 +621,8 @@ export default function App() {
             <span className="top-tag">ESTIMATING WORKSPACE</span>
           </header>
           <main>
+            {!durableReady && !durableError && <div className="notice">Loading durable quote storage…</div>}
+            {durableError && <div className="alert" role="alert">{durableError}</div>}
             {error && (
               <div className="alert" role="alert">
                 {error}
@@ -602,8 +659,22 @@ export default function App() {
                       className={`save-indicator ${saveState === "Save failed" ? "failed" : ""}`}
                       role="status"
                     >
-                      {saveState} · stored on this device
+                      {saveState === "Saved"
+                        ? "Saved on this device"
+                        : saveState === "Save failed"
+                          ? "NOT SAVED — export recovery copy below"
+                          : saveState}
                     </div>
+                    {saveState === "Save failed" && (
+                      <div className="alert" role="alert">
+                        This quote has not been saved. Download an emergency
+                        recovery copy before closing this tab. The download
+                        includes the current quote, attachments and analysis.
+                        <button className="button secondary" type="button" onClick={exportUnsavedQuote}>
+                          Download unsaved quote recovery
+                        </button>
+                      </div>
+                    )}
                     {retainedJob && (
                       <p className="tiny">
                         The source quote was deleted. This separate job retains
@@ -619,15 +690,15 @@ export default function App() {
                   <div className="heading-actions">
                     <button
                       className="button secondary"
-                      onClick={() => {
-                        if (saveQuote(current)) setPreview(current);
+                      onClick={async () => {
+                        if (await saveQuote(current)) setPreview(current);
                       }}
                     >
                       <Printer size={17} /> Customer quote
                     </button>
                     <button
                       className="button"
-                      onClick={() => saveQuote(current)}
+                      onClick={() => { void saveQuote(current); } }
                     >
                       <Check size={17} />{" "}
                       {retainedJob ? "Save job" : "Save quote"}
@@ -1009,6 +1080,7 @@ export default function App() {
                             : (tab as Kind)
                         }
                         locked={locked}
+                        materialCatalogue={store.materialCatalogue}
                         onChange={(lines) => patch({ lines })}
                         onGroup={(group) =>
                           patch({
@@ -1303,6 +1375,7 @@ export default function App() {
                               quote={current}
                               kind={kind}
                               locked={locked}
+                              materialCatalogue={store.materialCatalogue}
                               onChange={(lines) => patch({ lines })}
                               onGroup={(group) =>
                                 patch({ scopeGroups: [...new Set([...(current.scopeGroups ?? []), group])] })
@@ -1326,6 +1399,32 @@ export default function App() {
                       </>
                     )}
                     {tab === "Plans & Takeoff" && (
+                      <>
+                      {!locked && current.status === "Draft" && !current.job && (
+                        <button type="button" className="button" onClick={async () => {
+                          try {
+                            const candidates = storeRef.current.quotes
+                              .filter(source => source.id !== current.id)
+                              .map(source => ({ source, next: recoverDrawingEvidence(current, source) }))
+                              .filter(candidate => candidate.next !== current);
+                            if (candidates.length === 0) {
+                              setNotice("No new matching drawing observations found.");
+                              return;
+                            }
+                            if (candidates.length > 1) {
+                              setError("Multiple quotes contain matching observations. Use an isolated recovery workspace with the verified donor and target only.");
+                              return;
+                            }
+                            const { source, next } = candidates[0];
+                            const count = next.takeoff.length - current.takeoff.length;
+                            if (!window.confirm("Recover " + count + " drawing observations from " + source.number + " (" + source.name + ") for fresh review? Existing prices will not change.")) return;
+                            if (await saveQuote(next, false, true)) {
+                              setEditing(previous => previous?.id === next.id ? next : previous);
+                              setNotice("Recovered " + count + " drawing observations. Review quantities before pricing.");
+                            }
+                          } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+                        }}>Recover matching drawing observations</button>
+                      )}
                       <PlansTakeoff
                         orientations={pdfOrientations}
                         setOrientations={setPdfOrientations}
@@ -1339,8 +1438,8 @@ export default function App() {
                           );
                           setNotice("");
                         }}
-                        onPersistAnalysis={(q, phase) => {
-                          const saved = saveQuote(q, false, true);
+                        onPersistAnalysis={async (q, phase) => {
+                          const saved = await saveQuote(q, false, true);
                           if (saved) {
                             setNotice(phase === "source" ? "Quote and original drawing saved before analysis. AI results are not yet complete." : "AI analysis and material observations saved on this device.");
                           }
@@ -1348,6 +1447,7 @@ export default function App() {
                         }}
                         onError={setError}
                       />
+                      </>
                     )}
                     {tab === "Pricing" && (
                       <>
@@ -1426,14 +1526,14 @@ export default function App() {
                                   note="Before HST"
                                 />
                                 <Stat
-                                  label="Expected profit"
+                                  label="Estimated gross contribution"
                                   value={money(j.profit)}
                                   note={`${j.margin.toFixed(1)}% expected margin`}
                                 />
                                 <Stat
-                                  label="Actual profit"
+                                  label={current.status === "Completed" ? "Recorded gross contribution" : "Quote less recorded costs"}
                                   value={money(j.actualProfit)}
-                                  note={`${j.actualMargin.toFixed(1)}% actual margin`}
+                                  note={current.status === "Completed" ? `${j.actualMargin.toFixed(1)}% of quoted revenue; excludes unrecorded costs` : "Interim balance only — not final profit"}
                                 />
                               </>
                             );
@@ -1522,7 +1622,7 @@ export default function App() {
                                   className="icon danger"
                                   aria-label={`Remove actual ${a.description}`}
                                   onClick={() =>
-                                    saveQuote({
+                                    void saveQuote({
                                       ...current,
                                       job: {
                                         ...current.job!,
@@ -1554,7 +1654,7 @@ export default function App() {
                                   "Complete this job? Confirm all actual costs have been recorded.",
                                 )
                               )
-                                saveQuote({ ...current, status: "Completed" });
+                                void saveQuote({ ...current, status: "Completed" });
                             }}
                           >
                             <Check size={17} /> Mark job completed
@@ -1633,7 +1733,7 @@ export default function App() {
                     </p>
                     <h3 className="subheading">Profit analysis</h3>
                     <div className="profit-box">
-                      <span>Expected gross profit</span>
+                      <span>Estimated gross contribution</span>
                       <strong>{money(totals!.profit)}</strong>
                       <small>{totals!.margin.toFixed(1)}% gross margin</small>
                     </div>
@@ -1686,7 +1786,7 @@ export default function App() {
                       </div>
                     )}
                     <p className="tiny">
-                      Profit excludes tax. Pricing defaults are editable in
+                      Contribution excludes HST and unrecorded business overhead. Pricing defaults are editable in
                       Settings; existing quotes keep their own settings.
                     </p>
                     <div className="workflow">
@@ -1718,9 +1818,9 @@ export default function App() {
                       {current.status === "Accepted" && !current.job && (
                         <button
                           className="button"
-                          onClick={() => {
+                          onClick={async () => {
                             const q = convert(current);
-                            if (saveQuote(q)) setTab("Job actuals");
+                            if (await saveQuote(q)) setTab("Job actuals");
                           }}
                         >
                           Convert to job <ArrowUpRight size={17} />
@@ -1748,7 +1848,7 @@ export default function App() {
                       >
                         <h3 className="subheading">Quote actions</h3>
                         <p className="tiny">
-                          Permanently remove this quote from this device.
+                          Remove this quote from the active workspace. Retained copies may still contain it.
                           Existing jobs are preserved.
                         </p>
                         <button
@@ -1806,7 +1906,7 @@ export default function App() {
                   />
                   <button
                     className="button"
-                    onClick={() => {
+                    onClick={async () => {
                       if (
                         Object.values(settings).some(
                           (n) => !Number.isFinite(n) || n < 0,
@@ -1832,7 +1932,7 @@ export default function App() {
                         return;
                       }
                       if (
-                        saveStore({
+                        await saveStore({
                           ...store,
                           settings,
                           quoteDefaults,
@@ -1846,7 +1946,7 @@ export default function App() {
                   </button>
                   <div className="data-tools">
                     <button
-                      disabled={!!initial.error}
+                      disabled={!!startupError}
                       className="button secondary"
                       onClick={() => {
                         const blob = new Blob(
@@ -1864,12 +1964,12 @@ export default function App() {
                       Export data backup
                     </button>
                     <label className="button secondary" style={{ display: "inline-block", marginLeft: 8 }}>
-                      Import backup (add missing projects)
+                      Import backup or recovery (preserve existing projects)
                       <input
                         type="file"
                         accept=".json,application/json"
                         style={{ display: "none" }}
-                        disabled={!!initial.error}
+                        disabled={!!startupError}
                         onChange={async (event) => {
                           const input = event.currentTarget;
                           const file = input.files?.[0];
@@ -1879,11 +1979,44 @@ export default function App() {
                             const parsed: unknown = JSON.parse(await file.text());
                             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Not a Backwoods backup.");
                             const data = parsed as Record<string, unknown>;
-                            if (data.version !== 2 || !Array.isArray(data.quotes) || (data.jobs !== undefined && !Array.isArray(data.jobs))) throw new Error("Unsupported backup format. Expected a Backwoods Quotes V2 backup.");
-                            const incomingQuotes = data.quotes as unknown[];
-                            const incomingJobs = (data.jobs ?? []) as unknown[];
-                            const valid = (item: unknown): item is Quote => !!item && typeof item === "object" && !Array.isArray(item) && typeof (item as Quote).id === "string" && !!(item as Quote).id && typeof (item as Quote).name === "string" && Array.isArray((item as Quote).lines) && Array.isArray((item as Quote).documents ?? []);
-                            if (![...incomingQuotes, ...incomingJobs].every(valid)) throw new Error("Backup contains invalid project records.");
+                            const recovery = data.format === "backwoods-unsaved-quote-recovery" && data.version === 1;
+                            const restored = migrate(recovery ? { ...store, quotes: [data.quote], jobs: [] } : data);
+                            if (!recovery && window.confirm("Restore the entire backup workspace, including pricing and settings? Cancel to use the existing add-missing-projects mode.")) {
+                              const ids = [...restored.quotes, ...(restored.jobs ?? [])].map(q => q.id);
+                              if (new Set(ids).size !== ids.length) throw new Error("Backup contains duplicate project IDs.");
+                              const base = storeRef.current;
+                              // Full restoration is deliberately non-destructive: refuse to replace any different existing project.
+                              const preserves = (active: Quote[], restoredRecords: Quote[]) => {
+                                const incoming = new Map(restoredRecords.map(q => [q.id, q]));
+                                return active.every(q => JSON.stringify(incoming.get(q.id)) === JSON.stringify(q));
+                              };
+                              if (!preserves(base.quotes, restored.quotes) || !preserves(base.jobs ?? [], restored.jobs ?? [])) {
+                                // Preserve every existing record, including sample projects; never identify disposable data by name.
+                                throw new Error("Full restoration would replace or remove existing projects. Cancel full restoration and use add-missing-projects mode. No records changed.");
+                              }
+                              if (!window.confirm("Restore backup pricing and settings? Export your current workspace first if you need to retain its settings.")) return;
+                              const lastQuoteNumber = Math.max(quoteNumberHighWater(base), quoteNumberHighWater(restored));
+                              const materialCatalogue = restored.materialCatalogue ?? base.materialCatalogue;
+                              if (await saveStore({ ...restored, lastQuoteNumber, materialCatalogue }, base)) {
+                                setCompany(restored.company ?? companyDefaults);
+                                setSettings(restored.settings);
+                                setQuoteDefaults(restored.quoteDefaults);
+                                setNotice("Backup workspace restored.");
+                              }
+                              return;
+                            }
+                            const incomingQuotes = restored.quotes;
+                            const incomingJobs = restored.jobs ?? [];
+                            if (recovery && [...store.quotes, ...(store.jobs ?? [])].some(q => q.id === incomingQuotes[0].id)) {
+                              const original = incomingQuotes[0];
+                              if (original.status !== "Draft" || original.job) throw new Error("Historical recovery requires manual review.");
+                              if (!window.confirm("This quote already exists. Restore the unsaved version as a separate draft, keeping the existing quote unchanged?")) return;
+                              const identity = newQuote(original.pricing, [...store.quotes, ...(store.jobs ?? [])], original.details, original.company, quoteNumberHighWater(store));
+                              // Preserve the complete internal evidence graph, including document and line references.
+                              const copy: Quote = { ...structuredClone(original), id: identity.id, number: identity.number, name: original.name + " (recovered draft)", status: "Draft", snapshot: undefined, sentAt: undefined, job: undefined };
+                              if (await saveStore({...store, quotes: [copy, ...store.quotes]})) setNotice("Recovered draft as a separate quote. Existing quote preserved.");
+                              return;
+                            }
                             const existingIds = new Set([...store.quotes, ...(store.jobs ?? [])].map(q => q.id));
                             const incomingIds = new Set<string>();
                             for (const q of [...incomingQuotes, ...incomingJobs] as Quote[]) {
@@ -1903,7 +2036,7 @@ export default function App() {
                               quotes: [...store.quotes, ...additions],
                               jobs: [...(store.jobs ?? []), ...jobAdditions],
                             };
-                            if (saveStore(next)) setNotice(`Imported ${additions.length} quote(s) and ${jobAdditions.length} job(s). Check attached drawings and saved analysis before estimating.`);
+                            if (await saveStore(next)) setNotice(`Imported ${additions.length} quote(s) and ${jobAdditions.length} job(s). Check attached drawings and saved analysis before estimating.`);
                           } catch (e) {
                             setError(`Backup import failed: ${(e as Error).message}`);
                           } finally {
@@ -1914,8 +2047,7 @@ export default function App() {
                     </label>
                     <p className="muted">
                       Includes private estimates and attached files. Keep this
-                      backup securely. V1 records are automatically backed up in
-                      browser storage before their first V2 save.
+                      backup securely. The original legacy records are retained in this browser after migration.
                     </p>
                   </div>
                   <div className="info">
@@ -1929,6 +2061,15 @@ export default function App() {
                     </p>
                   </div>
                 </section>
+                <MaterialCatalogueEditor
+                  entries={store.materialCatalogue ?? []}
+                  onSave={async materialCatalogue => {
+                    const base = storeRef.current;
+                    const saved = await saveStore({ ...base, materialCatalogue }, base);
+                    if (saved) setNotice("Material catalogue saved.");
+                    return saved;
+                  }}
+                />
               </>
             ) : (
               <>
@@ -1972,7 +2113,7 @@ export default function App() {
                         note={`${active.length} draft & sent quotes · before HST`}
                       />
                       <Stat
-                        label="Expected job profit"
+                        label="Estimated job contribution"
                         value={money(
                           accepted.reduce(
                             (s, q) => s + calculate(estimateFor(q)).profit,
@@ -2057,7 +2198,7 @@ export default function App() {
                     <span>PROJECT / CUSTOMER</span>
                     <span>STATUS</span>
                     <span>QUOTED VALUE</span>
-                    <span>EXPECTED PROFIT</span>
+                    <span>ESTIMATED CONTRIBUTION</span>
                     <span />
                   </div>
                   {listed.length ? (
@@ -2124,10 +2265,10 @@ export default function App() {
         <QuoteReview
           quote={current}
           onClose={() => setReviewing(false)}
-          onSend={() => {
+          onSend={async () => {
             if (
               confirm("Mark this quote Sent and lock the estimate?") &&
-              saveQuote(markSent(current))
+              (await saveQuote(markSent(current)))
             )
               setReviewing(false);
           }}
@@ -2137,16 +2278,16 @@ export default function App() {
         <CustomerQuote
           quote={preview}
           onClose={() => setPreview(null)}
-          onDetails={(details) => {
+          onDetails={async (details) => {
             const q = { ...preview, details };
             if (preview.status === "Draft") {
-              if (saveQuote(q)) setPreview(q);
+              if (await saveQuote(q)) setPreview(q);
             } else setPreview(q);
           }}
-          onMode={(mode) => {
+          onMode={async (mode) => {
             const q = { ...preview, mode };
             if (preview.status === "Draft") {
-              if (saveQuote(q)) setPreview(q);
+              if (await saveQuote(q)) setPreview(q);
             } else setPreview(q);
           }}
         />

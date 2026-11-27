@@ -35,6 +35,7 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
   ).not.toBeChecked();
   await expect(page.getByLabel("Group detailed quote by scope")).toBeChecked();
   await expect(page.getByLabel("Expiry date (optional)")).not.toHaveValue("");
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page.getByRole("button", { name: "Labour", exact: true }).click();
   await page.getByRole("button", { name: "Add labour", exact: true }).click();
   await page.getByLabel("Description *").fill("Internal framing labour");
@@ -111,9 +112,11 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
   await expect(page.getByLabel("Internal labour cost ($/hour)")).toBeVisible();
   await page.getByLabel("HST (%)").focus();
   await expect(page.locator(".save-indicator")).toContainText("Saved");
-  const persisted = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("backwoods-quotes-v1")!),
-  );
+  const persisted = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return (await readDurableStore());
+  });
   const q = persisted.quotes.find(
     (q: { name: string }) => q.name === "Grouped renovation",
   );
@@ -139,11 +142,13 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Confirm & mark sent" }).click();
   await expect(page.getByLabel("Customer labour rate ($/hour)")).toBeDisabled();
-  const sent = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes.find(
+  const sent = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return (await readDurableStore()).quotes.find(
       (q: { name: string }) => q.name === "Grouped renovation",
-    ),
-  );
+    );
+  });
   expect(sent.status).toBe("Sent");
   expect(sent.sentAt).toMatch(/^\d{4}-/);
   expect(sent.snapshot).toBeDefined();
@@ -157,7 +162,7 @@ test("mobile quote inheritance, scope reuse, grouped pricing, autosave and sent 
     ),
   ).toBeTruthy();
   await page.screenshot({
-    path: "/tmp/backwoods-refined-mobile.png",
+    path: ".local-dev/backwoods-refined-mobile.png",
     fullPage: true,
   });
   expect(errors).toEqual([]);
@@ -169,6 +174,7 @@ test("blank numeric edits commit on blur/save, whole steps, leading zeros and sa
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Job name *").fill("Blank numeric test");
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page.getByRole("button", { name: "Labour", exact: true }).click();
   await page.getByRole("button", { name: "Add labour", exact: true }).click();
   await page.getByLabel("Description *").fill("Labour");
@@ -183,11 +189,13 @@ test("blank numeric edits commit on blur/save, whole steps, leading zeros and sa
   await expect(cost).toHaveValue("");
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
   await expect(cost).toHaveValue("0");
-  const stored = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes.find(
+  const stored = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return (await readDurableStore()).quotes.find(
       (q: { name: string }) => q.name === "Blank numeric test",
-    ),
-  );
+    );
+  });
   expect(stored.lines[0].cost).toBe(0);
   await page.getByRole("button", { name: "Pricing", exact: true }).click();
   const markup = page.getByLabel("Material markup (%)");
@@ -202,12 +210,12 @@ test("blank numeric edits commit on blur/save, whole steps, leading zeros and sa
     page.getByLabel("Default quote validity (days)"),
   ).toHaveAttribute("step", "1");
   await page.evaluate(() => {
-    Storage.prototype.setItem = () => {
+    IDBFactory.prototype.open = () => {
       throw new DOMException("Full", "QuotaExceededError");
     };
   });
   await markup.fill("25");
   await markup.blur();
-  await expect(page.locator(".save-indicator")).toContainText("Save failed");
-  await expect(page.getByRole("alert")).toContainText("Could not save");
+  await expect(page.locator(".save-indicator")).toContainText("NOT SAVED");
+  await expect(page.getByRole("alert").filter({ hasText: "Save failed in durable storage" })).toBeVisible();
 });

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readWorkspace } from "./fixtures/readWorkspace";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 for (const width of [1366, 390])
   test(`saved deck quantity proposals reach both lists without approval at ${width}px`, async ({
@@ -53,15 +54,16 @@ for (const width of [1366, 390])
         workScope: "Existing work to remain",
       },
     ];
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ key, store }) => localStorage.setItem(key, JSON.stringify(store)),
       { key: storageKey, store },
     );
-    await page.reload();
+    await page.goto("/");
+
     await page
       .getByRole("button", { name: /Synthetic proposed quantities/ })
       .click();
+    await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
@@ -90,20 +92,15 @@ for (const width of [1366, 390])
     await expect(list.locator("#summary-hardware")).toContainText("To confirm");
     await expect(list).not.toContainText("Existing guard to remain");
     await expect
-      .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff.find(
+      .poll(async () => (await readWorkspace(page)).quotes[0].takeoff.find(
               (t: { id: string }) => t.id === "deck-joists",
-            ).status,
-          storageKey,
-        ),
-      )
+            ).status)
       .toBe("Proposed");
     await page.reload();
     await page
       .getByRole("button", { name: /Synthetic proposed quantities/ })
       .click();
+    await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();

@@ -1,5 +1,5 @@
 import ScopeOverrideReview from "./ScopeOverrideReview";
-import DeckReplacementScope from "./DeckReplacementScope";
+import DeckReplacementScope from "./DeckReplacementScopePanel";
 import { hasDeckReplacementScope } from "./deckScopeState";
 import { applyDeckReplacementScope } from "./deckReplacementScope";
 import { calculateMaterial } from "../shared/materialCalculators";

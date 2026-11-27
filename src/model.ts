@@ -1,3 +1,5 @@
+import { validMaterialCatalogue } from "./estimatingRates";
+import type { MaterialCatalogueEntry } from "./estimatingRates";
 import { validDimensionDecisions } from "../shared/drawingDimensions";
 import { beamStockGroups } from "../shared/beamLumber";
 import { completenessProblem } from "./takeoffRequirements";
@@ -56,6 +58,9 @@ export type Line = {
   supplier?: string;
   sku?: string;
   materialNotes?: string;
+  catalogueStockLengthFt?: number;
+  cataloguePriceUnit?: string;
+  equipmentForLabourId?: string;
 };
 export type Pricing = {
   materialMarkup: number;
@@ -253,6 +258,7 @@ export type Store = {
   company?: CompanyInfo;
   settings: Pricing;
   quoteDefaults: QuoteDetails;
+  materialCatalogue?: MaterialCatalogueEntry[];
   quotes: Quote[];
   // Independent job records retained when their originating quote is deleted.
   jobs?: Quote[];
@@ -729,6 +735,7 @@ export function duplicate(
   quotes: Quote[],
   lastQuoteNumber = 1000,
 ): Quote {
+  const lineIds = new Map(q.lines.map(line => [line.id, id()]));
   return {
     ...structuredClone(q),
     ...newQuote(q.pricing, quotes, q.details, q.company, lastQuoteNumber),
@@ -736,7 +743,10 @@ export function duplicate(
     name: `${q.name} (copy)`,
     description: q.description,
     measurements: q.measurements,
-    lines: structuredClone(q.lines).map((l) => ({ ...l, id: id() })),
+    lines: structuredClone(q.lines).map(line => ({
+      ...line, id: lineIds.get(line.id)!,
+      ...(line.equipmentForLabourId ? { equipmentForLabourId: lineIds.get(line.equipmentForLabourId) } : {}),
+    })),
     terms: q.terms,
     templateCategory: q.templateCategory,
     customerScopes: structuredClone(q.customerScopes ?? []),
@@ -894,9 +904,11 @@ function line(v: unknown) {
         ["Unspecified", "Low", "Medium", "High"].includes(
           String(v.takeoffSource.confidence),
         ))) &&
-    ["scopeGroup", "supplier", "sku", "materialNotes"].every(
+    ["scopeGroup", "supplier", "sku", "materialNotes", "cataloguePriceUnit", "equipmentForLabourId"].every(
       (k) => v[k] === undefined || typeof v[k] === "string",
     ) &&
+    (v.catalogueStockLengthFt === undefined ||
+      (typeof v.catalogueStockLengthFt === "number" && Number.isFinite(v.catalogueStockLengthFt) && v.catalogueStockLengthFt > 0)) &&
     (v.override === null ||
       (typeof v.override === "number" &&
         Number.isFinite(v.override) &&
@@ -1428,6 +1440,8 @@ export function migrate(input: unknown): Store {
   )
     throw new Error("Saved job records are invalid.");
   if (input.version === 2) {
+    if (input.materialCatalogue !== undefined && !validMaterialCatalogue(input.materialCatalogue))
+      throw new Error("Saved material catalogue is invalid.");
     if (
       !validDetails(input.quoteDefaults) ||
       !input.quotes.every(validExtensions)
@@ -1569,7 +1583,7 @@ export const storageKey = "backwoods-quotes-v1"; // Keep original key so deploye
 export const backupKey = "backwoods-quotes-v1-backup";
 export function load(): Store {
   const raw = localStorage.getItem(storageKey);
-  return raw ? migrate(JSON.parse(raw)) : seed();
+  return raw === null ? seed() : migrate(JSON.parse(raw));
 }
 export function persist(store: Store) {
   const old = localStorage.getItem(storageKey);

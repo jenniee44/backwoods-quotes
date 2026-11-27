@@ -45,6 +45,7 @@ test("bathroom allowance, public scopes, payment validation and letter print pri
     has: page.locator('input[value="Drywall / board installation labour"]'),
   });
   await drywall.getByLabel("Estimated hours").fill("2");
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page
     .getByRole("button", { name: "Subcontractors & Other Costs", exact: true })
     .click();
@@ -114,7 +115,7 @@ test("bathroom allowance, public scopes, payment validation and letter print pri
   await expect(doc).not.toContainText("Mechanical Trades");
   await page.getByLabel("Customer quote mode").selectOption("Detailed");
   await page.screenshot({
-    path: "/tmp/backwoods-readiness-mobile.png",
+    path: ".local-dev/backwoods-readiness-mobile.png",
     fullPage: true,
   });
   await page.emulateMedia({ media: "print" });
@@ -122,7 +123,7 @@ test("bathroom allowance, public scopes, payment validation and letter print pri
   await expect(page.locator(".preview-toolbar")).toBeHidden();
   await expect(page.locator(".preview-options").first()).toBeHidden();
   await page.pdf({
-    path: "/tmp/backwoods-readiness-letter.pdf",
+    path: ".local-dev/backwoods-readiness-letter.pdf",
     format: "Letter",
     printBackground: true,
   });
@@ -135,7 +136,7 @@ test("bathroom allowance, public scopes, payment validation and letter print pri
     page.getByRole("alert").filter({ hasText: "100%" }).first(),
   ).toBeVisible();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  await expect(page.locator(".save-indicator")).toContainText("Save failed");
+  await expect(page.locator(".save-indicator")).toContainText("NOT SAVED");
 });
 
 test("customer document and editor fit phone, tablet and desktop; long letter quotes paginate", async ({
@@ -177,7 +178,7 @@ test("customer document and editor fit phone, tablet and desktop; long letter qu
   }
   await page.emulateMedia({ media: "print" });
   const pdf = await page.pdf({
-    path: "/tmp/backwoods-readiness-long.pdf",
+    path: ".local-dev/backwoods-readiness-long.pdf",
     format: "Letter",
     printBackground: true,
   });

@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect, type Page } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -46,9 +47,7 @@ async function analyze(
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Synthetic image regression");
   await page.getByLabel("Job name *").fill(name);
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic.pdf",
     mimeType: "application/pdf",
@@ -131,22 +130,20 @@ for (const width of [1366, 390])
     await expect(page.getByText("Review flag saved privately.")).toBeVisible();
     await expect
       .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!).quotes.some(
+        page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.some(
               (q: { name: string; analysisReports?: unknown[] }) =>
                 q.name === `Synthetic saved images ${innerWidth}` &&
                 !!q.analysisReports?.length,
-            ),
-          storageKey,
-        ),
+            );
+    }),
       )
       .toBe(true);
     await page.reload();
     await page.getByRole("button", { name: new RegExp(name) }).click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page.locator(".submitted-ai-details").evaluateAll((nodes) =>
       nodes.forEach((node) => {
         (node as HTMLDetailsElement).open = true;
@@ -215,16 +212,15 @@ for (const width of [1366, 390])
 test("unavailable private image storage is explicit, keeps quote data safe and never recreates submitted images on reopen", async ({
   page,
 }) => {
-  await page.addInitScript(() =>
-    Object.defineProperty(window, "indexedDB", {
-      configurable: true,
-      value: {
-        open() {
-          throw new Error("Synthetic quota/unavailable");
-        },
-      },
-    }),
-  );
+  await page.addInitScript(() => {
+    const open = IDBFactory.prototype.open;
+    IDBFactory.prototype.open = function (name, version) {
+      if (name === "backwoods-private-analysis-images") {
+        throw new Error("Synthetic image storage unavailable");
+      }
+      return open.call(this, name, version);
+    };
+  });
   const r = await analyze(page, "Synthetic quota images", {
     drawing: true,
     notes: [],
@@ -247,22 +243,20 @@ test("unavailable private image storage is explicit, keeps quote data safe and n
   await expect(page.locator(".submitted-image-grid img")).toHaveCount(n);
   await expect
     .poll(() =>
-      page.evaluate(
-        (key) =>
-          JSON.parse(localStorage.getItem(key)!).quotes.some(
+      page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.some(
             (q: { name: string; analysisReports?: unknown[] }) =>
               q.name === "Synthetic quota images" &&
               !!q.analysisReports?.length,
-          ),
-        storageKey,
-      ),
+          );
+    }),
     )
     .toBe(true);
   await page.reload();
   await page.getByRole("button", { name: /Synthetic quota images/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".submitted-ai-details").evaluateAll((nodes) =>
     nodes.forEach((node) => {
       (node as HTMLDetailsElement).open = true;
@@ -281,13 +275,13 @@ test("deleting one quote removes its private image archive without deleting anot
 }) => {
   const r = await analyze(page, "Synthetic archive deletion", { pages: 1 });
   expect(r.sent[0].detailRegions!.length).toBeGreaterThan(0);
-  const quoteId = await page.evaluate(
-    (key) =>
-      JSON.parse(localStorage.getItem(key)!).quotes.find(
+  const quoteId = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
         (q: { name: string }) => q.name === "Synthetic archive deletion",
-      )?.id,
-    storageKey,
-  );
+      )?.id;
+    });
   expect(quoteId).toBeTruthy();
   await page.evaluate(
     () =>

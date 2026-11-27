@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 test("mobile template choice is explicit, empty quotes need no confirmation, repeat clicks cannot duplicate", async ({
   page,
@@ -30,9 +31,7 @@ test("mobile template choice is explicit, empty quotes need no confirmation, rep
   await expect(page.getByLabel("Description *").nth(1)).toHaveValue(
     "Framing labour",
   );
-  await page
-    .getByRole("button", { name: "Customer & job", exact: true })
-    .click();
+  await selectEditorTab(page, "Customer & job");
   await expect(
     page.getByRole("button", { name: "Apply selected template" }),
   ).toBeDisabled();
@@ -44,9 +43,7 @@ test("mobile template choice is explicit, empty quotes need no confirmation, rep
     .getByRole("button", { name: "Apply selected template" })
     .dblclick();
   expect(dialogs).toBe(1);
-  await page
-    .getByRole("button", { name: "Customer & job", exact: true })
-    .click();
+  await selectEditorTab(page, "Customer & job");
   await expect(
     page.getByRole("button", { name: "Apply selected template" }),
   ).toBeDisabled();
@@ -70,12 +67,7 @@ for (const template of constructionTemplates) {
       .selectOption(template.id);
     await page.getByRole("button", { name: "Apply selected template" }).click();
     for (const kind of ["Labour", "Materials", "Other Costs"] as const) {
-      await page
-        .getByRole("button", {
-          name: kind === "Other Costs" ? "Subcontractors & Other Costs" : kind,
-          exact: true,
-        })
-        .click();
+      await selectEditorTab(page, kind === "Other Costs" ? "Subcontractors & Other Costs" : kind);
       const fields = page.getByLabel("Description *", { exact: true });
       const expected = template.lines
         .filter((l) => l.kind === kind)

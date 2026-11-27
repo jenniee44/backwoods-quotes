@@ -183,11 +183,14 @@ export function dimensionValueProblem(d: DrawingDimension) {
       ? ""
       : "Written count does not match numeric value or component type";
   }
+  // ± denotes an approximate drawing dimension, not part of the measurement.
+  // Strip only a trailing tolerance marker before checking the written value.
+  const writtenMeasurement = d.written.trim().replace(/\s*(?:±|\\u00b1)\s*$/, "").trim();
   const parsed = drawingMeasurements({
     documentId: "",
     page: 1,
     confidence: "Medium",
-    sourceFacts: [d.written],
+    sourceFacts: [writtenMeasurement],
   });
   const inches =
     d.value * (d.unit === "ft" ? 12 : d.unit === "mm" ? 1 / 25.4 : 1);
@@ -199,7 +202,7 @@ export function dimensionValueProblem(d: DrawingDimension) {
     d.unit === "ft" ? 12 : d.unit === "mm" ? 1 / 25.4 : 1,
   );
   return parsed.length === 1 &&
-    parsed[0].written.trim() === d.written.trim() &&
+    parsed[0].written.trim() === writtenMeasurement &&
     Math.abs(parsed[0].inches - inches) <= Math.max(1e-5, rounding)
     ? ""
     : "Written measurement does not match numeric value/units";

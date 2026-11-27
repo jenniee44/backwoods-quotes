@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { diagnosticRegressionQuote } from "../src/diagnosticRegression.fixture";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
@@ -20,41 +21,40 @@ for (const width of [1366, 390])
       apiCalls++;
       await route.abort();
     });
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
+    await page.goto("/");
     for (let reopen = 0; reopen < 2; reopen++) {
       await page.reload();
       await page
         .getByRole("button", { name: /Synthetic diagnostic deck/ })
         .click();
-      await page
-        .getByRole("button", { name: "Plans & Takeoff", exact: true })
-        .click();
+      await selectEditorTab(page, "Plans & Takeoff");
       const summary = page.getByRole("region", {
         name: "Material Takeoff Summary",
         exact: true,
       });
       await expect
         .poll(async () =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff.filter(
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff.filter(
                 (t: { id: string }) => t.id.includes(":recovered-beam:"),
-              ).length,
-            storageKey,
-          ),
+              ).length;
+    }),
         )
         .toBe(1);
       await expect(
         summary.getByText(/Supported observations \(not a category total\)/),
       ).toContainText("1 run");
-      const saved = await page.evaluate(
-        (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-        storageKey,
-      );
+      const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0];
+    });
       expect(
         saved.takeoff.filter((t: TakeoffItem) =>
           t.id.includes(":recovered-beam:"),

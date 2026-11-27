@@ -6,7 +6,7 @@ import SimpleMaterialCalculator from "./SimpleMaterialCalculator";
 import PurchasingReviewContext from "./PurchasingReviewContext";
 import { revealMaterial } from "./materialReviewNavigation";
 import { applyQuickMaterialChanges } from "./quickMaterialEdit";
-import QuickMaterialEdit from "./QuickMaterialEdit";
+import QuickMaterialEdit from "./QuickMaterialEditForm";
 import {
   materialReviewGroup,
   materialNextAction,

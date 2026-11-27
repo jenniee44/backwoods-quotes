@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -8,9 +9,7 @@ test("automatic 250 DPI suggestions are inspected, editable, deduplicated, priva
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Synthetic automatic details");
   await page.getByLabel("Job name *").fill("Auto detail test");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   const pdf = Buffer.from(constructionPdf());
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic.pdf",
@@ -90,9 +89,7 @@ test("scanned drawings receive honest coverage suggestions; deleting views prese
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   const pdf = Buffer.from(
     constructionPdf({ width: 612, height: 792, notes: [] }),
   );
@@ -150,9 +147,7 @@ test("automatic overlap suppression stays scoped to the source PDF", async ({
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   for (const name of ["first-synthetic.pdf", "second-synthetic.pdf"]) {
     await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
       name,

@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -76,18 +77,15 @@ test("purchasing categories retain separate beam, joist and hanger assemblies wi
       included: false,
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ s, key }) => localStorage.setItem(key, JSON.stringify(s)),
     { s, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic grouped purchasing/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByRole("button", { name: /Preliminary Shopping List/ }).click();
   const list = page.locator(".preliminary-materials");
   await expect(list.locator("tbody>tr")).toHaveCount(3);

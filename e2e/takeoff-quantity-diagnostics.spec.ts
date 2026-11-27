@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readWorkspace } from "./fixtures/readWorkspace";
 import { readFile } from "node:fs/promises";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 import { syntheticDeckBeams } from "../shared/spatialBeam.fixture";
@@ -78,16 +79,17 @@ for (const width of [1366, 390])
       },
     ];
     const originalLines = structuredClone(q.lines);
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
+    await page.goto("/");
     for (let reopen = 0; reopen < 2; reopen++) {
       await page.reload();
       await page
         .getByRole("button", { name: /Synthetic quantity diagnostic/ })
         .click();
+      await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
       await page
         .getByRole("button", { name: "Plans & Takeoff", exact: true })
         .click();
@@ -122,10 +124,7 @@ for (const width of [1366, 390])
     expect(
       data.materials.find((t: { id: string }) => t.id === "joists").proposal,
     ).toMatchObject({ quantity: 13, unit: "joists", purchase: null });
-    const saved = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-      storageKey,
-    );
+    const saved = (await readWorkspace(page)).quotes[0];
     expect(saved.lines).toEqual(originalLines);
     expect(
       saved.takeoff.every((t: TakeoffItem) => t.status === "Proposed"),

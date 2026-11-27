@@ -1,6 +1,7 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { pdfText } from "./fixtures/pdfText";
 import { constructionPdf, constructionNotes } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
 async function openPdf(page: import("@playwright/test").Page, pdf: Buffer) {
@@ -8,9 +9,7 @@ async function openPdf(page: import("@playwright/test").Page, pdf: Buffer) {
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("PDF quality test");
   await page.getByLabel("Job name *").fill("Original construction drawing");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "crisp-36x24-sheet.pdf",
     mimeType: "application/pdf",
@@ -86,7 +85,7 @@ test("vector PDF stays byte-exact; zoom rerenders detail; text plus 250 DPI regi
   expect(geometry.canvasWidth).toBe(Math.ceil(geometry.cssWidth)); // DPR=1 fixture.
   await page
     .locator(".pdf-scroll-viewport")
-    .screenshot({ path: "/tmp/backwoods-pdf-216dpi-preview.png" });
+    .screenshot({ path: ".local-dev/browser-artifacts/backwoods-pdf-216dpi-preview.png" });
   await page
     .getByRole("button", {
       name: "Include this view in analysis (250 DPI)",
@@ -123,7 +122,7 @@ test("vector PDF stays byte-exact; zoom rerenders detail; text plus 250 DPI regi
   }, imageUrl);
   await page
     .locator("#detail-test-image")
-    .screenshot({ path: "/tmp/backwoods-pdf-250dpi-detail.png" });
+    .screenshot({ path: ".local-dev/browser-artifacts/backwoods-pdf-250dpi-detail.png" });
   await page.locator("#detail-test-image").evaluate((node) => node.remove());
   expect(
     await page.evaluate(
@@ -144,11 +143,9 @@ test("vector PDF stays byte-exact; zoom rerenders detail; text plus 250 DPI regi
   ])
     await expect(quote).not.toContainText(secret);
   await page.emulateMedia({ media: "print" });
-  const path = "/tmp/backwoods-pdf-quality-customer.pdf";
-  await page.pdf({ path, format: "Letter" });
-  expect(
-    execFileSync("pdftotext", [path, "-"], { encoding: "utf8" }),
-  ).not.toMatch(
+  const path = ".local-dev/browser-artifacts/backwoods-pdf-quality-customer.pdf";
+  const pdf = await page.pdf({ path, format: "Letter" });
+  expect(await pdfText(page, pdf)).not.toMatch(
     /PRIVATE_PLAN_TEXT_ONLY|crisp-36x24|JOISTS:|250 DPI|detailRegions/i,
   );
 });
@@ -381,10 +378,8 @@ test("quarter-turn rotation preserves page state, fit/zoom/panning and exact ori
   await page.getByRole("button", { name: "Previous", exact: true }).click();
   await ready();
   await expect(page.getByLabel("Viewer rotation")).toHaveText("270°");
-  await page.getByRole("button", { name: "Materials", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Materials");
+  await selectEditorTab(page, "Plans & Takeoff");
   await page
     .getByRole("button", { name: "crisp-36x24-sheet.pdf", exact: true })
     .click();

@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -68,18 +69,15 @@ for (const width of [1366, 390])
         itemRole: "Document observation",
       },
     ];
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
-    await page.reload();
+    await page.goto("/");
     await page
       .getByRole("button", { name: /Synthetic grouped editor/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     const region = page.getByRole("region", { name: "Materials Summary" });
     await region
       .getByRole("button", { name: "Materials Summary", exact: true })
@@ -114,13 +112,13 @@ for (const width of [1366, 390])
       .getByRole("heading", { name: "Materials Summary", exact: true })
       .click();
     const saved = () =>
-      page.evaluate(
-        (key) =>
-          JSON.parse(localStorage.getItem(key)!).quotes.find(
+      page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
             (q: { name: string }) => q.name === "Synthetic grouped editor",
-          ).takeoff,
-        storageKey,
-      );
+          ).takeoff;
+    });
     await expect
       .poll(
         async () =>
@@ -156,6 +154,6 @@ for (const width of [1366, 390])
       ),
     ).toBe(true);
     await region.screenshot({
-      path: `/tmp/backwoods-grouped-materials-${width}.png`,
+      path: `.local-dev/browser-artifacts/backwoods-grouped-materials-${width}.png`,
     });
   });

@@ -26,12 +26,11 @@ const seedQuote = async (page: Page, name: string) => {
       addedAt: "2026-01-01",
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   return q;
 };
 const openPlans = async (page: Page, name: string) => {
@@ -89,13 +88,13 @@ for (const [state, code, status, heading] of [
     await expect(
       page.getByText("Analysis failed", { exact: true }),
     ).toHaveCount(0);
-    const saved = await page.evaluate(
-      ({ key, id }) =>
-        JSON.parse(localStorage.getItem(key)!).quotes.find(
+    const saved = await page.evaluate(async ({ id }) => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
           (q: { id: string }) => q.id === id,
-        ),
-      { key: storageKey, id: q.id },
-    );
+        );
+    }, { id: q.id });
     expect(saved.lines).toEqual(q.lines);
     expect(saved.pricing).toEqual(q.pricing);
     expect(saved.analysisReports ?? []).toHaveLength(0);
@@ -196,13 +195,13 @@ for (const [width, loseResponse] of [
     ).toBeVisible({ timeout: 45000 });
     expect(paid).toBe(1);
     expect(recovery).toBe(loseResponse ? 1 : 0);
-    const saved = await page.evaluate(
-      ({ key, id }) =>
-        JSON.parse(localStorage.getItem(key)!).quotes.find(
+    const saved = await page.evaluate(async ({ key, id }) => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
           (q: { id: string }) => q.id === id,
-        ),
-      { key: storageKey, id: q.id },
-    );
+        );
+    }, { key: storageKey, id: q.id });
     expect(saved.analysisReports).toHaveLength(1);
     expect(saved.takeoff.length).toBeGreaterThan(0);
     expect(saved.lines).toEqual(q.lines);
@@ -225,14 +224,15 @@ test("a failed original-quote save blocks paid work and never claims AI results 
     await route.abort();
   });
   await openPlans(page, name);
-  await page.evaluate((key) => {
-    const original = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (k, v) {
-      if (k === key)
+  await page.evaluate(() => {
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function (stores, mode, options) {
+      if (mode === "readwrite" && this.name === "backwoods-quotes-durable-v1") {
         throw new DOMException("Synthetic quota failure", "QuotaExceededError");
-      return original.call(this, k, v);
+      }
+      return transaction.call(this, stores, mode, options);
     };
-  }, storageKey);
+  });
   await page
     .getByRole("button", { name: "Analyze plans with AI", exact: true })
     .click();
@@ -240,13 +240,13 @@ test("a failed original-quote save blocks paid work and never claims AI results 
     page.getByText("Analysis not started — quote not saved", { exact: true }),
   ).toBeVisible({ timeout: 45000 });
   expect(requests).toBe(0);
-  const stored = await page.evaluate(
-    ({ key, id }) =>
-      JSON.parse(localStorage.getItem(key)!).quotes.find(
+  const stored = await page.evaluate(async ({ key, id }) => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
         (q: { id: string }) => q.id === id,
-      ),
-    { key: storageKey, id: q.id },
-  );
+      );
+    }, { key: storageKey, id: q.id });
   expect(stored.lines).toEqual(q.lines);
   expect(stored.analysisReports ?? []).toHaveLength(0);
 });

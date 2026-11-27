@@ -26,7 +26,7 @@ import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
 import { EvidenceEstimateReview } from "./EvidenceEstimateReview";
 import { approveEvidenceEstimate } from "./approveEvidenceEstimate";
-import MaterialsSummary from "./MaterialsSummary";
+import MaterialsSummary from "./MaterialsSummaryPanel";
 import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
 import { loadPdfSource } from "./pdfSource";
@@ -127,7 +127,7 @@ export default function PlansTakeoff({
   quote: Quote;
   locked: boolean;
   onChange: (q: Quote) => void;
-  onPersistAnalysis: (q: Quote, phase?: "source" | "result") => boolean;
+  onPersistAnalysis: (q: Quote, phase?: "source" | "result") => Promise<boolean>;
   onError: (s: string) => void;
   onViewEstimate?: () => void;
   simpleMode?: boolean;
@@ -665,7 +665,7 @@ export default function PlansTakeoff({
             return notes;
           }),
       ]);
-      if (!recoverOnly && !onPersistAnalysis(latest.current, "source")) {
+      if (!recoverOnly && !(await onPersistAnalysis(latest.current, "source"))) {
         setAnalysisState("Analysis not started — quote not saved");
         setAnalysisError(
           "The quote and original drawing could not be saved in this browser. No AI request was made. Free browser storage and save the quote before analyzing.",
@@ -860,8 +860,8 @@ export default function PlansTakeoff({
               : "Images are available for this session only. Browser image storage is full or unavailable; existing quote data was not replaced. Reopening may not retain these images.",
       };
       // A paid analysis must not be reported as saved merely because React
-      // updated the editor. Persist the complete takeoff and report synchronously.
-      const saved = onPersistAnalysis(next);
+      // updated the editor. Wait for the durable database transaction before reporting success.
+      const saved = await onPersistAnalysis(next);
       onChange(next);
       if (saved) {
         try {

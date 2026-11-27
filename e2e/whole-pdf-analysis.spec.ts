@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -117,9 +118,7 @@ test("complete multi-page construction PDF needs no manual views; repeated mater
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Synthetic fixture");
   await page.getByLabel("Job name *").fill("Synthetic multi-page deck");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic-complete.pdf",
     mimeType: "application/pdf",

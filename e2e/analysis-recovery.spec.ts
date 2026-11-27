@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -14,18 +15,15 @@ for (const width of [1366, 390])
     q.takeoff = [];
     q.documents = [];
     const manual = structuredClone(q.lines);
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
-    await page.reload();
+    await page.goto("/");
     await page
       .getByRole("button", { name: /Synthetic analysis recovery/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page
       .getByLabel("Attach plans", { exact: true })
       .setInputFiles({
@@ -77,10 +75,11 @@ for (const width of [1366, 390])
     ).toHaveCount(0);
     await expect(analyze).toBeEnabled();
     expect(
-      await page.evaluate(
-        (key) => JSON.parse(localStorage.getItem(key)!).quotes[0].lines,
-        storageKey,
-      ),
+      await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].lines;
+    }),
     ).toEqual(manual);
     await analyze.click();
     await expect(
@@ -93,20 +92,22 @@ for (const width of [1366, 390])
     ).toBeVisible();
     await expect(analyze).toBeEnabled();
     expect(
-      await page.evaluate(
-        (key) => JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff,
-        storageKey,
-      ),
+      await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff;
+    }),
     ).toHaveLength(0);
     await analyze.click();
     await expect(
       page.getByText("Analysis complete — needs review", { exact: true }),
     ).toBeVisible();
     expect(calls).toBe(3);
-    const saved = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-      storageKey,
-    );
+    const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0];
+    });
     expect(saved.lines).toEqual(manual);
     expect(
       saved.takeoff.every((t: { status: string }) => t.status === "Proposed"),

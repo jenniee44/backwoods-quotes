@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -49,18 +50,15 @@ for (const width of [1366, 390])
     const next = addAnalysisSuggestions(q, result);
     store.quotes[0] = next;
     const originalLines = next.lines;
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
-    await page.reload();
+    await page.goto("/");
     await page
       .getByRole("button", { name: /Synthetic auto beam proposals/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page
       .getByRole("button", { name: /Preliminary Shopping List/ })
       .click();
@@ -113,10 +111,11 @@ for (const width of [1366, 390])
     await expect(
       page.getByRole("button", { name: /Final Shopping List/ }),
     ).toContainText("(0)");
-    const stored = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-      storageKey,
-    );
+    const stored = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0];
+    });
     expect(stored.lines).toEqual(originalLines);
     expect(
       await page.evaluate(
@@ -124,6 +123,6 @@ for (const width of [1366, 390])
       ),
     ).toBe(true);
     await panel.screenshot({
-      path: `/tmp/backwoods-automatic-beams-${width}.png`,
+      path: `.local-dev/browser-artifacts/backwoods-automatic-beams-${width}.png`,
     });
   });

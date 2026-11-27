@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { openAdvancedMaterial } from "./material-review.helpers";
 import { expect, test } from "@playwright/test";
 import { seed } from "../src/model";
@@ -69,18 +70,15 @@ test("equivalent observations share one candidate, remain/excluded scopes stay u
     },
   ];
   store.quotes[0] = addAnalysisSuggestions(store.quotes[0], repeated);
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     (data) => localStorage.setItem("backwoods-quotes-v1", JSON.stringify(data)),
     store,
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic component review/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(4);
