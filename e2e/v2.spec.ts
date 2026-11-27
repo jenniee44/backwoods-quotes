@@ -10,6 +10,7 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
   );
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page.getByLabel("Customer name *").fill("Numeric customer");
   await page.getByLabel("Job name *").fill("Numeric entry");
   for (const kind of ["Labour", "Materials", "Other Costs"]) {
@@ -77,8 +78,10 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
   await page.getByLabel("Target minimum gross margin (%)").fill("70");
   await expect(page.locator(".margin-warning")).toBeVisible();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
+  await expect(page.locator(".notice")).toHaveText("Saved on this device");
   await page.reload();
   await page.getByRole("button", { name: /Numeric entry/ }).click();
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page.getByRole("button", { name: "Pricing", exact: true }).click();
   await expect(overhead).toHaveValue("0");
   expect(
@@ -87,7 +90,7 @@ test("natural numeric entry, blanks and zero override at mobile width", async ({
     ),
   ).toBeTruthy();
   await page.screenshot({
-    path: "/tmp/backwoods-v2-pricing.png",
+    path: ".local-dev/backwoods-v2-pricing.png",
     fullPage: true,
   });
 });
@@ -101,6 +104,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await page.getByLabel("Job name *").fill("Muskoka deck");
   await page.getByLabel("Apply construction template").selectOption("deck");
   await page.getByRole("button", { name: "Apply selected template" }).click();
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page
     .getByRole("button", { name: "Customer & job", exact: true })
     .click();
@@ -173,8 +177,10 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
     page.getByText("Converted to an estimate line.", { exact: false }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
+  await expect(page.locator(".notice")).toHaveText("Saved on this device");
   await page.reload();
   await page.getByRole("button", { name: /Muskoka deck/ }).click();
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page
     .getByRole("button", { name: "Plans & Takeoff", exact: true })
     .click();
@@ -192,7 +198,7 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
     ),
   ).toBeTruthy();
   await page.screenshot({
-    path: "/tmp/backwoods-v2-takeoff.png",
+    path: ".local-dev/backwoods-v2-takeoff.png",
     fullPage: true,
   });
   await page
@@ -212,10 +218,10 @@ test("mobile Deck template, customer document details and reviewed plans takeoff
   await expect(doc).not.toContainText("40 board");
   await page
     .locator(".customer-document")
-    .screenshot({ path: "/tmp/backwoods-v2-customer.png" });
+    .screenshot({ path: ".local-dev/backwoods-v2-customer.png" });
   await page.emulateMedia({ media: "print" });
   await expect(page.locator(".preview-options")).toBeHidden();
-  await page.pdf({ path: "/tmp/backwoods-v2-quote.pdf", format: "A4" });
+  await page.pdf({ path: ".local-dev/backwoods-v2-quote.pdf", format: "A4" });
 });
 
 test("V1 browser records migrate safely and sent quotes stay locked after defaults changes", async ({
@@ -243,20 +249,18 @@ test("V1 browser records migrate safely and sent quotes stay locked after defaul
   }
   const raw = JSON.stringify(v1),
     sentPrice = calculate(estimateFor(seed().quotes[1])).subtotal;
+  await page.addInitScript((raw) => localStorage.setItem("backwoods-quotes-v1", raw), raw);
   await page.goto("/");
-  await page.evaluate(
-    (raw) => localStorage.setItem("backwoods-quotes-v1", raw),
-    raw,
-  );
-  await page.reload();
   await page.getByRole("button", { name: /Backyard privacy fence/ }).click();
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page.getByRole("button", { name: "Labour", exact: true }).click();
   await expect(page.getByLabel("Internal cost / hour ($)")).toBeDisabled();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  const result = await page.evaluate(() => ({
-    store: JSON.parse(localStorage.getItem("backwoods-quotes-v1")!),
-    backup: localStorage.getItem("backwoods-quotes-v1-backup"),
-  }));
+  const result = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return { store: await readDurableStore(), backup: localStorage.getItem("backwoods-quotes-v1") };
+  });
   expect(result.store.version).toBe(2);
   expect(result.backup).toBe(raw);
   expect(calculate(result.store.quotes[1].snapshot).subtotal).toBe(sentPrice);

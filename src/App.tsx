@@ -397,7 +397,7 @@ export default function App() {
     const target = store.quotes.find((q) => q.id === editing.id)!;
     if (
       !confirm(
-        `Permanently delete quote ${target.number} — ${target.customer.name || "Customer not added"} / ${target.name || "Untitled project"}?\n\nThis deletes the quote, attachments and plan/takeoff analysis from this device. Deletion cannot be undone.${target.job ? "\n\nThe existing job, original estimate and actual costs will be preserved separately." : ""}`,
+        `Delete quote ${target.number} — ${target.customer.name || "Customer not added"} / ${target.name || "Untitled project"}?\n\nThis removes the quote from the active workspace. Retained migration copies and exported backups may still contain it.${target.job ? "\n\nThe existing job, original estimate and actual costs will be preserved separately." : ""}`,
       )
     )
       return;
@@ -408,7 +408,7 @@ export default function App() {
       void removeQuoteImages(target.id).then((ok) => {
         if (!ok)
           setNotice(
-            "Quote deleted; private analysis-image cleanup could not be verified because browser storage is unavailable. Retry when storage access is restored or clear this site’s browser data.",
+            "Quote removed from the active workspace. Browser storage did not confirm analysis-image cleanup.",
           );
       });
       setEditing(null);
@@ -424,7 +424,7 @@ export default function App() {
       setSearch("");
       setError("");
       setNotice(
-        `Quote ${target.number} deleted permanently.${target.job ? " Its job was preserved in Jobs." : ""}`,
+        `Quote ${target.number} removed from the active workspace.${target.job ? " Its job was preserved in Jobs." : ""}`,
       );
     } catch {
       setError(
@@ -1992,7 +1992,8 @@ export default function App() {
                                 throw new Error("Full restoration would replace or remove existing projects. Cancel full restoration and use add-missing-projects mode. No records changed.");
                               }
                               if (!window.confirm("Restore backup pricing and settings? Export your current workspace first if you need to retain its settings.")) return;
-                              if (await saveStore(restored, base)) {
+                              const lastQuoteNumber = Math.max(quoteNumberHighWater(base), quoteNumberHighWater(restored));
+                              if (await saveStore({ ...restored, lastQuoteNumber }, base)) {
                                 setCompany(restored.company ?? companyDefaults);
                                 setSettings(restored.settings);
                                 setQuoteDefaults(restored.quoteDefaults);
@@ -2042,8 +2043,7 @@ export default function App() {
                     </label>
                     <p className="muted">
                       Includes private estimates and attached files. Keep this
-                      backup securely. V1 records are automatically backed up in
-                      browser storage before their first V2 save.
+                      backup securely. The original legacy records are retained in this browser after migration.
                     </p>
                   </div>
                   <div className="info">

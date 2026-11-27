@@ -1569,7 +1569,7 @@ export const storageKey = "backwoods-quotes-v1"; // Keep original key so deploye
 export const backupKey = "backwoods-quotes-v1-backup";
 export function load(): Store {
   const raw = localStorage.getItem(storageKey);
-  return raw ? migrate(JSON.parse(raw)) : seed();
+  return raw === null ? seed() : migrate(JSON.parse(raw));
 }
 export function persist(store: Store) {
   const old = localStorage.getItem(storageKey);

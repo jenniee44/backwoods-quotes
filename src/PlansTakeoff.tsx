@@ -26,7 +26,7 @@ import DetailViewEditor from "./DetailViewEditor";
 import TakeoffTable from "./TakeoffTable";
 import { EvidenceEstimateReview } from "./EvidenceEstimateReview";
 import { approveEvidenceEstimate } from "./approveEvidenceEstimate";
-import MaterialsSummary from "./MaterialsSummary";
+import MaterialsSummary from "./MaterialsSummaryPanel";
 import { deriveDrawingQuantities } from "./drawingDerivedQuantities";
 import { supplementWholePdfs } from "./wholePdfAnalysis";
 import { loadPdfSource } from "./pdfSource";

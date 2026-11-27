@@ -13,8 +13,9 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBeTruthy();
-  await page.screenshot({ path: "/tmp/backwoods-mobile.png", fullPage: true });
+  await page.screenshot({ path: ".local-dev/backwoods-mobile.png", fullPage: true });
   await page.getByRole("button", { name: "Create New Quote" }).click();
+  await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
   await page.getByLabel("Customer name *").fill("Taylor Test");
   await page.getByLabel("Job name *").fill("Test cedar deck");
   await expect(page.getByLabel("Group detailed quote by scope")).toBeChecked();
@@ -37,7 +38,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.getByLabel("Customer rate / hour ($)").fill("75");
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
   await expect(
-    page.getByText("Saved on this device", { exact: true }),
+    page.locator(".save-indicator").getByText("Saved on this device", { exact: true }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Customer quote", exact: true })
@@ -64,7 +65,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await expect(page.locator(".shell")).toBeHidden();
   await expect(page.locator(".preview-toolbar")).toBeHidden();
   await page.pdf({
-    path: "/tmp/backwoods-quote.pdf",
+    path: ".local-dev/backwoods-quote.pdf",
     format: "A4",
     printBackground: true,
   });
@@ -88,9 +89,11 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
   await page.getByLabel("Internal cost / hour ($)", { exact: true }).fill("30");
   await page.getByRole("button", { name: "Record actual cost" }).click();
   await expect(page.locator(".actual-list")).toContainText("$360.00");
-  const stored = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("backwoods-quotes-v1")!),
-  );
+  const stored = await page.evaluate(async () => {
+    const path = "/src/durableStore.ts";
+    const { readDurableStore } = await import(path);
+    return (await readDurableStore());
+  });
   const quote = stored.quotes.find(
     (q: { name: string }) => q.name === "Test cedar deck",
   );
@@ -110,7 +113,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
     ),
   ).toBeTruthy();
   await page.screenshot({
-    path: "/tmp/backwoods-mobile-job.png",
+    path: ".local-dev/backwoods-mobile-job.png",
     fullPage: true,
   });
   expect(errors).toEqual([]);
@@ -118,7 +121,7 @@ test("mobile quote workflow, print privacy, job snapshot, persistence and comple
 test("desktop dashboard and estimator access", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
-  await page.screenshot({ path: "/tmp/backwoods-desktop.png", fullPage: true });
+  await page.screenshot({ path: ".local-dev/backwoods-desktop.png", fullPage: true });
   await page.getByLabel("Development role").selectOption("Estimator");
   await expect(
     page.getByRole("button", { name: "Settings", exact: true }),
@@ -127,6 +130,7 @@ test("desktop dashboard and estimator access", async ({ page }) => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("Material markup (%)").fill("20");
   await page.getByRole("button", { name: "Save defaults" }).click();
+  await expect(page.getByText("Pricing defaults saved", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Material markup (%)")).toHaveValue("20");
@@ -143,35 +147,28 @@ test("invalid input and storage failures show actionable messages", async ({
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
   await expect(
-    page.getByText("Saved on this device", { exact: true }),
+    page.locator(".save-indicator").getByText("Saved on this device", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("Customer name *").fill("Test");
   await page.getByLabel("Job name *").fill("Deck");
   await page.evaluate(() => {
-    Storage.prototype.setItem = () => {
+    IDBFactory.prototype.open = () => {
       throw new DOMException("Full", "QuotaExceededError");
     };
   });
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Could not save");
+  await expect(page.getByRole("alert").filter({ hasText: "Save failed in durable storage" })).toBeVisible();
 });
 test("malformed saved records are preserved and reported rather than crashing", async ({
   page,
 }) => {
+  await page.addInitScript(() => localStorage.setItem(
+    "backwoods-quotes-v1",
+    JSON.stringify({ version: 1, settings: {}, quotes: [{}] }),
+  ));
   await page.goto("/");
-  await page.evaluate(() =>
-    localStorage.setItem(
-      "backwoods-quotes-v1",
-      JSON.stringify({ version: 1, settings: {}, quotes: [{}] }),
-    ),
-  );
-  await page.reload();
-  await expect(page.getByRole("alert")).toContainText(
-    "Could not read saved data",
-  );
-  await expect(
-    page.getByRole("heading", { name: "Your work, at a glance." }),
-  ).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Could not read saved data");
+  await expect(page.getByRole("button", { name: "Create New Quote" })).toHaveCount(0);
   expect(
     await page.evaluate(
       () => JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes,

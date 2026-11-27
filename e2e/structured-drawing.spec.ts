@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { readWorkspace } from "./fixtures/readWorkspace";
 import { structuredTakeoffFixture } from "../src/structuredTakeoff.fixture";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { readFile } from "node:fs/promises";
-import { storageKey } from "../src/model";
 for (const [width, rotation] of [
   [1366, 90],
   [390, 270],
@@ -60,6 +60,7 @@ for (const [width, rotation] of [
     await page.getByRole("button", { name: "Create New Quote" }).click();
     await page.getByLabel("Customer name *").fill("Synthetic contractor");
     await page.getByLabel("Job name *").fill("Synthetic structured deck");
+    await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
@@ -99,6 +100,7 @@ for (const [width, rotation] of [
     await scope.getByRole("button", { name: /Apply scope/ }).click();
     await expect(scope).toContainText("Contractor confirmed: Included");
     await page.getByRole("button", { name: "Save quote", exact: true }).click();
+    await expect(page.locator(".notice")).toHaveText("Saved on this device");
     await page
       .getByText("Export saved takeoff analysis", { exact: true })
       .click();
@@ -135,13 +137,11 @@ for (const [width, rotation] of [
     await page
       .getByRole("button", { name: /Synthetic structured deck/ })
       .click();
+    await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
-    const stored = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!),
-      storageKey,
-    );
+    const stored = await readWorkspace(page);
     const q = stored.quotes.find(
       (q: { name: string }) => q.name === "Synthetic structured deck",
     );

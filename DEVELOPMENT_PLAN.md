@@ -32,3 +32,13 @@ Authenticated cloud synchronization, employee permissions, supplier pricing and 
 
 ## Status convention
 Implemented is not verified. Record commit, test result and deployment separately. All phases remain open until their gates pass.
+
+## Local validation on macOS
+
+- Base commit: `b8d5ffc36e2f4e351489b003e7e49d68055737f3` on `feature/evidence-based-estimating`. The changes below were validated against this base.
+- Toolchain: Apple Silicon, project-local Node 24.11.1 and npm 11.6.2, locked dependencies, and headless Chrome. Three component filenames were changed to avoid case-insensitive module resolution conflicts.
+- Phase 1: verified legacy attachment migration and corrupt-record preservation, stale writes and concurrent tabs, settings and backup restore, quote numbering after restore and deletion, and preservation of a converted job when its quote is removed. Deletion messaging now describes active-workspace removal and acknowledges retained copies.
+- Phase 2: verified selected mobile and desktop workflows for manual estimates, pricing inputs, historical locking, customer print privacy, job conversion, actual costs, and backup export.
+- Phase 3: verified selected synthetic drawing workflows for rotated PDFs, proposals, contractor scope, purchasing lists, and private diagnostics. Recovery using owner-supplied records and contractor verification remain open.
+- Results: typecheck and production build passed. All 835 unit tests and 30 targeted Chrome browser checks passed. The full browser suite and Safari release checks remain open.
+- Release: no production merge or deployment.

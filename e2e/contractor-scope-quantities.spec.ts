@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readWorkspace } from "./fixtures/readWorkspace";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 for (const width of [1366, 390])
   test(`drawing proposals, editable preliminary quantities and independent pile scope at ${width}px`, async ({
@@ -72,15 +73,16 @@ for (const width of [1366, 390])
     };
     q.takeoff = [joists, footing];
     const manual = structuredClone(q.lines);
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
-    await page.reload();
+    await page.goto("/");
+
     await page
       .getByRole("button", { name: /Synthetic scope and quantities/ })
       .click();
+    await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
@@ -99,14 +101,8 @@ for (const width of [1366, 390])
       .fill("14");
     await row.getByLabel("Preliminary unit: deck", { exact: true }).click();
     await expect
-      .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff[0]
-              .quantity,
-          storageKey,
-        ),
-      )
+      .poll(async () => (await readWorkspace(page)).quotes[0].takeoff[0]
+              .quantity)
       .toBe(14);
     const scope = page.locator(".contractor-scope");
     await scope.locator("summary").click();
@@ -123,18 +119,9 @@ for (const width of [1366, 390])
     await scope.getByLabel(/This is my included job scope/).check();
     await scope.getByRole("button", { name: "Add scope for review" }).click();
     await expect
-      .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff.length,
-          storageKey,
-        ),
-      )
+      .poll(async () => (await readWorkspace(page)).quotes[0].takeoff.length)
       .toBe(3);
-    const saved = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).quotes[0],
-      storageKey,
-    );
+    const saved = (await readWorkspace(page)).quotes[0];
     expect(saved.takeoff[1].status).toBe("Rejected");
     expect(saved.takeoff[1].sourceFacts).toEqual(footing.sourceFacts);
     expect(saved.takeoff[2]).toMatchObject({
@@ -147,6 +134,7 @@ for (const width of [1366, 390])
     await page
       .getByRole("button", { name: /Synthetic scope and quantities/ })
       .click();
+    await page.getByRole("button", { name: "Show advanced tools", exact: true }).click();
     await page
       .getByRole("button", { name: "Plans & Takeoff", exact: true })
       .click();
