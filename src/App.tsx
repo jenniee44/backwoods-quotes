@@ -1403,13 +1403,21 @@ export default function App() {
                       {!locked && current.status === "Draft" && !current.job && (
                         <button type="button" className="button" onClick={async () => {
                           try {
-                            let next = current;
-                            for (const source of storeRef.current.quotes) {
-                              if (source.id !== current.id) next = recoverDrawingEvidence(next, source);
+                            const candidates = storeRef.current.quotes
+                              .filter(source => source.id !== current.id)
+                              .map(source => ({ source, next: recoverDrawingEvidence(current, source) }))
+                              .filter(candidate => candidate.next !== current);
+                            if (candidates.length === 0) {
+                              setNotice("No new matching drawing observations found.");
+                              return;
                             }
+                            if (candidates.length > 1) {
+                              setError("Multiple quotes contain matching observations. Use an isolated recovery workspace with the verified donor and target only.");
+                              return;
+                            }
+                            const { source, next } = candidates[0];
                             const count = next.takeoff.length - current.takeoff.length;
-                            if (!count) { setNotice("No new matching drawing observations found."); return; }
-                            if (!window.confirm("Recover " + count + " matching drawing observations for fresh review? Existing prices will not change.")) return;
+                            if (!window.confirm("Recover " + count + " drawing observations from " + source.number + " (" + source.name + ") for fresh review? Existing prices will not change.")) return;
                             if (await saveQuote(next, false, true)) {
                               setEditing(previous => previous?.id === next.id ? next : previous);
                               setNotice("Recovered " + count + " drawing observations. Review quantities before pricing.");
@@ -1978,9 +1986,11 @@ export default function App() {
                               if (new Set(ids).size !== ids.length) throw new Error("Backup contains duplicate project IDs.");
                               const base = storeRef.current;
                               // Full restoration is deliberately non-destructive: refuse to replace any different existing project.
-                              const incoming = new Map([...restored.quotes, ...(restored.jobs ?? [])].map(q => [q.id, q]));
-                              const conflicts = [...base.quotes, ...(base.jobs ?? [])].filter(q => JSON.stringify(incoming.get(q.id)) !== JSON.stringify(q));
-                              if (conflicts.length) {
+                              const preserves = (active: Quote[], restoredRecords: Quote[]) => {
+                                const incoming = new Map(restoredRecords.map(q => [q.id, q]));
+                                return active.every(q => JSON.stringify(incoming.get(q.id)) === JSON.stringify(q));
+                              };
+                              if (!preserves(base.quotes, restored.quotes) || !preserves(base.jobs ?? [], restored.jobs ?? [])) {
                                 // Preserve every existing record, including sample projects; never identify disposable data by name.
                                 throw new Error("Full restoration would replace or remove existing projects. Cancel full restoration and use add-missing-projects mode. No records changed.");
                               }

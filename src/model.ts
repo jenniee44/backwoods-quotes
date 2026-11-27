@@ -59,6 +59,8 @@ export type Line = {
   sku?: string;
   materialNotes?: string;
   catalogueStockLengthFt?: number;
+  cataloguePriceUnit?: string;
+  equipmentForLabourId?: string;
 };
 export type Pricing = {
   materialMarkup: number;
@@ -733,6 +735,7 @@ export function duplicate(
   quotes: Quote[],
   lastQuoteNumber = 1000,
 ): Quote {
+  const lineIds = new Map(q.lines.map(line => [line.id, id()]));
   return {
     ...structuredClone(q),
     ...newQuote(q.pricing, quotes, q.details, q.company, lastQuoteNumber),
@@ -740,7 +743,10 @@ export function duplicate(
     name: `${q.name} (copy)`,
     description: q.description,
     measurements: q.measurements,
-    lines: structuredClone(q.lines).map((l) => ({ ...l, id: id() })),
+    lines: structuredClone(q.lines).map(line => ({
+      ...line, id: lineIds.get(line.id)!,
+      ...(line.equipmentForLabourId ? { equipmentForLabourId: lineIds.get(line.equipmentForLabourId) } : {}),
+    })),
     terms: q.terms,
     templateCategory: q.templateCategory,
     customerScopes: structuredClone(q.customerScopes ?? []),
@@ -898,7 +904,7 @@ function line(v: unknown) {
         ["Unspecified", "Low", "Medium", "High"].includes(
           String(v.takeoffSource.confidence),
         ))) &&
-    ["scopeGroup", "supplier", "sku", "materialNotes"].every(
+    ["scopeGroup", "supplier", "sku", "materialNotes", "cataloguePriceUnit", "equipmentForLabourId"].every(
       (k) => v[k] === undefined || typeof v[k] === "string",
     ) &&
     (v.catalogueStockLengthFt === undefined ||

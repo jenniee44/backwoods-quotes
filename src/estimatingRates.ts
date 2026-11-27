@@ -63,8 +63,46 @@ export function copyCataloguePrice(
     supplier: entry.supplier,
     sku: entry.sku,
     catalogueStockLengthFt: entry.stockLengthFt,
+    cataloguePriceUnit: entry.unit,
     pricingRequired: entry.unitCost === 0,
   };
+}
+
+export function changeEstimateLineUnit(line: Line, unit: string): Line {
+  const originalUnit =
+    line.cataloguePriceUnit ??
+    (line.catalogueStockLengthFt === undefined ? undefined : line.unit);
+  if (
+    originalUnit === undefined ||
+    originalUnit.trim().toLowerCase() === unit.trim().toLowerCase()
+  ) {
+    return { ...line, unit };
+  }
+  return {
+    ...line,
+    unit,
+    cost: 0,
+    catalogueStockLengthFt: undefined,
+    cataloguePriceUnit: undefined,
+    supplier: undefined,
+    sku: undefined,
+    pricingRequired: true,
+  };
+}
+
+export function upsertCrewEquipment(
+  lines: Line[],
+  equipment: Line,
+  labourId: string,
+): Line[] {
+  const existing = lines.find((line) => line.equipmentForLabourId === labourId);
+  if (!existing)
+    return [...lines, { ...equipment, equipmentForLabourId: labourId }];
+  return lines.map((line) =>
+    line.id === existing.id
+      ? { ...line, quantity: equipment.quantity, cost: equipment.cost }
+      : line,
+  );
 }
 
 export type CrewEstimateInputs = {

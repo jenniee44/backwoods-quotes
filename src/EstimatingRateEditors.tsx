@@ -152,7 +152,9 @@ const crewFields: [keyof CrewEstimateInputs, string][] = [
 export function CrewEstimateEditor({
   onApply,
   onAddEquipment,
+  equipmentExists,
 }: {
+  equipmentExists: boolean;
   onApply: (hours: number, hourlyCost: number) => void;
   onAddEquipment: (hours: number, hourlyCost: number) => void;
 }) {
@@ -220,7 +222,9 @@ export function CrewEstimateEditor({
                     setEquipmentAdded(true);
                   }}
                 >
-                  Add separate equipment line
+                  {equipmentExists
+                    ? "Update separate equipment line"
+                    : "Add separate equipment line"}
                 </button>
               )}
             </>

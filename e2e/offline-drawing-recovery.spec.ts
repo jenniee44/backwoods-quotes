@@ -58,8 +58,13 @@ test("offline drawing recovery preserves the donor and draft prices", async ({
   const recover = page.getByRole("button", {
     name: "Recover matching drawing observations",
   });
-  page.once("dialog", (dialog) => dialog.accept());
+  const confirmation = page.waitForEvent("dialog").then(async (dialog) => {
+    const message = dialog.message();
+    await dialog.accept();
+    return message;
+  });
   await recover.click();
+  expect(await confirmation).toContain(donor.number + " (" + donor.name + ")");
   await expect(
     page.getByText(
       "Recovered 1 drawing observations. Review quantities before pricing.",

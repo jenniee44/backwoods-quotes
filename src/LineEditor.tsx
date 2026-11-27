@@ -2,7 +2,7 @@ import UnitInput from "./UnitInput";
 import { Plus, Trash2 } from "lucide-react";
 import NumberInput from "./NumberInput";
 import { CrewEstimateEditor } from "./EstimatingRateEditors";
-import { copyCataloguePrice, matchingMaterialUnit } from "./estimatingRates";
+import { changeEstimateLineUnit, copyCataloguePrice, matchingMaterialUnit, upsertCrewEquipment } from "./estimatingRates";
 import type { MaterialCatalogueEntry } from "./estimatingRates";
 import {
   categories,
@@ -173,7 +173,8 @@ export default function LineEditor({
               {!locked && kind === "Labour" && (
                 <CrewEstimateEditor
                   onApply={(quantity, cost) => patch({ ...l, quantity, cost, inheritCost: false })}
-                  onAddEquipment={(hours, cost) => onChange([...q.lines, {
+                  equipmentExists={q.lines.some(line => line.equipmentForLabourId === l.id)}
+                  onAddEquipment={(hours, cost) => onChange(upsertCrewEquipment(q.lines, {
                     ...newLine("Other Costs", q.pricing),
                     description: l.description.trim() ? l.description + " equipment" : "Task equipment",
                     scopeGroup: l.scopeGroup,
@@ -181,7 +182,7 @@ export default function LineEditor({
                     category: "Equipment Rental",
                     quantity: hours,
                     cost,
-                  }])}
+                  }, l.id))}
                 />
               )}
               <div className="fields compact">
@@ -205,7 +206,7 @@ export default function LineEditor({
                   <F label="Unit">
                     <UnitInput
                       value={l.unit}
-                      onChange={(unit) => patch({ ...l, unit })}
+                      onChange={(unit) => patch(changeEstimateLineUnit(l, unit))}
                     />
                   </F>
                 )}

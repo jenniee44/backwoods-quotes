@@ -226,3 +226,61 @@ test("tabs starting together hydrate one legacy workspace", async ({
     expect(hydrated.settings.labourRate).toBe(97);
   }
 });
+
+test("conflicting full restore refuses writes and add-missing preserves active pricing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const before = await readWorkspace(page);
+  const extra = newQuote(before.settings, before.quotes);
+  extra.name = "Synthetic restored project";
+  const incoming = {
+    ...before,
+    quotes: before.quotes
+      .map((quote, i) =>
+        i === 0 ? { ...quote, name: "Conflicting replacement" } : quote,
+      )
+      .concat(extra),
+    settings: {
+      ...before.settings,
+      labourRate: before.settings.labourRate + 80,
+    },
+  };
+  const file = {
+    name: "synthetic-conflicting-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(incoming)),
+  };
+  const upload = page.locator(
+    'input[type="file"][accept=".json,application/json"]',
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await upload.setInputFiles(file);
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({
+        hasText: "Full restoration would replace or remove existing projects",
+      }),
+  ).toBeVisible();
+  expect(await readWorkspace(page)).toEqual(before);
+
+  const decisions = [false, true];
+  const decide = (dialog: import("@playwright/test").Dialog) =>
+    decisions.shift() ? dialog.accept() : dialog.dismiss();
+  page.on("dialog", decide);
+  await upload.setInputFiles(file);
+  await expect(page.getByText(/Imported 1 quote/)).toBeVisible();
+  page.off("dialog", decide);
+  expect(decisions).toHaveLength(0);
+  const after = await readWorkspace(page);
+  expect(after.settings).toEqual(before.settings);
+  expect(after.quotes.filter((quote) => quote.id !== extra.id)).toEqual(
+    before.quotes,
+  );
+  expect(after.quotes.find((quote) => quote.id === extra.id)?.name).toBe(
+    extra.name,
+  );
+});
