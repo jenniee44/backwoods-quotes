@@ -7,7 +7,8 @@ import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
 import { MaterialCatalogueEditor } from "./EstimatingRateEditors";
 import QuoteDetailsEditor from "./QuoteDetailsEditor";
-import { recoverDrawingEvidence } from "./recoverDrawingEvidence";
+import DrawingRecovery from "./DrawingRecovery";
+import { matchingDrawingObservations, recoverDrawingEvidence } from "./recoverDrawingEvidence";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
 import QuoteReview from "./QuoteReview";
 import { generatePreliminaryBudget, preliminaryBudgetAlreadyExists } from "./preliminaryBudget";
@@ -1401,29 +1402,42 @@ export default function App() {
                     {tab === "Plans & Takeoff" && (
                       <>
                       {!locked && current.status === "Draft" && !current.job && (
-                        <button type="button" className="button" onClick={async () => {
-                          try {
-                            const candidates = storeRef.current.quotes
-                              .filter(source => source.id !== current.id)
-                              .map(source => ({ source, next: recoverDrawingEvidence(current, source) }))
-                              .filter(candidate => candidate.next !== current);
-                            if (candidates.length === 0) {
-                              setNotice("No new matching drawing observations found.");
-                              return;
+                        <DrawingRecovery
+                          key={current.id}
+                          target={current}
+                          quotes={store.quotes}
+                          onRecover={async source => {
+                            try {
+                              if (storeRef.current.quotes.find(quote => quote.id === source.id) !== source) {
+                                setError("The source quote changed. Reopen recovery and verify the source again.");
+                                return false;
+                              }
+                              const next = recoverDrawingEvidence(current, source);
+                              const added = next.takeoff.slice(current.takeoff.length);
+                              if (!added.length) {
+                                setNotice("No new matching drawing observations found.");
+                                return false;
+                              }
+                              if (!(await saveQuote(next, false, true))) return false;
+                              setEditing(previous => {
+                                if (previous?.id !== next.id) return previous;
+                                if (previous === current) return next;
+                                if (previous.status !== "Draft" || previous.job) return previous;
+                                const available = matchingDrawingObservations(previous, source);
+                                const applicable = added.filter(item => available.some(match =>
+                                  match.key === item.analysisSourceKey && match.document.id === item.documentId,
+                                ));
+                                return applicable.length ? {...previous, takeoff: [...previous.takeoff, ...applicable]} : previous;
+                              });
+                              const count = added.length;
+                              setNotice("Recovered " + count + (count === 1 ? " drawing observation." : " drawing observations.") + " Review quantities before pricing.");
+                              return true;
+                            } catch (error) {
+                              setError(error instanceof Error ? error.message : String(error));
+                              return false;
                             }
-                            if (candidates.length > 1) {
-                              setError("Multiple quotes contain matching observations. Use an isolated recovery workspace with the verified donor and target only.");
-                              return;
-                            }
-                            const { source, next } = candidates[0];
-                            const count = next.takeoff.length - current.takeoff.length;
-                            if (!window.confirm("Recover " + count + " drawing observations from " + source.number + " (" + source.name + ") for fresh review? Existing prices will not change.")) return;
-                            if (await saveQuote(next, false, true)) {
-                              setEditing(previous => previous?.id === next.id ? next : previous);
-                              setNotice("Recovered " + count + " drawing observations. Review quantities before pricing.");
-                            }
-                          } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
-                        }}>Recover matching drawing observations</button>
+                          }}
+                        />
                       )}
                       <PlansTakeoff
                         orientations={pdfOrientations}
