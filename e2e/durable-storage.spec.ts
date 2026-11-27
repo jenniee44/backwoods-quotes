@@ -2,9 +2,13 @@ import { test, expect } from "@playwright/test";
 import { newQuote, seed, storageKey } from "../src/model";
 import { readWorkspace } from "./fixtures/readWorkspace";
 
-test("durable storage rejects stale writes and retains committed data", async ({ page }) => {
+test("durable storage rejects stale writes and retains committed data", async ({
+  page,
+}) => {
   await page.goto("/");
-  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
+  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(
+    0,
+  );
   const result = await page.evaluate(async () => {
     const path = "/src/durableStore.ts";
     const { readDurableStore, writeDurableStore } = await import(path);
@@ -13,13 +17,18 @@ test("durable storage rejects stale writes and retains committed data", async ({
     const next = { ...original, lastQuoteNumber: 9001 };
     await writeDurableStore(next, original);
     let rejected = false;
-    try { await writeDurableStore({ ...original, lastQuoteNumber: 9002 }, original); }
-    catch { rejected = true; }
+    try {
+      await writeDurableStore({ ...original, lastQuoteNumber: 9002 }, original);
+    } catch {
+      rejected = true;
+    }
     return { rejected, number: (await readDurableStore()).lastQuoteNumber };
   });
   expect(result).toEqual({ rejected: true, number: 9001 });
   await page.reload();
-  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
+  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(
+    0,
+  );
   const number = await page.evaluate(async () => {
     const path = "/src/durableStore.ts";
     const { readDurableStore } = await import(path);
@@ -28,36 +37,53 @@ test("durable storage rejects stale writes and retains committed data", async ({
   expect(number).toBe(9001);
 });
 
-test("legacy migration preserves attachments and settings across reload", async ({ page }) => {
+test("legacy migration preserves attachments and settings across reload", async ({
+  page,
+}) => {
   const store = seed();
   store.settings.labourRate = 97;
   const quote = newQuote(store.settings, store.quotes);
   quote.name = "Synthetic migration project";
   const data = "data:application/pdf;base64," + "A".repeat(1500000);
-  quote.documents = [{
-    id: "test-document", name: "Synthetic.pdf", type: "application/pdf",
-    data, addedAt: "2026-01-01",
-  }];
+  quote.documents = [
+    {
+      id: "test-document",
+      name: "Synthetic.pdf",
+      type: "application/pdf",
+      data,
+      addedAt: "2026-01-01",
+    },
+  ];
   store.quotes.push(quote);
-  await page.route("**/__legacy-test-fixture", route =>
-    route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Legacy fixture</title>" }),
+  await page.route("**/__legacy-test-fixture", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Legacy fixture</title>",
+    }),
   );
   await page.goto("/__legacy-test-fixture");
   await page.evaluate(({ key, raw }) => localStorage.setItem(key, raw), {
-    key: storageKey, raw: JSON.stringify(store),
+    key: storageKey,
+    raw: JSON.stringify(store),
   });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Your work, at a glance." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your work, at a glance." }),
+  ).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
+  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(
+    0,
+  );
   const saved = await readWorkspace(page);
-  const migrated = saved.quotes.find(record => record.id === quote.id);
+  const migrated = saved.quotes.find((record) => record.id === quote.id);
   expect(migrated?.documents[0].data).toBe(data);
   expect(saved.quotes).toHaveLength(store.quotes.length);
   expect(saved.settings.labourRate).toBe(97);
 });
 
-test("workspace recovery restores settings without removing projects", async ({ page }) => {
+test("workspace recovery restores settings without removing projects", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -70,14 +96,22 @@ test("workspace recovery restores settings without removing projects", async ({ 
   });
   await page.reload();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  page.on("dialog", dialog => dialog.accept());
-  await page.locator('input[type="file"][accept=".json,application/json"]').setInputFiles({
-    name: "synthetic-backup.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(backup))
-  });
-  await expect(page.getByText("Backup workspace restored.", { exact: true })).toBeVisible();
+  page.on("dialog", (dialog) => dialog.accept());
+  await page
+    .locator('input[type="file"][accept=".json,application/json"]')
+    .setInputFiles({
+      name: "synthetic-backup.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(backup)),
+    });
+  await expect(
+    page.getByText("Backup workspace restored.", { exact: true }),
+  ).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(page.getByLabel("Customer labour rate ($/hour)", { exact: true })).toHaveValue("123");
+  await expect(
+    page.getByLabel("Customer labour rate ($/hour)", { exact: true }),
+  ).toHaveValue("123");
   const actual = await page.evaluate(async () => {
     const path = "/src/durableStore.ts";
     const { readDurableStore } = await import(path);
@@ -88,13 +122,19 @@ test("workspace recovery restores settings without removing projects", async ({ 
   expect(actual.lastQuoteNumber).toBe(9001);
 });
 
-test("a corrupt legacy record blocks startup and remains available for recovery", async ({ page }) => {
+test("a corrupt legacy record blocks startup and remains available for recovery", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     localStorage.setItem("backwoods-quotes-v1", "");
   });
   await page.goto("/");
-  await expect(page.getByRole("status")).toContainText("Durable storage unavailable");
-  await expect(page.getByRole("button", { name: "Create New Quote" })).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText(
+    "Durable storage unavailable",
+  );
+  await expect(
+    page.getByRole("button", { name: "Create New Quote" }),
+  ).toHaveCount(0);
   const result = await page.evaluate(async () => {
     const path = "/src/durableStore.ts";
     const { readDurableStore } = await import(path);
@@ -111,10 +151,14 @@ test("concurrent tabs preserve the winning commit and reject the stale writer", 
   context,
 }) => {
   await page.goto("/");
-  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
+  await expect(page.getByText("Loading saved Backwoods projects…")).toHaveCount(
+    0,
+  );
   const other = await context.newPage();
   await other.goto("/");
-  await expect(other.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
+  await expect(
+    other.getByText("Loading saved Backwoods projects…"),
+  ).toHaveCount(0);
 
   const original = await page.evaluate(async () => {
     const path = "/src/durableStore.ts";
@@ -123,26 +167,62 @@ test("concurrent tabs preserve the winning commit and reject the stale writer", 
   });
   const attempts = await Promise.allSettled(
     [page, other].map((tab, index) =>
-      tab.evaluate(async ({ original, number }) => {
-        const path = "/src/durableStore.ts";
-        const { writeDurableStore } = await import(path);
-        await writeDurableStore({ ...original, lastQuoteNumber: number }, original);
-        return number;
-      }, { original, number: 9001 + index }),
+      tab.evaluate(
+        async ({ original, number }) => {
+          const path = "/src/durableStore.ts";
+          const { writeDurableStore } = await import(path);
+          await writeDurableStore(
+            { ...original, lastQuoteNumber: number },
+            original,
+          );
+          return number;
+        },
+        { original, number: 9001 + index },
+      ),
     ),
   );
-  const commits = attempts.filter(attempt => attempt.status === "fulfilled");
-  const rejections = attempts.filter(attempt => attempt.status === "rejected");
+  const commits = attempts.filter((attempt) => attempt.status === "fulfilled");
+  const rejections = attempts.filter(
+    (attempt) => attempt.status === "rejected",
+  );
   expect(commits).toHaveLength(1);
   expect(rejections).toHaveLength(1);
   expect(String(rejections[0].reason)).toContain("Saved data changed");
 
   await other.reload();
-  await expect(other.getByText("Loading saved Backwoods projects…")).toHaveCount(0);
+  await expect(
+    other.getByText("Loading saved Backwoods projects…"),
+  ).toHaveCount(0);
   const number = await other.evaluate(async () => {
     const path = "/src/durableStore.ts";
     const { readDurableStore } = await import(path);
     return (await readDurableStore()).lastQuoteNumber;
   });
   expect(number).toBe(commits[0].value);
+});
+
+test("tabs starting together hydrate one legacy workspace", async ({
+  context,
+  page,
+}) => {
+  const legacy = seed();
+  legacy.settings.labourRate = 97;
+  await context.addInitScript(
+    ({ key, raw }) => {
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
+    },
+    { key: storageKey, raw: JSON.stringify(legacy) },
+  );
+  const other = await context.newPage();
+  await Promise.all([page.goto("/"), other.goto("/")]);
+  for (const tab of [page, other]) {
+    await expect(
+      tab.getByRole("heading", { name: "Your work, at a glance." }),
+    ).toBeVisible();
+    const hydrated = await readWorkspace(tab);
+    expect(hydrated.quotes.map((quote) => quote.id)).toEqual(
+      legacy.quotes.map((quote) => quote.id),
+    );
+    expect(hydrated.settings.labourRate).toBe(97);
+  }
 });

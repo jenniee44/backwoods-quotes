@@ -1,3 +1,5 @@
+import { validMaterialCatalogue } from "./estimatingRates";
+import type { MaterialCatalogueEntry } from "./estimatingRates";
 import { validDimensionDecisions } from "../shared/drawingDimensions";
 import { beamStockGroups } from "../shared/beamLumber";
 import { completenessProblem } from "./takeoffRequirements";
@@ -56,6 +58,7 @@ export type Line = {
   supplier?: string;
   sku?: string;
   materialNotes?: string;
+  catalogueStockLengthFt?: number;
 };
 export type Pricing = {
   materialMarkup: number;
@@ -253,6 +256,7 @@ export type Store = {
   company?: CompanyInfo;
   settings: Pricing;
   quoteDefaults: QuoteDetails;
+  materialCatalogue?: MaterialCatalogueEntry[];
   quotes: Quote[];
   // Independent job records retained when their originating quote is deleted.
   jobs?: Quote[];
@@ -897,6 +901,8 @@ function line(v: unknown) {
     ["scopeGroup", "supplier", "sku", "materialNotes"].every(
       (k) => v[k] === undefined || typeof v[k] === "string",
     ) &&
+    (v.catalogueStockLengthFt === undefined ||
+      (typeof v.catalogueStockLengthFt === "number" && Number.isFinite(v.catalogueStockLengthFt) && v.catalogueStockLengthFt > 0)) &&
     (v.override === null ||
       (typeof v.override === "number" &&
         Number.isFinite(v.override) &&
@@ -1428,6 +1434,8 @@ export function migrate(input: unknown): Store {
   )
     throw new Error("Saved job records are invalid.");
   if (input.version === 2) {
+    if (input.materialCatalogue !== undefined && !validMaterialCatalogue(input.materialCatalogue))
+      throw new Error("Saved material catalogue is invalid.");
     if (
       !validDetails(input.quoteDefaults) ||
       !input.quotes.every(validExtensions)

@@ -1,10 +1,11 @@
 import { removeQuoteImages } from "./analysisImageArchive";
-import { readDurableStore, writeDurableStore } from "./durableStore";
+import { hydrateDurableStore, writeDurableStore } from "./durableStore";
 import { useState, useEffect, useRef } from "react";
 import CustomerScopeEditor from "./CustomerScopeEditor";
 import CustomerQuote from "./CustomerQuote";
 import NumberInput from "./NumberInput";
 import LineEditor from "./LineEditor";
+import { MaterialCatalogueEditor } from "./EstimatingRateEditors";
 import QuoteDetailsEditor from "./QuoteDetailsEditor";
 import { recoverDrawingEvidence } from "./recoverDrawingEvidence";
 import PlansTakeoff, { type PdfOrientations } from "./PlansTakeoff";
@@ -209,30 +210,20 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const saved = await readDurableStore();
+        const hydrated = await hydrateDurableStore(() => {
+          if (initial.error) throw new Error(initial.error);
+          return initial.store;
+        });
         if (cancelled) return;
-        if (saved) {
-          // Never silently replace a newer legacy quote with an older snapshot.
-          // Once migrated, IndexedDB is authoritative. The untouched legacy
-          // localStorage snapshot may be older; do not mistake it for a conflict.
-          // Preserve legacy-only projects as additions, never overwrite IDs.
-          // Existing durable data is authoritative. Re-merging localStorage
-          // would resurrect quotes intentionally deleted after migration.
-          const merged: Store = migrate(saved);
-          // Keep the exact durable snapshot as the compare-and-swap baseline.
-          if (JSON.stringify(merged) !== JSON.stringify(saved)) await writeDurableStore(merged, saved);
-          if (!cancelled) {
-            storeRef.current = merged; setStore(merged);
-            setCompany(merged.company ?? companyDefaults);
-            setSettings(merged.settings); setQuoteDefaults(merged.quoteDefaults);
-            setStartupError(""); setError("");
-          }
-        } else if (!initial.error) {
-          await writeDurableStore(initial.store, null);
-        } else {
-          throw new Error(initial.error);
-        }
-        if (!cancelled) { setDurableReady(true); setSaveState("Saved"); }
+        storeRef.current = hydrated;
+        setStore(hydrated);
+        setCompany(hydrated.company ?? companyDefaults);
+        setSettings(hydrated.settings);
+        setQuoteDefaults(hydrated.quoteDefaults);
+        setStartupError("");
+        setError("");
+        setDurableReady(true);
+        setSaveState("Saved");
       } catch (e) {
         if (!cancelled) setDurableError(`Durable storage unavailable: ${(e as Error).message}. No existing quotes were changed.`);
       }
@@ -1089,6 +1080,7 @@ export default function App() {
                             : (tab as Kind)
                         }
                         locked={locked}
+                        materialCatalogue={store.materialCatalogue}
                         onChange={(lines) => patch({ lines })}
                         onGroup={(group) =>
                           patch({
@@ -1383,6 +1375,7 @@ export default function App() {
                               quote={current}
                               kind={kind}
                               locked={locked}
+                              materialCatalogue={store.materialCatalogue}
                               onChange={(lines) => patch({ lines })}
                               onGroup={(group) =>
                                 patch({ scopeGroups: [...new Set([...(current.scopeGroups ?? []), group])] })
@@ -1732,7 +1725,7 @@ export default function App() {
                     </p>
                     <h3 className="subheading">Profit analysis</h3>
                     <div className="profit-box">
-                      <span>Expected gross profit</span>
+                      <span>Estimated gross contribution</span>
                       <strong>{money(totals!.profit)}</strong>
                       <small>{totals!.margin.toFixed(1)}% gross margin</small>
                     </div>
@@ -1785,7 +1778,7 @@ export default function App() {
                       </div>
                     )}
                     <p className="tiny">
-                      Profit excludes tax. Pricing defaults are editable in
+                      Contribution excludes HST and unrecorded business overhead. Pricing defaults are editable in
                       Settings; existing quotes keep their own settings.
                     </p>
                     <div className="workflow">
@@ -1993,7 +1986,8 @@ export default function App() {
                               }
                               if (!window.confirm("Restore backup pricing and settings? Export your current workspace first if you need to retain its settings.")) return;
                               const lastQuoteNumber = Math.max(quoteNumberHighWater(base), quoteNumberHighWater(restored));
-                              if (await saveStore({ ...restored, lastQuoteNumber }, base)) {
+                              const materialCatalogue = restored.materialCatalogue ?? base.materialCatalogue;
+                              if (await saveStore({ ...restored, lastQuoteNumber, materialCatalogue }, base)) {
                                 setCompany(restored.company ?? companyDefaults);
                                 setSettings(restored.settings);
                                 setQuoteDefaults(restored.quoteDefaults);
@@ -2057,6 +2051,15 @@ export default function App() {
                     </p>
                   </div>
                 </section>
+                <MaterialCatalogueEditor
+                  entries={store.materialCatalogue ?? []}
+                  onSave={async materialCatalogue => {
+                    const base = storeRef.current;
+                    const saved = await saveStore({ ...base, materialCatalogue }, base);
+                    if (saved) setNotice("Material catalogue saved.");
+                    return saved;
+                  }}
+                />
               </>
             ) : (
               <>
@@ -2100,7 +2103,7 @@ export default function App() {
                         note={`${active.length} draft & sent quotes · before HST`}
                       />
                       <Stat
-                        label="Expected job profit"
+                        label="Estimated job contribution"
                         value={money(
                           accepted.reduce(
                             (s, q) => s + calculate(estimateFor(q)).profit,
@@ -2185,7 +2188,7 @@ export default function App() {
                     <span>PROJECT / CUSTOMER</span>
                     <span>STATUS</span>
                     <span>QUOTED VALUE</span>
-                    <span>EXPECTED PROFIT</span>
+                    <span>ESTIMATED CONTRIBUTION</span>
                     <span />
                   </div>
                   {listed.length ? (

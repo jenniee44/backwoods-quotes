@@ -63,3 +63,12 @@ Implemented is not verified. Record commit, test result and deployment separatel
 
 - On November 27, 2026, the synthetic suite passed all 157 Chromium browser tests and 15 targeted WebKit tests. Typecheck, the production build, and 837 unit tests passed. Tests include the offline drawing-recovery unit cases. The production environment was not used.
 - The first published validation commit is `079661f120f73a64470289e82b5e6db4f66c2573`. Native Safari WebDriver is pending the Safari automation setting. Recovery on real records and contractor confirmation remain pending.
+
+### Integrated local development
+
+- Phase 1: the first legacy migration and durable snapshot validation now run in one IndexedDB transaction. A cold-start test verifies simultaneous tabs use the same workspace. The validated migration, restore, and retention policies remain local and preserve the legacy source.
+- Phase 2: the Chromium suite covers manual quoting, numerical input, pricing and margins, historical snapshots, mobile navigation, print privacy, duplication, conversion to jobs, and actual costs.
+- Phase 3: a browser rehearsal confirms exact attachment matching, quote-local document IDs, idempotent proposed-only recovery, unchanged pricing and donor records, and zero analysis requests. A live rehearsal still needs owner-supplied copies of both relevant records and the contractor's joist specification.
+- Phase 4: the local material price catalogue supports price per unit, available stock length, supplier and SKU. Applying a catalogue entry requires a matching unit and an explicit draft edit. Crew costing uses explicit task productivity, efficiency, headcount, wage, burden and equipment rates. Labour, materials, equipment and subcontractor lines remain separate. Reported contribution excludes HST and unrecorded business overhead.
+- Phase 5: local typecheck and build passed, along with 839 unit tests, all 160 Chromium browser tests, and 18 targeted WebKit checks. The prior regression and recovery commit is `77ad3303c28bde8219bf51f46d89aa02256cdaa8`. Native Safari automation is disabled on this Mac. Production checks still require owner approval and access to the release environment.
+- Phase 6: before implementing live connections, decide which roles may access customer records, who can sync or approve price changes, which supplier and accounting services to connect, and which data may leave the device. Planning and local synthetic tests require no account access.
