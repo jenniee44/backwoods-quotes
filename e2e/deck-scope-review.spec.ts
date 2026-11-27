@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 import { syntheticDeckBeams } from "../shared/spatialBeam.fixture";
@@ -51,9 +52,7 @@ for (const width of [1366, 390])
     );
     await page.goto("/");
     await page.getByRole("button", { name: /Synthetic scoped deck/ }).click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page
       .getByText("Deck replacement — confirm the work included", {
         exact: true,
@@ -88,10 +87,11 @@ for (const width of [1366, 390])
       page.getByRole("button", { name: /Final Shopping List/ }),
     ).toContainText("(0)");
     await page.getByRole("button", { name: "Save quote", exact: true }).click();
-    const raw = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!),
-      storageKey,
-    );
+    const raw = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore());
+    });
     const saved = raw.quotes.find(
       (v: { name: string }) => v.name === "Synthetic scoped deck",
     );

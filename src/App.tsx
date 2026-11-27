@@ -1847,7 +1847,7 @@ export default function App() {
                       >
                         <h3 className="subheading">Quote actions</h3>
                         <p className="tiny">
-                          Permanently remove this quote from this device.
+                          Remove this quote from the active workspace. Retained copies may still contain it.
                           Existing jobs are preserved.
                         </p>
                         <button

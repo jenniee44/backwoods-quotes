@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -14,18 +15,15 @@ for (const width of [1366, 390])
     q.name = "Beam inventory regression";
     q.takeoff = [];
     q.documents = [];
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ key, store }) => localStorage.setItem(key, JSON.stringify(store)),
       { key: storageKey, store },
     );
-    await page.reload();
+    await page.goto("/");
     await page
       .getByRole("button", { name: /Beam inventory regression/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     let calls = 0;
     await page.route("**/api/plan-analysis", async (route) => {
       calls++;
@@ -98,9 +96,7 @@ for (const width of [1366, 390])
         await page
           .getByRole("button", { name: /Beam inventory regression/ })
           .click();
-        await page
-          .getByRole("button", { name: "Plans & Takeoff", exact: true })
-          .click();
+        await selectEditorTab(page, "Plans & Takeoff");
       }
       await page
         .getByRole("button", { name: /Preliminary Shopping List/ })

@@ -1,11 +1,10 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 async function setup(page: import("@playwright/test").Page, pages = 1) {
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic-preview.pdf",
     mimeType: "application/pdf",

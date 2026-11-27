@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -15,9 +16,7 @@ for (const width of [1366, 390]) {
     });
     await page.goto("/");
     await page.getByRole("button", { name: "Create New Quote" }).click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     const original = Buffer.from(constructionPdf({ pages: 2, rotation: 180 }));
     await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
       name: "synthetic-workspace.pdf",
@@ -124,7 +123,7 @@ for (const width of [1366, 390]) {
     await expect(viewer).toBeVisible();
     await viewer.scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: `/tmp/original-plan-workspace-${width}.png`,
+      path: `.local-dev/browser-artifacts/original-plan-workspace-${width}.png`,
     });
     await page.locator(".submitted-ai-details > summary").click();
     await expect(

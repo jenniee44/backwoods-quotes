@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 import {
@@ -42,19 +43,17 @@ for (const width of [1366, 390])
       { ...beam(), id: "generic-2", page: 2 },
       { ...beam(), id: "generic-3", page: 3 },
     ];
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ key, store }) => localStorage.setItem(key, JSON.stringify(store)),
       { key: storageKey, store },
     );
+    await page.goto("/");
     for (let reopen = 0; reopen < 2; reopen++) {
       await page.reload();
       await page
         .getByRole("button", { name: /Synthetic generic beam calculator/ })
         .click();
-      await page
-        .getByRole("button", { name: "Plans & Takeoff", exact: true })
-        .click();
+      await selectEditorTab(page, "Plans & Takeoff");
       await page
         .getByLabel("Edit assemblies: generic-beam", { exact: true })
         .getByRole("button", { name: "Review details", exact: true })
@@ -87,12 +86,12 @@ for (const width of [1366, 390])
       await first.getByLabel("Number of plies", { exact: true }).blur();
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff[0]
-                .calculation?.inputs?.plies1,
-            storageKey,
-          ),
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff[0]
+                .calculation?.inputs?.plies1;
+    }),
         )
         .toBeNull();
       await expect(panel).toContainText("Purchase quantity: To confirm");
@@ -109,21 +108,19 @@ for (const width of [1366, 390])
     ).toHaveValue("");
     await expect
       .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff[0]
-              .calculationBasis,
-          storageKey,
-        ),
+        page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff[0]
+              .calculationBasis;
+    }),
       )
       .toContain("Manual calculator selection");
     await page.reload();
     await page
       .getByRole("button", { name: /Synthetic generic beam calculator/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page
       .getByLabel("Edit assemblies: generic-beam", { exact: true })
       .getByRole("button", { name: "Review details", exact: true })
@@ -164,9 +161,7 @@ test("fresh generic spatial analysis and saved reopening prefill only distinct a
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Synthetic regression");
   await page.getByLabel("Job name *").fill("Synthetic fresh beam tool");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic.pdf",
     mimeType: "application/pdf",
@@ -185,9 +180,7 @@ test("fresh generic spatial analysis and saved reopening prefill only distinct a
       await page
         .getByRole("button", { name: /Synthetic fresh beam tool/ })
         .click();
-      await page
-        .getByRole("button", { name: "Plans & Takeoff", exact: true })
-        .click();
+      await selectEditorTab(page, "Plans & Takeoff");
     }
     await page
       .getByRole("button", { name: /Preliminary Shopping List/ })

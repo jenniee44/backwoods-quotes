@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { consolidateTakeoff } from "../src/consolidateTakeoff";
 import { expandSummaryEditors } from "./summaryEditorHelpers";
 import { test, expect } from "@playwright/test";
@@ -47,27 +48,24 @@ async function setup(page: import("@playwright/test").Page) {
     },
   ];
   q.takeoff = consolidateTakeoff(q.takeoff, true);
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page.getByRole("button", { name: /Synthetic summary test/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await expandSummaryEditors(page);
   return q.lines;
 }
 async function saved(page: import("@playwright/test").Page) {
-  return page.evaluate(
-    (key) =>
-      JSON.parse(localStorage.getItem(key)!).quotes.find(
+  return page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
         (q: { name: string }) => q.name === "Synthetic summary test",
-      ),
-    storageKey,
-  );
+      );
+    });
 }
 test("default consolidated table edits inline, gates bulk approval and sends final shopping list without replacing manual lines", async ({
   page,
@@ -79,7 +77,7 @@ test("default consolidated table edits inline, gates bulk approval and sends fin
   await expect(page.locator(".advanced-review")).not.toHaveAttribute("open");
   await expect(summary.locator(".material-category-row")).toHaveCount(2);
   await summary.screenshot({
-    path: "/tmp/backwoods-materials-summary-desktop.png",
+    path: ".local-dev/browser-artifacts/backwoods-materials-summary-desktop.png",
   });
   await expect(page.getByLabel("Quantity: flash", { exact: true })).toHaveValue(
     "20",
@@ -168,7 +166,7 @@ test("default consolidated table edits inline, gates bulk approval and sends fin
     ),
   ).toBe(true);
   await summary.screenshot({
-    path: "/tmp/backwoods-materials-summary-mobile.png",
+    path: ".local-dev/browser-artifacts/backwoods-materials-summary-mobile.png",
   });
 });
 test("editing an approved item resets approval; invalid input reverts and Advanced Review remains available", async ({
@@ -210,9 +208,7 @@ test("successful new analysis immediately returns to Materials Summary instead o
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create New Quote" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "synthetic.png",
     mimeType: "image/png",

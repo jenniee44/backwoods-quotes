@@ -42,3 +42,24 @@ Implemented is not verified. Record commit, test result and deployment separatel
 - Phase 3: verified selected synthetic drawing workflows for rotated PDFs, proposals, contractor scope, purchasing lists, and private diagnostics. Recovery using owner-supplied records and contractor verification remain open.
 - Results: typecheck and production build passed. All 835 unit tests and 30 targeted Chrome browser checks passed. The full browser suite and Safari release checks remain open.
 - Release: no production merge or deployment.
+
+### Offline drawing recovery rehearsal
+
+1. Use a separate browser test profile and a local app origin. Rehearse with a synthetic backup first. Owner-supplied exports are required for any rehearsal with real records. Keep exports outside version control.
+2. In the isolated workspace, confirm the intended target draft, its original quote number and pricing, and the independently identified source quote. Compare the attached PDF bytes and require a single matching attachment with an unambiguous document ID. Stop if provenance is unclear.
+3. In Plans & Takeoff, choose **Recover matching drawing observations**. This reads saved takeoff observations locally. The source quote stays intact. Recovered observations keep a source reference, link to the target attachment, and start as proposals with blank quantities.
+4. Compare the result with the original drawing and review the scope, dimensions, approvals, and purchasing quantities. Keep subcontracted work separate. Obtain the contractor's joist specification before filling any joist quantity that depends on it.
+5. Export a separate rehearsal result and compare it with the starting backup. Record the reviewed observations and unresolved items without including customer data in this repository. Owner approval is required before applying recovery to any existing quote.
+
+### Release and external dependencies
+
+- Local browser tests bind to loopback and disable the analysis API proxy. Paid-provider calls are never required by these checks. The drawing replay uses synthetic inputs by default.
+- The analysis handler checks origin, verifies Cloudflare Access assertions and requires production rate-limit storage. The client development role switch is not authentication. Before release, verify the actual Access policy, worker bindings and private result permissions in a separately approved environment.
+- Rollback must preserve the production hostname and browser origin. Record the last known good deployment before release, rehearse rollback with synthetic data, and keep workspace backup restoration separate from rollback.
+- Native Safari requires a fresh WebDriver session. WebKit regression results can be recorded independently. No production release or live integration has been authorized.
+- Cloud sync, staff permissions, supplier pricing, and accounting integrations need the owner's access rules, service choices, and authorization before connecting accounts. Use synthetic contracts and fixtures until those decisions are available.
+
+### Validation update
+
+- On November 27, 2026, the synthetic suite passed all 157 Chromium browser tests and 15 targeted WebKit tests. Typecheck, the production build, and 837 unit tests passed. Tests include the offline drawing-recovery unit cases. The production environment was not used.
+- The first published validation commit is `079661f120f73a64470289e82b5e6db4f66c2573`. Native Safari WebDriver is pending the Safari automation setting. Recovery on real records and contractor confirmation remain pending.

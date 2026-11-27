@@ -1,5 +1,6 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { openAdvancedMaterial } from "./material-review.helpers";
-import { execFileSync } from "node:child_process";
+import { pdfText } from "./fixtures/pdfText";
 import { test, expect } from "@playwright/test";
 import { deckTakeoffFixture } from "../shared/deckTakeoff.fixture";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -12,13 +13,11 @@ async function open(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Plan test");
   await page.getByLabel("Job name *").fill("Plan quote");
-  await page.getByRole("button", { name: "Materials", exact: true }).click();
+  await selectEditorTab(page, "Materials");
   await page.getByRole("button", { name: "Add material", exact: true }).click();
   await page.getByLabel("Description *").fill("Manual material");
   await page.getByLabel("Unit cost ($)", { exact: true }).fill("50");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
     name: "test-plan.png",
@@ -55,12 +54,12 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/tmp/backwoods-ai-takeoff.png",
+    path: ".local-dev/browser-artifacts/backwoods-ai-takeoff.png",
     fullPage: true,
   });
   const cards = page.locator("tbody.line-card");
   const labour = cards.nth(0);
-  await labour.screenshot({ path: "/tmp/backwoods-ai-review-card.png" });
+  await labour.screenshot({ path: ".local-dev/browser-artifacts/backwoods-ai-review-card.png" });
   const materials = cards.nth(1);
   await openAdvancedMaterial(labour);
   await openAdvancedMaterial(materials);
@@ -107,7 +106,7 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
     .getByRole("button", { name: "Analyze Plans", exact: true })
     .click();
   await expect(
-    page.getByRole("alert").filter({ hasText: "already been analyzed" }),
+    page.getByRole("status").filter({ hasText: "Saved analysis already available" }),
   ).toBeVisible();
   expect(calls).toBe(1);
   await page
@@ -135,16 +134,12 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
   ])
     await expect(doc).not.toContainText(text);
   await page.getByRole("button", { name: "Back to editor" }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: /Plan quote/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   await expect(
     page.getByText("DO NOT SCALE DRAWINGS", { exact: true }),
@@ -155,7 +150,7 @@ test("AI proposal review, missing quantities, explicit approval, conversion, dup
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/tmp/backwoods-ai-takeoff.png",
+    path: ".local-dev/browser-artifacts/backwoods-ai-takeoff.png",
     fullPage: true,
   });
   await expect(
@@ -211,7 +206,7 @@ test("invalid/API failure and cancellation preserve manual estimates; corrupt fi
   await expect(
     page.getByText(/corrupted|valid PDF|damaged/i).first(),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Materials", exact: true }).click();
+  await selectEditorTab(page, "Materials");
   await expect(page.getByLabel("Description *")).toHaveValue("Manual material");
   await expect(page.getByLabel("Unit cost ($)", { exact: true })).toHaveValue(
     "50",
@@ -308,7 +303,7 @@ test("construction scope, summary-only observations, calculation evidence and sa
   await expect(joists.getByLabel("Written specification")).toHaveValue(
     '2x8 PT @ 16" O/C',
   );
-  await joists.screenshot({ path: "/tmp/backwoods-compact-takeoff-card.png" });
+  await joists.screenshot({ path: ".local-dev/browser-artifacts/backwoods-compact-takeoff-card.png" });
   await expect(
     joists.getByRole("button", { name: "Approve item", exact: true }),
   ).toBeDisabled();
@@ -356,7 +351,7 @@ test("construction scope, summary-only observations, calculation evidence and sa
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/tmp/backwoods-construction-takeoff-mobile.png",
+    path: ".local-dev/browser-artifacts/backwoods-construction-takeoff-mobile.png",
     fullPage: true,
   });
   await joists
@@ -399,11 +394,9 @@ test("construction scope, summary-only observations, calculation evidence and sa
   for (const mode of ["Simplified", "Detailed"]) {
     await page.getByLabel("Customer quote mode").selectOption(mode);
     await page.emulateMedia({ media: "print" });
-    const pdfPath = `/tmp/backwoods-ai-private-${mode}.pdf`;
-    await page.pdf({ path: pdfPath, format: "Letter", printBackground: true });
-    const text = execFileSync("pdftotext", [pdfPath, "-"], {
-      encoding: "utf8",
-    });
+    const pdfPath = `.local-dev/browser-artifacts/backwoods-ai-private-${mode}.pdf`;
+    const pdf = await page.pdf({ path: pdfPath, format: "Letter", printBackground: true });
+    const text = await pdfText(page, pdf);
     expect(text).toContain("PROJECT QUOTE");
     expect(text).toContain("$215.00");
     expect(text).not.toMatch(
@@ -507,11 +500,13 @@ test("useful deck observations become specific estimate candidates while unknown
     .selectOption("Materials");
   await expect(posts).toContainText("Converted to an estimate line");
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
-  const stored = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes.find(
+  const stored = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
       (q: { name: string }) => q.name === "Plan quote",
-    ),
-  );
+    );
+    });
   expect(stored.lines[0].description).toBe("Manual material");
   expect(stored.lines[0].cost).toBe(50);
   expect(stored.lines[1]).toMatchObject({
@@ -545,9 +540,7 @@ test("useful deck observations become specific estimate candidates while unknown
     .click();
   await page.reload();
   await page.getByRole("button", { name: /Plan quote/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   await expect(card("2x6 PT deck joists")).toContainText(
     "2x6 PT deck joists @ 16 in. O.C.",
@@ -569,15 +562,15 @@ test("autosave persists its snapshot without overwriting a newer editor update",
   await page.getByLabel("Customer name *").fill("Autosave customer");
   await page.getByLabel("Job name *").fill("Original project");
   await page.evaluate(() => {
-    const originalSet = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      originalSet.call(this, key, value);
-      if (key !== "backwoods-quotes-v1") return;
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      const request = put.call(this, value, key);
+      if (key !== "current") return request;
       const input = document.querySelector(
         'input[value="Original project"]',
       ) as HTMLInputElement | null;
-      if (!input) return;
-      Storage.prototype.setItem = originalSet;
+      if (!input) return request;
+      IDBObjectStore.prototype.put = put;
       // Reproduce an editor update arriving as an older autosave snapshot is
       // persisted. Autosave must not write that old snapshot back to the editor.
       Object.getOwnPropertyDescriptor(
@@ -585,6 +578,7 @@ test("autosave persists its snapshot without overwriting a newer editor update",
         "value",
       )!.set!.call(input, "Newer editor update");
       input.dispatchEvent(new Event("input", { bubbles: true }));
+      return request;
     };
   });
   await expect(page.getByLabel("Job name *")).toHaveValue(
@@ -592,13 +586,14 @@ test("autosave persists its snapshot without overwriting a newer editor update",
   );
   await expect
     .poll(async () =>
-      page.evaluate(
-        () =>
-          JSON.parse(localStorage.getItem("backwoods-quotes-v1")!).quotes.find(
+      page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
             (q: { customer: { name: string } }) =>
               q.customer.name === "Autosave customer",
-          )?.name,
-      ),
+          )?.name;
+    }),
     )
     .toBe("Newer editor update");
 });

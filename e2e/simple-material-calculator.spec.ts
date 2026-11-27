@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -36,18 +37,15 @@ for (const width of [1366, 390])
     };
     q.takeoff = [t];
     const original = q.lines;
-    await page.goto("/");
-    await page.evaluate(
+    await page.addInitScript(
       ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
       { store, key: storageKey },
     );
-    await page.reload();
+    await page.goto("/");
     await page
       .getByRole("button", { name: /Synthetic simple purchasing/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page
       .getByLabel("Edit assemblies: beam", { exact: true })
       .getByRole("button", { name: "Review details" })
@@ -148,7 +146,7 @@ for (const width of [1366, 390])
     await expect(
       panel.getByRole("region", { name: "Beam lumber shopping list" }),
     ).toContainText("2x10 PT × 10 ft — 6 boards");
-    await panel.screenshot({ path: `/tmp/backwoods-simple-beam-${width}.png` });
+    await panel.screenshot({ path: `.local-dev/browser-artifacts/backwoods-simple-beam-${width}.png` });
     page.on("dialog", (d) => d.accept());
     await row
       .getByRole("button", { name: "Approve material", exact: true })
@@ -186,22 +184,22 @@ for (const width of [1366, 390])
       .click();
     await expect
       .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!).quotes.find(
+        page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
               (q: { name: string }) => q.name === "Synthetic simple purchasing",
-            ).lines.length,
-          storageKey,
-        ),
+            ).lines.length;
+    }),
       )
       .toBe(original.length + 2);
-    const saved = await page.evaluate(
-      (key) =>
-        JSON.parse(localStorage.getItem(key)!).quotes.find(
+    const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
           (q: { name: string }) => q.name === "Synthetic simple purchasing",
-        ),
-      storageKey,
-    );
+        );
+    });
     expect(saved.lines.slice(0, original.length)).toEqual(original);
     expect(saved.lines.at(-1)).toMatchObject({
       quantity: 6,

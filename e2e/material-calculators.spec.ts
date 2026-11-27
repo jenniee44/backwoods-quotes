@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { openAdvancedMaterial } from "./material-review.helpers";
 import { test, expect, type Page } from "@playwright/test";
 async function open(page: Page) {
@@ -5,9 +6,7 @@ async function open(page: Page) {
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Synthetic materials test");
   await page.getByLabel("Job name *").fill("Verified takeoff workflow");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
 }
 test("compact table calculates only from verified inputs, resets review on edits, converts once and keeps customer output private", async ({
@@ -97,15 +96,14 @@ test("compact table calculates only from verified inputs, resets review on edits
     (await row.locator(":scope > tr").first().boundingBox())!.height,
   ).toBeLessThan(260);
   await page.screenshot({
-    path: "/tmp/backwoods-calculator-table-mobile.png",
+    path: ".local-dev/browser-artifacts/backwoods-calculator-table-mobile.png",
     fullPage: true,
   });
   await page.getByRole("button", { name: "Save quote", exact: true }).click();
+  await expect(page.locator(".notice")).toHaveText("Saved on this device");
   await page.reload();
   await page.getByRole("button", { name: /Verified takeoff workflow/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   await expect(page.locator(".takeoff-table")).toContainText(
     "Converted to an estimate line",
@@ -198,7 +196,7 @@ test("by-others inclusion is explicit and mutually exclusive foundations cannot 
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/tmp/backwoods-takeoff-table-desktop.png",
+    path: ".local-dev/browser-artifacts/backwoods-takeoff-table-desktop.png",
     fullPage: true,
   });
 });

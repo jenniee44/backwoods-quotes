@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { sectionTakeoffFixture } from "../src/sectionTakeoff.fixture";
 import { dimensionFixture } from "../src/structuredTakeoff.fixture";
@@ -39,9 +40,7 @@ for (const width of [1366, 390])
     await page.getByRole("button", { name: "Create New Quote" }).click();
     await page.getByLabel("Customer name *").fill("Synthetic test customer");
     await page.getByLabel("Job name *").fill("Synthetic section quantities");
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page.getByLabel("Attach plans", { exact: true }).setInputFiles({
       name: "Synthetic.pdf",
       mimeType: "application/pdf",
@@ -74,14 +73,13 @@ for (const width of [1366, 390])
     await page
       .getByRole("button", { name: /Synthetic section quantities/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await expect(summary).toContainText("13 joists");
-    const stored = await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!),
-      storageKey,
-    );
+    const stored = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore());
+    });
     const q = stored.quotes.find(
       (q: { name: string }) => q.name === "Synthetic section quantities",
     );

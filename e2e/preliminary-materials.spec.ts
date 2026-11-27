@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { consolidateTakeoff } from "../src/consolidateTakeoff";
 import { expandSummaryEditors } from "./summaryEditorHelpers";
 import { test, expect } from "@playwright/test";
@@ -60,18 +61,15 @@ async function setup(page: import("@playwright/test").Page) {
   ];
   q.takeoff = consolidateTakeoff(q.takeoff, true);
   const lines = q.lines;
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic preliminary review/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   return lines;
 }
 for (const width of [1366, 390])
@@ -160,28 +158,28 @@ for (const width of [1366, 390])
       // A friendly label must never silently replace the original observation.
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!)
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore())
                 .quotes.find(
                   (q: { name: string }) =>
                     q.name === "Synthetic preliminary review",
                 )
-                .takeoff.find((t: TakeoffItem) => t.id === "joist").description,
-            storageKey,
-          ),
+                .takeoff.find((t: TakeoffItem) => t.id === "joist").description;
+    }),
         )
         .toBe("Supply and install deck joists from detail 1");
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes.find(
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
                 (q: { name: string }) =>
                   q.name === "Synthetic preliminary review",
-              ).lines,
-            storageKey,
-          ),
+              ).lines;
+    }),
         )
         .toEqual(original);
       expect(
@@ -190,7 +188,7 @@ for (const width of [1366, 390])
         ),
       ).toBe(true);
       await region.screenshot({
-        path: "/tmp/backwoods-compact-summary-" + width + ".png",
+        path: ".local-dev/browser-artifacts/backwoods-compact-summary-" + width + ".png",
       });
     },
   );

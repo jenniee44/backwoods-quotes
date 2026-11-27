@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { constructionPdf } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -49,18 +50,15 @@ test("saved dimensions stay prefilled, invalid edits preserve storage and geomet
       ],
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ key, store }) => localStorage.setItem(key, JSON.stringify(store)),
     { key: storageKey, store },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic uncertain layout/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page
     .getByRole("button", { name: "Material Takeoff Summary", exact: true })
     .click();
@@ -107,11 +105,11 @@ test("saved dimensions stay prefilled, invalid edits preserve storage and geomet
   );
   await expect
     .poll(() =>
-      page.evaluate(
-        (key) =>
-          JSON.parse(localStorage.getItem(key)!).quotes[0].takeoff[0].status,
-        storageKey,
-      ),
+      page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes[0].takeoff[0].status;
+    }),
     )
     .toBe("Proposed");
 });
@@ -195,9 +193,7 @@ for (const width of [1366, 390])
     await page.getByRole("button", { name: "Create New Quote" }).click();
     await page.getByLabel("Customer name *").fill("Synthetic test customer");
     await page.getByLabel("Job name *").fill("Synthetic automated deck");
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     await page
       .getByLabel("Attach plans", { exact: true })
       .setInputFiles({
@@ -286,7 +282,7 @@ for (const width of [1366, 390])
       .click();
     await expect(joists).toContainText("Calculation verified");
     await summary.screenshot({
-      path: `/tmp/backwoods-reconstructed-takeoff-${width}.png`,
+      path: `.local-dev/browser-artifacts/backwoods-reconstructed-takeoff-${width}.png`,
     });
     expect(
       await page.evaluate(
@@ -308,31 +304,29 @@ for (const width of [1366, 390])
       .click();
     await expect
       .poll(() =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(localStorage.getItem(key)!)
+        page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore())
               .quotes.find((q: Quote) => q.name === "Synthetic automated deck")
               ?.lines.filter(
                 (l: { takeoffSource?: unknown }) => l.takeoffSource,
-              ).length,
-          storageKey,
-        ),
+              ).length;
+    }),
       )
       .toBe(1);
     await page.reload();
     await page
       .getByRole("button", { name: /Synthetic automated deck/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
-    const saved = await page.evaluate(
-      (key) =>
-        JSON.parse(localStorage.getItem(key)!).quotes.find(
+    await selectEditorTab(page, "Plans & Takeoff");
+    const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
           (q: Quote) => q.name === "Synthetic automated deck",
-        ),
-      storageKey,
-    );
+        );
+    });
     expect(
       saved.takeoff.find(
         (t: { description: string }) => t.description === "Deck joists",

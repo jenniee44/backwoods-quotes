@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey, type TakeoffItem } from "../src/model";
 
@@ -64,9 +65,7 @@ for (const width of [1366, 390])
     await page
       .getByRole("button", { name: /Saved identity regression/ })
       .click();
-    await page
-      .getByRole("button", { name: "Plans & Takeoff", exact: true })
-      .click();
+    await selectEditorTab(page, "Plans & Takeoff");
     const table = page.getByRole("table", {
       name: "Preliminary Shopping List",
       exact: true,
@@ -88,13 +87,13 @@ for (const width of [1366, 390])
     ])
       await expect(table).toContainText(name);
     await page.getByRole("button", { name: "Save quote", exact: true }).click();
-    const saved = await page.evaluate(
-      ({ key, id }) =>
-        JSON.parse(localStorage.getItem(key)!).quotes.find(
+    const saved = await page.evaluate(async ({ key, id }) => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
           (q: { id: string }) => q.id === id,
-        ),
-      { key: storageKey, id: q.id },
-    );
+        );
+    }, { key: storageKey, id: q.id });
     const hardware = saved.takeoff.filter(
       (t: TakeoffItem) =>
         t.status !== "Rejected" && t.category === "Hangers / connectors",

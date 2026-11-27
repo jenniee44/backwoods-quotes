@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { expandSummaryEditors } from "./summaryEditorHelpers";
 import { expect, test } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
@@ -64,18 +65,15 @@ async function setup(page: import("@playwright/test").Page) {
       notes: "Existing footing to remain",
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic review navigation/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await expandSummaryEditors(page);
   return q.takeoff;
 }
@@ -158,14 +156,14 @@ for (const width of [1366, 390])
       // Navigation and expansion must not change quote data or approval.
       await expect
         .poll(() =>
-          page.evaluate(
-            (key) =>
-              JSON.parse(localStorage.getItem(key)!).quotes.find(
+          page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
                 (q: { name: string }) =>
                   q.name === "Synthetic review navigation",
-              ).takeoff,
-            storageKey,
-          ),
+              ).takeoff;
+    }),
         )
         .toEqual(original);
     },

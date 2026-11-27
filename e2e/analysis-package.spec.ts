@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect, type Page } from "@playwright/test";
 import { constructionPdf, constructionNotes } from "./fixtures/constructionPdf";
 import { analysisFixture } from "../shared/analysis.fixture";
@@ -7,9 +8,7 @@ async function editor(page: Page) {
   await page.getByRole("button", { name: "Create New Quote" }).click();
   await page.getByLabel("Customer name *").fill("Synthetic package test");
   await page.getByLabel("Job name *").fill("Package fixture");
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-ai-details > summary").click();
 }
 function paddedPdf(size = 1_500_000) {

@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { openAdvancedMaterial } from "./material-review.helpers";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
@@ -40,16 +41,13 @@ async function setup(page: import("@playwright/test").Page) {
       location: "Front deck",
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page.getByRole("button", { name: /Synthetic overlap review/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
 }
 test("laptop summaries stay compact; missing inputs start collapsed; beam/guard comparisons are explicit and safe", async ({
@@ -136,7 +134,7 @@ test("laptop summaries stay compact; missing inputs start collapsed; beam/guard 
   await expect(rows).toHaveCount(2);
   await reviewSummary.getByRole("button", { name: /All items/ }).click();
   await page.screenshot({
-    path: "/tmp/backwoods-takeoff-review-laptop.png",
+    path: ".local-dev/browser-artifacts/backwoods-takeoff-review-laptop.png",
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -179,18 +177,15 @@ test("two observations of twelve concrete footings require comparison and retain
     footing("f1", "Concrete footings", 1),
     footing("f2", "Concrete pier footing assemblies", 2),
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page
     .getByRole("button", { name: /Synthetic footing comparison/ })
     .click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   const rows = page.locator(".takeoff-table > tbody.line-card");
   await expect(rows).toHaveCount(2);
@@ -218,21 +213,24 @@ test("two observations of twelve concrete footings require comparison and retain
   );
   await expect
     .poll(async () =>
-      page.evaluate((key) => {
-        const stored = JSON.parse(localStorage.getItem(key)!);
+      page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      const stored = (await readDurableStore());
         return stored.quotes
           .find(
             (q: { name: string }) => q.name === "Synthetic footing comparison",
           )
           .takeoff.filter((t: { status: string }) => t.status !== "Rejected")
           .length;
-      }, storageKey),
+      }),
     )
     .toBe(1);
-  const saved = await page.evaluate(
-    (key) => JSON.parse(localStorage.getItem(key)!),
-    storageKey,
-  );
+  const saved = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore());
+    });
   const record = saved.quotes.find(
     (r: { name: string }) => r.name === "Synthetic footing comparison",
   );

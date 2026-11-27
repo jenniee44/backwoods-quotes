@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { expect, test } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -88,16 +89,13 @@ async function setup(
         sourceFacts: ["Original counts 4 and 6; verify on site"],
       },
     ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page.getByRole("button", { name: /Synthetic quick review/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
 }
 test("compact cards offer quick edits, summary navigation and explicit approval before safe batch conversion", async ({
@@ -155,13 +153,13 @@ test("compact cards offer quick edits, summary navigation and explicit approval 
     .getByText("Review approved material list", { exact: true })
     .click();
   await expect(summary).toContainText("Deck posts — 5 each");
-  const counts = await page.evaluate(
-    (key) =>
-      JSON.parse(localStorage.getItem(key)!).quotes.find(
+  const counts = await page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
         (q: { name: string }) => q.name === "Synthetic quick review",
-      ).lines.length,
-    storageKey,
-  );
+      ).lines.length;
+    });
   page.once("dialog", (d) => d.accept());
   await summary
     .getByRole("button", { name: "Add approved items to estimate" })
@@ -170,13 +168,13 @@ test("compact cards offer quick edits, summary navigation and explicit approval 
   await expect(summary).toHaveCount(0);
   await expect
     .poll(() =>
-      page.evaluate(
-        (key) =>
-          JSON.parse(localStorage.getItem(key)!).quotes.find(
+      page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
             (q: { name: string }) => q.name === "Synthetic quick review",
-          ).lines.length,
-        storageKey,
-      ),
+          ).lines.length;
+    }),
     )
     .toBe(counts + 1);
   const nav = page.getByRole("navigation", { name: "Material review summary" });
@@ -221,7 +219,7 @@ test("compact cards offer quick edits, summary navigation and explicit approval 
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/tmp/backwoods-quick-material-review-mobile.png",
+    path: ".local-dev/browser-artifacts/backwoods-quick-material-review-mobile.png",
     fullPage: true,
   });
 });

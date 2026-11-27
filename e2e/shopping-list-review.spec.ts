@@ -1,3 +1,4 @@
+import { selectEditorTab } from "./fixtures/selectEditorTab";
 import { test, expect } from "@playwright/test";
 import { seed, storageKey } from "../src/model";
 import type { TakeoffItem } from "../src/model";
@@ -54,27 +55,24 @@ async function open(page: import("@playwright/test").Page) {
       quantity: 30,
     },
   ];
-  await page.goto("/");
-  await page.evaluate(
+  await page.addInitScript(
     ({ store, key }) => localStorage.setItem(key, JSON.stringify(store)),
     { store, key: storageKey },
   );
-  await page.reload();
+  await page.goto("/");
   await page.getByRole("button", { name: /Synthetic shopping list/ }).click();
-  await page
-    .getByRole("button", { name: "Plans & Takeoff", exact: true })
-    .click();
+  await selectEditorTab(page, "Plans & Takeoff");
   await page.locator(".advanced-review > summary").click();
   return q;
 }
 async function saved(page: import("@playwright/test").Page) {
-  return page.evaluate(
-    (key) =>
-      JSON.parse(localStorage.getItem(key)!).quotes.find(
+  return page.evaluate(async () => {
+      const modulePath = "/src/durableStore.ts";
+      const { readDurableStore } = await import(modulePath);
+      return (await readDurableStore()).quotes.find(
         (q: { name: string }) => q.name === "Synthetic shopping list",
-      ),
-    storageKey,
-  );
+      );
+    });
 }
 test("quick edit saves once, Cancel preserves the saved material and includes only relevant inputs", async ({
   page,
@@ -162,7 +160,7 @@ test("quick edit saves once, Cancel preserves the saved material and includes on
     ),
   ).toBe(true);
   await page.screenshot({
-    path: "/tmp/backwoods-shopping-list-mobile.png",
+    path: ".local-dev/browser-artifacts/backwoods-shopping-list-mobile.png",
     fullPage: true,
   });
 });
